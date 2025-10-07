@@ -1,0 +1,17 @@
+{
+  "name": "booking-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c green,cyan \"pnpm --filter web dev\" \"pnpm --filter api dev\"",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter web start & pnpm --filter api start",
+    "lint": "pnpm -r lint",
+    "prisma:generate": "pnpm --filter api prisma:generate",
+    "prisma:migrate": "pnpm --filter api prisma:migrate",
+    "seed": "pnpm --filter api seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

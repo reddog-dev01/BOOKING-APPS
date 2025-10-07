@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* 2) Toggle switch tối giản dùng cho 2 chiều / VAT */
+@layer components {
+  .switch { position: relative; display: inline-block; width: 42px; height: 24px; }
+  .switch input { display: none; }
+  .switch .slider { position: absolute; inset: 0; background: #e5e7eb; border-radius: 999px; transition: background .2s; }
+  .switch .slider::after {
+    content:""; position: absolute; top:3px; left:3px; width:18px; height:18px;
+    background:#fff; border-radius:999px; box-shadow:0 1px 2px rgba(0,0,0,.2); transition: transform .2s;
+  }
+  .switch input:checked + .slider { background:#7c3aed; }         /* purple-600 */
+  .switch input:checked + .slider::after { transform: translateX(18px); }
+}
