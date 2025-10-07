@@ -2,29 +2,28 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleDot, MapPin, Plus, Repeat2 } from "lucide-react";
+import { CircleDot, MapPin, Plus, Repeat2, Minus, Plane, Route } from "lucide-react";
 
 /** ================= Types ================= */
 type TripType = "airport" | "road";
 type Vehicle = { id: number; name: string; img: string; alt: string };
 
 /** ================= UI tokens ================= */
-// Đổi ring/border về brand (xanh)
+// Focus ring brand
 const RING = "focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand-dark";
-const CARD = "w-full rounded-2xl border border-gray-300 bg-white shadow-sm " + RING;
-const CARD_BTN = CARD + " px-3 py-2.5 text-left";
-const ICON_SHELL = "absolute right-2 top-1/2 -translate-y-1/2";
-const INPUT_GROUP = CARD + " p-0 overflow-hidden flex items-stretch"; // khung chung
-const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3"; // input trần
-const INPUT_RIGHT = "shrink-0 grid place-items-center w-14 border-l border-gray-300"; // ô con bên phải
+// Bo góc đồng nhất
+const RADIUS = "rounded-xl";
+// Card chuẩn
+const CARD = `w-full ${RADIUS} border border-gray-300 bg-white shadow-sm ` + RING;
+// Nút dạng card (thêm min-w-0 tránh tràn)
+const CARD_BTN = CARD + " px-3 py-2.5 text-left min-w-0";
+// Chiều cao min đồng nhất
 const CARD_MINH = "min-h-[60px]";
-const ICON_BTN = `
-  inline-flex items-center justify-center
-  h-9 w-9 rounded-full
-  bg-white border border-gray-300 text-gray-600
-  hover:bg-gray-50 hover:text-brand
-  focus:outline-none focus:ring-2 focus:ring-brand/40
-`;
+
+// Input group: container có bo góc; input & ô bên phải không bo góc; thêm min-w-0
+const INPUT_GROUP = CARD + " p-0 overflow-hidden flex items-stretch min-w-0";
+const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3";
+const INPUT_RIGHT = "shrink-0 grid place-items-center w-14 border-l border-gray-300";
 
 /** ================= Data ================== */
 const VEHICLES: Vehicle[] = [
@@ -36,7 +35,7 @@ const VEHICLES: Vehicle[] = [
   { id: 7, name: "45 chỗ",         img: "/vehicles/45seats.png", alt: "Xe 45 chỗ" },
 ];
 
-/** ============ Dropdown Loại xe (fix scroll + ARIA) ============ */
+/** ============ Dropdown Loại xe ============ */
 function VehicleDropdown({
   value,
   onChange,
@@ -51,16 +50,20 @@ function VehicleDropdown({
   const btnRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  // Mảng ref item
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const setItemRef = (i: number) => (el: HTMLButtonElement | null) => { itemRefs.current[i] = el; };
 
   const selected = useMemo(() => VEHICLES.find((v) => v.id === value), [value]);
 
-  // ✅ Đo chiều rộng nút để set chiều rộng menu >= 360px
-  const [menuW, setMenuW] = useState<number>(360);
+  // đo width menu và clamp theo viewport để không tràn mobile
+  const [menuW, setMenuW] = useState<number>(320);
   useEffect(() => {
-    const measure = () => setMenuW(Math.max(360, Math.round(btnRef.current?.getBoundingClientRect().width ?? 360)));
+    const measure = () => {
+      const btnW = Math.round(btnRef.current?.getBoundingClientRect().width ?? 320);
+      const vw   = Math.max(320, window.innerWidth);
+      const maxW = vw - 32; // chừa 16px margin 2 bên
+      setMenuW(Math.max(260, Math.min(btnW, maxW)));
+    };
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
@@ -116,7 +119,7 @@ function VehicleDropdown({
   };
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <label className="text-sm text-gray-700">{label}</label>
 
       <button
@@ -129,7 +132,7 @@ function VehicleDropdown({
         className={`${CARD_BTN} ${CARD_MINH}`}
         title={selected?.name}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <span className="relative w-12 h-8 shrink-0">
               <Image
@@ -141,7 +144,6 @@ function VehicleDropdown({
                 priority
               />
             </span>
-            {/* ✅ Không rơi chữ: một hàng + cắt bớt nếu dài */}
             <span className="font-medium text-gray-900 leading-tight whitespace-nowrap truncate">
               {selected?.name ?? "Chọn loại xe"}
             </span>
@@ -151,50 +153,48 @@ function VehicleDropdown({
       </button>
 
       {open && (
-  <ul
-    ref={listRef}
-    role="listbox"
-    tabIndex={-1}
-    onKeyDown={onKeyDownList}
-    // ⬇️ Hiển thị toàn bộ, không cuộn
-     className="absolute z-50 mt-1 rounded-2xl border border-gray-300 bg-white shadow-xl overflow-hidden" 
-    style={{ width: `${menuW}px`, maxHeight: "none" }}
-  >
-    {VEHICLES.map((v, idx) => {
-      const active = v.id === value;
-      return (
-        <li key={v.id}>
-          <button
-            ref={setItemRef(idx)}
-            type="button"
-            onClick={() => select(v.id)}
-            role="option"
-            aria-selected={active}
-            className={[
-              "w-full px-4 py-3 flex items-center gap-4 text-left",
-              "hover:bg-brand/10 focus:bg-brand/10 focus:outline-none",
-              active ? "bg-brand/10" : "",
-            ].join(" ")}
-          >
-            <span className="relative w-14 h-9 shrink-0">
-              <Image src={v.img} alt={v.alt} fill sizes="56px" className="object-contain" />
-            </span>
-            <span className="flex-1 leading-tight whitespace-nowrap truncate pr-6">
-              {v.name}
-            </span>
-            {active && <span className="text-brand font-semibold">✓</span>}
-          </button>
-        </li>
-      );
-    })}
-  </ul>
-)}
-
+        <ul
+          ref={listRef}
+          role="listbox"
+          tabIndex={-1}
+          onKeyDown={onKeyDownList}
+          className={`absolute z-50 mt-1 ${RADIUS} border border-gray-300 bg-white shadow-xl overflow-hidden`}
+          style={{ width: `${menuW}px`, maxWidth: "calc(100vw - 32px)" }}
+        >
+          {VEHICLES.map((v, idx) => {
+            const active = v.id === value;
+            return (
+              <li key={v.id}>
+                <button
+                  ref={setItemRef(idx)}
+                  type="button"
+                  onClick={() => select(v.id)}
+                  role="option"
+                  aria-selected={active}
+                  className={[
+                    "w-full px-4 py-3 flex items-center gap-4 text-left",
+                    "hover:bg-brand/10 focus:bg-brand/10 focus:outline-none",
+                    active ? "bg-brand/10" : "",
+                  ].join(" ")}
+                >
+                  <span className="relative w-14 h-9 shrink-0">
+                    <Image src={v.img} alt={v.alt} fill sizes="56px" className="object-contain" />
+                  </span>
+                  <span className="flex-1 leading-tight whitespace-nowrap truncate pr-6">
+                    {v.name}
+                  </span>
+                  {active && <span className="text-brand font-semibold">✓</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
 
-/** ===== OneFieldDateTime — numbers-only, selected-day boxed, reset on close ===== */
+/** ===== OneFieldDateTime ===== */
 function OneFieldDateTime({
   value, onChange,
   label = "Thời gian đi",
@@ -229,6 +229,7 @@ function OneFieldDateTime({
   const popRef = useRef<HTMLDivElement>(null);
   const [triggerW, setTriggerW] = useState(320);
 
+  // helpers (chỉ 1 lần)
   const z2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   const toYMD = (d: Date) => `${d.getFullYear()}-${z2(d.getMonth() + 1)}-${z2(d.getDate())}`;
   const parseYMD = (s?: string | null) => {
@@ -239,8 +240,14 @@ function OneFieldDateTime({
   };
   const resetDraft = () => { setDraftDate(null); setDraftHour(null); setDraftMinute(null); setPhase("date"); };
 
+  // đo theo trigger và viewport để không tràn
   useEffect(() => {
-    const measure = () => setTriggerW(Math.max(280, Math.round(btnRef.current?.getBoundingClientRect().width ?? 320)));
+    const measure = () => {
+      const w = Math.round(btnRef.current?.getBoundingClientRect().width ?? 320);
+      const vw = Math.max(320, window.innerWidth);
+      const maxW = vw - 32;
+      setTriggerW(Math.max(260, Math.min(w, maxW)));
+    };
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
@@ -319,16 +326,16 @@ function OneFieldDateTime({
   const minMinuteOfDay = useMemo(() => {
     const dd = parseYMD(draftDate);
     if (!dd) return null;
-    if (!sameDate(dd, minDT)) return null;
+    if (!(dd.getFullYear() === minDT.getFullYear() && dd.getMonth() === minDT.getMonth() && dd.getDate() === minDT.getDate())) return null;
     return minDT.getHours() * 60 + minDT.getMinutes();
   }, [draftDate]);
 
-  const hourDisabled = (h: number) => !!(minMinuteOfDay && h * 60 + 59 < minMinuteOfDay);
+  const hourDisabled   = (h: number) => !!(minMinuteOfDay && h * 60 + 59 < minMinuteOfDay);
   const minuteDisabled = (h: number | null, m: number) => !!(minMinuteOfDay && h !== null && h * 60 + m < minMinuteOfDay);
 
   const pretty = () => {
     if (!committedDate || committedHour === null || committedMinute === null) return "Thời gian đi";
-    const [y, m, d] = committedDate.split("-");
+    const [, m, d] = committedDate.split("-");
     return `${d}/${m} ${z2(committedHour)}:${z2(committedMinute)}`;
   };
 
@@ -362,14 +369,15 @@ function OneFieldDateTime({
   const canPrev = !minDProp || new Date(viewYM.y, viewYM.m, 1) > new Date(minDProp.getFullYear(), minDProp.getMonth(), 1);
   const canNext = !maxDProp || new Date(viewYM.y, viewYM.m, 1) < new Date(maxDProp.getFullYear(), maxDProp.getMonth(), 1);
 
-  const NUM_BTN = "px-3 py-2 sm:py-3 text-base sm:text-lg leading-none select-none bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-brand/40 rounded";
+  // Nút số
+  const NUM_BTN      = "px-3 py-2 sm:py-3 text-base sm:text-lg leading-none select-none bg-transparent border-0 focus:outline-none focus-visible:underline";
   const NUM_DISABLED = "text-gray-300 cursor-not-allowed";
-  const NUM_NORMAL = "text-gray-800 hover:text-brand";
-  const NUM_ACTIVE = "text-brand font-semibold";
-  const NUM_TODAY  = "text-brand";
+  const NUM_NORMAL   = "text-gray-800 hover:text-brand";
+  const NUM_ACTIVE   = "text-brand font-semibold";
+  const NUM_TODAY    = "text-brand";
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <label className="text-sm text-gray-700">{label}</label>
 
       <button
@@ -394,8 +402,8 @@ function OneFieldDateTime({
           ref={popRef}
           role="dialog"
           aria-label="Chọn thời gian đi"
-          className="absolute z-50 mt-1 rounded-2xl border border-gray-300 bg-white shadow-xl p-4"
-          style={{ width: `${triggerW}px` }}
+          className={`absolute z-50 mt-1 ${RADIUS} border border-gray-300 bg-white shadow-xl p-4`}
+          style={{ width: `${triggerW}px`, maxWidth: "calc(100vw - 32px)" }}
         >
           {phase === "date" && (
             <div>
@@ -424,7 +432,7 @@ function OneFieldDateTime({
               <div className="grid grid-cols-7 gap-1">
                 {monthMatrix.flat().map(({ date: d, inMonth }, idx) => {
                   const ymd = toYMD(d);
-                  const isToday = d.getFullYear() === today.y && d.getMonth() === today.m && d.getDate() === today.d;
+                  const isToday = d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
                   const isDraftSel = draftDate === ymd;
                   const disabled = isDateDisabled(d) || !inMonth;
                   return (
@@ -434,7 +442,7 @@ function OneFieldDateTime({
                       onClick={() => onPickDate(d)}
                       disabled={disabled}
                       className={[
-                        "h-10 sm:h-12 relative flex items-center justify-center",
+                        "h-10 sm:h-12 relative flex items-center justify-center rounded-lg",
                         NUM_BTN,
                         disabled ? NUM_DISABLED : isDraftSel ? NUM_ACTIVE : isToday ? NUM_TODAY : NUM_NORMAL
                       ].join(" ")}
@@ -442,7 +450,7 @@ function OneFieldDateTime({
                     >
                       {d.getDate()}
                       {isDraftSel && (
-                        <span className="absolute inset-0 rounded-xl ring-2 ring-brand pointer-events-none" aria-hidden />
+                        <span className="absolute inset-0 rounded-lg ring-2 ring-brand pointer-events-none" aria-hidden />
                       )}
                     </button>
                   );
@@ -468,7 +476,7 @@ function OneFieldDateTime({
                       onClick={() => onPickHour(h)}
                       disabled={disabled}
                       className={[
-                        "text-center relative",
+                        "text-center relative rounded",
                         NUM_BTN,
                         disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL
                       ].join(" ")}
@@ -500,7 +508,7 @@ function OneFieldDateTime({
                       onClick={() => onPickMinute(m)}
                       disabled={disabled}
                       className={[
-                        "text-center relative",
+                        "text-center relative rounded",
                         NUM_BTN,
                         disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL
                       ].join(" ")}
@@ -531,6 +539,7 @@ export default function BookingForm() {
   const [startAt, setStartAt] = useState<string>(""); // yyyy-mm-ddTHH:MM
   const [roundTrip, setRoundTrip] = useState(false);
   const [vat, setVat] = useState(false);
+  const [promo, setPromo] = useState<string>(""); // mã giảm giá
 
   const selectedVehicle = useMemo(
     () => VEHICLES.find((v) => v.id === vehicleTypeId),
@@ -567,6 +576,7 @@ export default function BookingForm() {
         `Xe: ${selectedVehicle?.name}`,
         `Thời gian: ${startAt}`,
         `2 chiều: ${roundTrip ? "Có" : "Không"} | VAT: ${vat ? "Có" : "Không"}`,
+        `Mã giảm giá: ${promo || "(không)"}`
       ].join("\n")
     );
   };
@@ -578,58 +588,79 @@ export default function BookingForm() {
 
   return (
     <div className="space-y-4">
-      {/* Tabs */}
-      <div className="inline-flex rounded-full bg-gray-100 p-1" role="tablist" aria-label="Loại chuyến">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tripType === "airport"}
-          onClick={() => onChangeTripType("airport")}
-          className={`px-3 py-1.5 text-sm rounded-full ${tripType === "airport" ? "bg-brand text-white" : "text-gray-700"}`}
-        >
-          Sân bay
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tripType === "road"}
-          onClick={() => onChangeTripType("road")}
-          className={`px-3 py-1.5 text-sm rounded-full ${tripType === "road" ? "bg-brand text-white" : "text-gray-700"}`}
-        >
-          Đường dài
-        </button>
+      {/* ===== Header row: Text ĐẶT XE + Tabs icon (không khung) ===== */}
+      <div className="flex items-center justify-between gap-3 min-w-0">
+        <h2 className="text-2xl font-extrabold tracking-wide text-gray-900">ĐẶT XE</h2>
+
+        <div role="tablist" aria-label="Loại chuyến" className="flex items-center min-w-0">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tripType === "airport"}
+            onClick={() => onChangeTripType("airport")}
+            className={[
+              "inline-flex items-center gap-2 px-2 py-1 text-base transition",
+              "focus:outline-none focus-visible:underline",
+              tripType === "airport"
+                ? "text-brand font-semibold"
+                : "text-gray-600 hover:text-brand"
+            ].join(" ")}
+            title="Sân bay"
+          >
+            <Plane className="h-5 w-5" aria-hidden />
+            <span>Sân bay</span>
+          </button>
+
+          <span aria-hidden className="mx-4 h-6 w-px bg-gray-300" />
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tripType === "road"}
+            onClick={() => onChangeTripType("road")}
+            className={[
+              "inline-flex items-center gap-2 px-2 py-1 text-base transition",
+              "focus:outline-none focus-visible:underline",
+              tripType === "road"
+                ? "text-brand font-semibold"
+                : "text-gray-600 hover:text-brand"
+            ].join(" ")}
+            title="Đường dài"
+          >
+            <Route className="h-5 w-5" aria-hidden />
+            <span>Đường dài</span>
+          </button>
+        </div>
       </div>
 
       {/* From */}
       <div>
         <label className="text-sm text-gray-700">Bạn đi từ:</label>
-        <div className="mt-1 flex items-center gap-2">
-          <div className="relative w-full">
-            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-brand">
-  <CircleDot aria-hidden className="h-5 w-5" />
-</span>
+        <div className="mt-1 relative w-full">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-brand">
+            <CircleDot aria-hidden className="h-5 w-5" />
+          </span>
 
-<input
-  className={`${CARD} pl-10 pr-14 py-3`}  // ⬅ pr-14
-  placeholder="Điểm đi"
-  value={from}
-  onChange={(e) => setFrom(e.target.value)}
-  aria-label="Điểm đi"
-/>
-
-<button
-  type="button"
-  onClick={addStop}
-  className={ICON_SHELL}                      // ⬅ căn giữa theo Y
-  aria-label="Thêm điểm dừng"
-  title="Thêm điểm dừng"
->
-  <span className={ICON_BTN}>
-    <Plus className="h-5 w-5" aria-hidden />
-  </span>
-</button>
-
-
+          <div className={INPUT_GROUP}>
+            <input
+              className={INPUT_FIELD}
+              placeholder="Điểm đi"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              aria-label="Điểm đi"
+            />
+            <button
+              type="button"
+              onClick={(e) => { (e.currentTarget as HTMLButtonElement).blur(); addStop(); }}
+              className={
+                INPUT_RIGHT +
+                " hover:bg-gray-50 focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-brand/40"
+              }
+              aria-label="Thêm điểm dừng"
+              title="Thêm điểm dừng"
+            >
+              <Plus className="h-5 w-5 text-rose-500" aria-hidden />
+            </button>
           </div>
         </div>
       </div>
@@ -638,22 +669,28 @@ export default function BookingForm() {
       {stops.length > 0 && (
         <div className="space-y-2">
           {stops.map((s, i) => (
-            <div key={i} className="relative">
-              <input
-                className={`${CARD} px-3 py-3`}
-                placeholder={`Điểm dừng #${i + 1}`}
-                value={s}
-                onChange={(e) => updateStop(i, e.target.value)}
-                aria-label={`Điểm dừng ${i + 1}`}
-              />
-              <button
-                type="button"
-                onClick={() => removeStop(i)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
-                aria-label={`Xoá điểm dừng ${i + 1}`}
-              >
-                Xoá
-              </button>
+            <div key={i} className="relative w-full">
+              <div className={INPUT_GROUP}>
+                <input
+                  className="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
+                  placeholder={`Điểm dừng #${i + 1}`}
+                  value={s}
+                  onChange={(e) => updateStop(i, e.target.value)}
+                  aria-label={`Điểm dừng ${i + 1}`}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => { (e.currentTarget as HTMLButtonElement).blur(); removeStop(i); }}
+                  className={
+                    INPUT_RIGHT +
+                    " hover:bg-gray-50 focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-brand/40"
+                  }
+                  aria-label={`Xoá điểm dừng ${i + 1}`}
+                  title="Xoá điểm dừng"
+                >
+                  <Minus className="h-5 w-5 text-rose-500" aria-hidden />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -662,35 +699,113 @@ export default function BookingForm() {
       {/* To + swap */}
       <div>
         <label className="text-sm text-gray-700">Bạn muốn đến:</label>
-        <div className="mt-1 flex items-center gap-2">
-          <div className="relative w-full">
-            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
-  <MapPin aria-hidden className="h-5 w-5 text-red-600" />
-</span>
+        <div className="mt-1 relative w-full">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+            <MapPin aria-hidden className="h-5 w-5 text-red-600" />
+          </span>
 
-
-<input
-  className={`${CARD} pl-10 pr-14 py-3`}  // ⬅ pr-14
-  placeholder="Điểm đến"
-  value={to}
-  onChange={(e) => setTo(e.target.value)}
-  aria-label="Điểm đến"
-/>
-
-<button
-  type="button"
-  onClick={swap}
-  className={ICON_SHELL}
-  title="Đảo chiều điểm đi/đến"
-  aria-label="Đảo chiều điểm đi/đến"
->
-  <span className={ICON_BTN}>
-    <Repeat2 className="h-5 w-5" aria-hidden />
-  </span>
-</button>
-
-
+          <div className={INPUT_GROUP}>
+            <input
+              className={INPUT_FIELD}
+              placeholder="Điểm đến"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              aria-label="Điểm đến"
+            />
+            <button
+              type="button"
+              onClick={(e) => { (e.currentTarget as HTMLButtonElement).blur(); swap(); }}
+              className={
+                INPUT_RIGHT +
+                " hover:bg-gray-50 focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-brand/40"
+              }
+              aria-label="Đảo chiều điểm đi/đến"
+              title="Đảo chiều điểm đi/đến"
+            >
+              <Repeat2 className="h-5 w-5 text-brand" aria-hidden />
+            </button>
           </div>
+        </div>
+      </div>
+
+      {/* Switches + Promo (cùng hàng, cho phép wrap) */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* 2 chiều */}
+        <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
+          <span className="relative inline-flex h-6 w-10 items-center">
+            <input
+              type="checkbox"
+              checked={roundTrip}
+              onChange={(e) => setRoundTrip(e.target.checked)}
+              className="peer sr-only"
+              role="switch"
+              aria-checked={roundTrip}
+            />
+            <span
+              aria-hidden
+              className="
+                absolute inset-0 rounded-full transition
+                bg-gray-300
+                peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40
+                peer-checked:bg-brand
+              "
+            />
+            <span
+              aria-hidden
+              className="
+                absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition
+                peer-checked:translate-x-4
+              "
+            />
+          </span>
+          2 chiều
+        </label>
+
+        {/* VAT */}
+        <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
+          <span className="relative inline-flex h-6 w-10 items-center">
+            <input
+              type="checkbox"
+              checked={vat}
+              onChange={(e) => setVat(e.target.checked)}
+              className="peer sr-only"
+              role="switch"
+              aria-checked={vat}
+              title="Hóa đơn VAT chỉ xuất trong ngày"
+            />
+            <span
+              aria-hidden
+              className="
+                absolute inset-0 rounded-full transition
+                bg-gray-300
+                peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40
+                peer-checked:bg-brand
+              "
+            />
+            <span
+              aria-hidden
+              className="
+                absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition
+                peer-checked:translate-x-4
+              "
+            />
+          </span>
+          VAT
+        </label>
+
+        {/* Mã giảm giá: full-width trên mobile */}
+        <div className="basis-full sm:basis-auto grow min-w-0">
+          <label className="sr-only" htmlFor="promo">Mã giảm giá</label>
+          <input
+            id="promo"
+            value={promo}
+            onChange={(e) => setPromo(e.target.value)}
+            placeholder="Mã giảm giá"
+            className={`w-full ${RADIUS} border border-gray-300 bg-white shadow-sm px-3 py-2 ${RING}`}
+            inputMode="text"
+            autoCapitalize="characters"
+            aria-label="Mã giảm giá"
+          />
         </div>
       </div>
 
@@ -700,83 +815,12 @@ export default function BookingForm() {
         <OneFieldDateTime value={startAt} onChange={setStartAt} />
       </div>
 
-      {/* Switches */}
-      {/* Switches */}
-<div className="grid grid-cols-2 gap-3">
-  {/* 2 chiều */}
-  <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
-    <span className="relative inline-flex h-6 w-10 items-center">
-      {/* input ẩn + peer để điều khiển màu/knob */}
-      <input
-        type="checkbox"
-        checked={roundTrip}
-        onChange={(e) => setRoundTrip(e.target.checked)}
-        className="peer sr-only"
-        role="switch"
-        aria-checked={roundTrip}
-      />
-      {/* track */}
-      <span
-        aria-hidden
-        className="
-          absolute inset-0 rounded-full transition
-          bg-gray-300
-          peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40
-          peer-checked:bg-brand
-        "
-      />
-      {/* knob */}
-      <span
-        aria-hidden
-        className="
-          absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition
-          peer-checked:translate-x-4
-        "
-      />
-    </span>
-    2 chiều
-  </label>
-
-  {/* VAT */}
-  <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
-    <span className="relative inline-flex h-6 w-10 items-center">
-      <input
-        type="checkbox"
-        checked={vat}
-        onChange={(e) => setVat(e.target.checked)}
-        className="peer sr-only"
-        role="switch"
-        aria-checked={vat}
-        title="Hóa đơn VAT chỉ xuất trong ngày"
-      />
-      <span
-        aria-hidden
-        className="
-          absolute inset-0 rounded-full transition
-          bg-gray-300
-          peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40
-          peer-checked:bg-brand
-        "
-      />
-      <span
-        aria-hidden
-        className="
-          absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition
-          peer-checked:translate-x-4
-        "
-      />
-    </span>
-    VAT
-  </label>
-</div>
-
-
-      {/* CTA */}
+      {/* CTA dưới */}
       <div className="pt-2">
         <button
           type="button"
           onClick={onCheckPrice}
-          className="w-full bg-brand text-white font-semibold text-lg py-3 rounded-2xl shadow-sm hover:bg-brand-dark"
+          className={`w-full bg-brand text-white font-semibold text-lg py-3 ${RADIUS} shadow-sm hover:bg-brand-dark`}
         >
           Kiểm Tra Giá →
         </button>
