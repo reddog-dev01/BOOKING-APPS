@@ -1,0 +1,28 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: booking-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: secret   # đổi ở .env trong thực tế
+      POSTGRES_DB: booking
+    ports:
+      - "5432:5432"               # chỉ dev mới nên publish cổng
+    volumes:
+      - pg:/var/lib/postgresql/data
+      # - ./infra/db/init:/docker-entrypoint-initdb.d  # nếu muốn chạy file .sql/.sh init
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # networks:
+    #   - appnet                  # nếu bạn muốn tách mạng nội bộ
+volumes:
+  pg:
+    # driver: local
+# networks:
+#   appnet:
+#     driver: bridge
