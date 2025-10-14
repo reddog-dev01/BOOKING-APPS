@@ -1,41 +1,165 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleDot, MapPin, Plus, Repeat2, Minus, Plane, Route } from "lucide-react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  ReactNode,
+  useLayoutEffect,
+  useCallback,
+} from "react";
+import {
+  CircleDot,
+  MapPin,
+  Plus,
+  Repeat2,
+  Minus,
+  Plane,
+  Route,
+  CalendarClock,
+  Info,
+  X,
+} from "lucide-react";
+import { createPortal } from "react-dom";
 
-/** ================= Types ================= */
+/* ================= Hook & Portal ================= */
+function useIsMobile(breakpointPx = 640) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia(`(max-width:${breakpointPx - 1}px)`);
+    const on = () => setIsMobile(mql.matches);
+    on();
+    if (mql.addEventListener) {
+      mql.addEventListener("change", on);
+      return () => mql.removeEventListener("change", on);
+    } else {
+      // @ts-ignore Safari cũ
+      mql.addListener(on);
+      return () => {
+        // @ts-ignore
+        mql.removeListener(on);
+      };
+    }
+  }, [breakpointPx]);
+  return isMobile;
+}
+
+function Portal({ children }: { children: ReactNode }) {
+  const elRef = useRef<HTMLElement | null>(null);
+  if (!elRef.current && typeof document !== "undefined") {
+    elRef.current = document.createElement("div");
+  }
+  useLayoutEffect(() => {
+    const el = elRef.current!;
+    document.body.appendChild(el);
+    return () => {
+      document.body.removeChild(el);
+    };
+  }, []);
+  return elRef.current ? createPortal(children, elRef.current) : null;
+}
+
+/* ================= Types & Data ================= */
 type TripType = "airport" | "road";
 type Vehicle = { id: number; name: string; img: string; alt: string };
 
-/** ================= UI tokens ================= */
-// Focus ring brand
-const RING = "focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand-dark";
-// Bo góc đồng nhất
-const RADIUS = "rounded-xl";
-// Card chuẩn
-const CARD = `w-full ${RADIUS} border border-gray-300 bg-white shadow-sm ` + RING;
-// Nút dạng card (thêm min-w-0 tránh tràn)
-const CARD_BTN = CARD + " px-3 py-2.5 text-left min-w-0";
-// Chiều cao min đồng nhất
-const CARD_MINH = "min-h-[60px]";
-
-// Input group: container có bo góc; input & ô bên phải không bo góc; thêm min-w-0
-const INPUT_GROUP = CARD + " p-0 overflow-hidden flex items-stretch min-w-0";
-const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3";
-const INPUT_RIGHT = "shrink-0 grid place-items-center w-14 border-l border-gray-300";
-
-/** ================= Data ================== */
 const VEHICLES: Vehicle[] = [
-  { id: 2, name: "4 chỗ cốp rộng", img: "/vehicles/5seats.png",  alt: "Xe 4 chỗ cốp rộng" },
-  { id: 3, name: "7 chỗ",          img: "/vehicles/7seats.png",  alt: "Xe 7 chỗ" },
-  { id: 1, name: "4 chỗ cốp nhỏ",  img: "/vehicles/4seats.png",  alt: "Xe 4 chỗ cốp nhỏ" },
-  { id: 4, name: "16 chỗ",         img: "/vehicles/16seats.png", alt: "Xe 16 chỗ" },
-  { id: 6, name: "29 chỗ",         img: "/vehicles/29seats.png", alt: "Xe 29 chỗ" },
-  { id: 7, name: "45 chỗ",         img: "/vehicles/45seats.png", alt: "Xe 45 chỗ" },
+  { id: 2, name: "4 chỗ cốp rộng", img: "/vehicles/5seats.png", alt: "Xe 4 chỗ cốp rộng" },
+  { id: 3, name: "7 chỗ", img: "/vehicles/7seats.png", alt: "Xe 7 chỗ" },
+  { id: 1, name: "4 chỗ cốp nhỏ", img: "/vehicles/4seats.png", alt: "Xe 4 chỗ cốp nhỏ" },
+  { id: 4, name: "16 chỗ", img: "/vehicles/16seats.png", alt: "Xe 16 chỗ" },
+  { id: 6, name: "29 chỗ", img: "/vehicles/29seats.png", alt: "Xe 29 chỗ" },
+  { id: 7, name: "45 chỗ", img: "/vehicles/45seats.png", alt: "Xe 45 chỗ" },
 ];
 
-/** ============ Dropdown Loại xe ============ */
+/* ================= UI tokens ================= */
+const RING = "focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand-dark";
+const RADIUS = "rounded-xl";
+const CARD = `w-full ${RADIUS} border border-gray-300 bg-white shadow-sm ` + RING;
+const CARD_BTN = CARD + " px-3 py-2.5 text-left min-w-0";
+const CARD_MINH = "min-h-[56px]";
+const INPUT_GROUP = CARD + " p-0 overflow-hidden flex items-stretch min-w-0";
+const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3";
+const INPUT_RIGHT = "shrink-0 grid place-items-center w-12 border-l border-gray-300";
+
+/* ================= Consts & helpers ================= */
+const NOIBAI = "Sân bay Nội Bài";
+const fmtMoney = (n: number) => n.toLocaleString("vi-VN") + "đ";
+
+// Thông điệp lỗi chung cho giờ chờ
+const WAIT_ERR_MSG =
+  "Quý khách nhập sai giờ chờ. Vui lòng nhập số giờ ≥ 0 (ví dụ: 1; 1.5; 2).";
+
+// parse số giờ: "", "01", "1.5", "1,5" → số ≥ 0; chuỗi trống ⇒ 0; sai định dạng/âm ⇒ null
+const parseHoursLoose = (s: string): number | null => {
+  if (s == null || s.trim() === "") return 0; // mặc định 0 khi không nhập
+  const normalized = s.replace(",", ".").trim();
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n < 0) return null; // sai định dạng/âm → null
+  return n;
+};
+
+/** Tính phí chờ theo luật demo:
+ * - ≤1h: 0
+ * - >1h: base = 30k
+ * - Mỗi giờ full sau đó: +30k
+ * - Lẻ: đúng 0.5h +20k; <0.5h +0; >0.5h +30k
+ */
+const calcWaitFee = (hours: number) => {
+  if (!(hours > 1)) return 0;
+  let fee = 30000;
+  const extraBeyondSecond = hours - 2;
+  if (extraBeyondSecond <= 0) return fee;
+
+  const full = Math.floor(extraBeyondSecond);
+  fee += full * 30000;
+
+  const frac = extraBeyondSecond - full;
+  if (frac === 0) return fee;
+  if (frac === 0.5) return fee + 20000;
+  if (frac < 0.5) return fee;
+  return fee + 30000;
+};
+
+/** Helper: gán giá trị cho cả object-ref và callback-ref an toàn */
+function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
+  if (!ref) return;
+  if (typeof ref === "function") {
+    ref(value);
+  } else {
+    (ref as React.MutableRefObject<T | null>).current = value;
+  }
+}
+
+/* ====== BẢNG GIÁ DEMO theo loại xe (1 chiều) ====== */
+const BASE_PRICE_BY_VEHICLE: Record<number, number> = {
+  1: 200_000,
+  2: 210_000,
+  3: 260_000,
+  4: 600_000,
+  6: 1_200_000,
+  7: 1_500_000,
+};
+const roundTo = (n: number, step = 1000) => Math.round(n / step) * step;
+
+/** Tính tổng tiền quote (demo) */
+function calcQuoteTotal(params: {
+  vehicleTypeId: number;
+  roundTrip: boolean;
+  waitFee: number;
+  vat: boolean;
+}) {
+  const { vehicleTypeId, roundTrip, waitFee, vat } = params;
+  const base = BASE_PRICE_BY_VEHICLE[vehicleTypeId] ?? BASE_PRICE_BY_VEHICLE[2];
+  let subtotal = base + (roundTrip ? base : 0) + waitFee;
+  if (vat) subtotal *= 1.1;
+  return roundTo(subtotal, 1000);
+}
+
+/* ================= VehicleDropdown ================= */
 function VehicleDropdown({
   value,
   onChange,
@@ -45,46 +169,52 @@ function VehicleDropdown({
   onChange: (id: number) => void;
   label?: string;
 }) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
-  const [focusIdx, setFocusIdx] = useState<number>(0);
+  const [focusIdx, setFocusIdx] = useState(0);
+
   const btnRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const setItemRef = (i: number) => (el: HTMLButtonElement | null) => { itemRefs.current[i] = el; };
+  const setItemRef = (i: number) => (el: HTMLButtonElement | null) => {
+    itemRefs.current[i] = el;
+  };
 
   const selected = useMemo(() => VEHICLES.find((v) => v.id === value), [value]);
 
-  // đo width menu và clamp theo viewport để không tràn mobile
-  const [menuW, setMenuW] = useState<number>(320);
+  // width theo trigger/viewport
+  const [menuW, setMenuW] = useState(320);
   useEffect(() => {
     const measure = () => {
       const btnW = Math.round(btnRef.current?.getBoundingClientRect().width ?? 320);
-      const vw   = Math.max(320, window.innerWidth);
-      const maxW = vw - 32; // chừa 16px margin 2 bên
-      setMenuW(Math.max(260, Math.min(btnW, maxW)));
+      const vw = Math.max(320, window.innerWidth);
+      setMenuW(Math.max(260, Math.min(btnW, vw - 16)));
     };
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (!open) return;
-      const t = e.target as Node;
-      if (!btnRef.current?.contains(t) && !listRef.current?.contains(t)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
-
+  // Outside click (mobile-safe)
   useEffect(() => {
     if (!open) return;
-    const idx = VEHICLES.findIndex((v) => v.id === value);
-    const safe = idx < 0 ? 0 : idx;
-    setFocusIdx(safe);
-    setTimeout(() => itemRefs.current[safe]?.focus(), 0);
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (btnRef.current?.contains(t)) return;
+      if (listRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, [open]);
+
+  // Focus item đang chọn khi mở
+  useEffect(() => {
+    if (!open) return;
+    const idx = Math.max(0, VEHICLES.findIndex((v) => v.id === value));
+    setFocusIdx(idx < 0 ? 0 : idx);
+    setTimeout(() => itemRefs.current[idx]?.focus(), 0);
   }, [open, value]);
 
   const onKeyDownBtn = (e: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -101,14 +231,14 @@ function VehicleDropdown({
       btnRef.current?.focus();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      const next = (focusIdx + 1) % VEHICLES.length;
-      setFocusIdx(next);
-      itemRefs.current[next]?.focus();
+      const n = (focusIdx + 1) % VEHICLES.length;
+      setFocusIdx(n);
+      itemRefs.current[n]?.focus();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      const prev = (focusIdx - 1 + VEHICLES.length) % VEHICLES.length;
-      setFocusIdx(prev);
-      itemRefs.current[prev]?.focus();
+      const p = (focusIdx - 1 + VEHICLES.length) % VEHICLES.length;
+      setFocusIdx(p);
+      itemRefs.current[p]?.focus();
     }
   };
 
@@ -118,8 +248,84 @@ function VehicleDropdown({
     btnRef.current?.focus();
   };
 
+  // Toạ độ popover (Portal mobile)
+  const [coords, setCoords] = useState({ left: 0, top: 0, width: 320 });
+  const calcCoords = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+
+    const vp = (window as any).visualViewport as VisualViewport | undefined;
+    const vw = vp?.width ?? window.innerWidth;
+    const offsetLeft = vp?.offsetLeft ?? 0;
+    const offsetTop = vp?.offsetTop ?? 0;
+
+    const w = Math.min(menuW, vw - 16);
+    const left = Math.min(Math.max(8, r.left + offsetLeft), vw - w - 8);
+    const top = r.bottom + offsetTop + 4;
+
+    setCoords({ left, top, width: w });
+  };
+  useEffect(() => {
+    if (!open || !isMobile) return;
+    calcCoords();
+    const onReposition = () => calcCoords();
+    const vp = (window as any).visualViewport as VisualViewport | undefined;
+
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, { passive: true });
+    vp?.addEventListener("resize", onReposition);
+    vp?.addEventListener("scroll", onReposition);
+
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition as any);
+      vp?.removeEventListener("resize", onReposition);
+      vp?.removeEventListener("scroll", onReposition);
+    };
+  }, [open, isMobile, menuW]);
+
+  const LIST_FRAME = "overflow-auto overflow-x-auto max-h-[60vh] overscroll-contain";
+  const ITEM_CLS =
+    "w-full px-3 py-2 flex items-center gap-3 text-left hover:bg-brand/10 focus:bg-brand/10 focus:outline-none";
+  const IMG_WRAPPER = "relative w-10 h-7 shrink-0";
+
+  const ListUI = (
+    <ul
+      ref={listRef}
+      role="listbox"
+      tabIndex={-1}
+      onKeyDown={onKeyDownList}
+      className={`${RADIUS} border border-gray-300 bg-white shadow-xl ${LIST_FRAME}`}
+      style={{ WebkitOverflowScrolling: "touch" as any }}
+    >
+      {VEHICLES.map((v, idx) => {
+        const active = v.id === value;
+        return (
+          <li key={v.id}>
+            <button
+              ref={setItemRef(idx)}
+              type="button"
+              onClick={() => select(v.id)}
+              role="option"
+              aria-selected={active}
+              className={`${ITEM_CLS} ${active ? "bg-brand/10" : ""}`}
+            >
+              <span className={IMG_WRAPPER}>
+                <Image src={v.img} alt={v.alt} fill sizes="40px" className="object-contain" />
+              </span>
+              <span className="flex-1 leading-tight whitespace-nowrap truncate pr-4 min-w-0 text-[15px]">
+                {v.name}
+              </span>
+              {active && <span className="text-brand font-semibold shrink-0">✓</span>}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0 isolate">
       <label className="text-sm text-gray-700">{label}</label>
 
       <button
@@ -133,74 +339,63 @@ function VehicleDropdown({
         title={selected?.name}
       >
         <div className="flex items-center justify-between min-w-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="relative w-12 h-8 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className={IMG_WRAPPER}>
               <Image
                 src={selected?.img ?? "/vehicles/4seats.png"}
                 alt={selected?.alt ?? "Loại xe"}
                 fill
-                sizes="48px"
+                sizes="40px"
                 className="object-contain"
                 priority
               />
             </span>
-            <span className="font-medium text-gray-900 leading-tight whitespace-nowrap truncate">
+            <span className="font-medium text-gray-900 leading-tight whitespace-nowrap truncate min-w-0 text-[15px]">
               {selected?.name ?? "Chọn loại xe"}
             </span>
           </div>
-          <span aria-hidden className="text-gray-500 ml-2">▾</span>
+          <span aria-hidden className="text-gray-500 ml-2 shrink-0">▾</span>
         </div>
       </button>
 
-      {open && (
-        <ul
-          ref={listRef}
-          role="listbox"
-          tabIndex={-1}
-          onKeyDown={onKeyDownList}
-          className={`absolute z-50 mt-1 ${RADIUS} border border-gray-300 bg-white shadow-xl overflow-hidden`}
-          style={{ width: `${menuW}px`, maxWidth: "calc(100vw - 32px)" }}
-        >
-          {VEHICLES.map((v, idx) => {
-            const active = v.id === value;
-            return (
-              <li key={v.id}>
-                <button
-                  ref={setItemRef(idx)}
-                  type="button"
-                  onClick={() => select(v.id)}
-                  role="option"
-                  aria-selected={active}
-                  className={[
-                    "w-full px-4 py-3 flex items-center gap-4 text-left",
-                    "hover:bg-brand/10 focus:bg-brand/10 focus:outline-none",
-                    active ? "bg-brand/10" : "",
-                  ].join(" ")}
-                >
-                  <span className="relative w-14 h-9 shrink-0">
-                    <Image src={v.img} alt={v.alt} fill sizes="56px" className="object-contain" />
-                  </span>
-                  <span className="flex-1 leading-tight whitespace-nowrap truncate pr-6">
-                    {v.name}
-                  </span>
-                  {active && <span className="text-brand font-semibold">✓</span>}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {open &&
+        (isMobile ? (
+          <Portal>
+            <div
+              className="fixed z-[9999]"
+              style={{
+                left: coords.left,
+                top: coords.top,
+                width: coords.width,
+                maxWidth: "calc(100vw - 16px)",
+              }}
+            >
+              {ListUI}
+            </div>
+          </Portal>
+        ) : (
+          <div
+            className="absolute z-[60] mt-1"
+            style={{ width: `${menuW}px`, maxWidth: "calc(100vw - 16px)" }}
+          >
+            {ListUI}
+          </div>
+        ))}
     </div>
   );
 }
 
-/** ===== OneFieldDateTime ===== */
+/* ================= OneFieldDateTime ================= */
 function OneFieldDateTime({
-  value, onChange,
+  value,
+  onChange,
   label = "Thời gian đi",
   minuteStep = 5,
-  minDate, maxDate,
+  minDate,
+  maxDate,
   minOffsetMinutes = 30,
+  showError,
+  triggerRef,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -209,18 +404,19 @@ function OneFieldDateTime({
   minDate?: string;
   maxDate?: string;
   minOffsetMinutes?: number;
+  showError?: boolean;
+  triggerRef?: React.Ref<HTMLButtonElement>;
 }) {
   type Phase = "date" | "hour" | "minute";
+  const isMobile = useIsMobile();
 
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("date");
 
-  // committed
-  const [committedDate, setCommittedDate] = useState<string>("");
+  const [committedDate, setCommittedDate] = useState("");
   const [committedHour, setCommittedHour] = useState<number | null>(null);
   const [committedMinute, setCommittedMinute] = useState<number | null>(null);
 
-  // draft
   const [draftDate, setDraftDate] = useState<string | null>(null);
   const [draftHour, setDraftHour] = useState<number | null>(null);
   const [draftMinute, setDraftMinute] = useState<number | null>(null);
@@ -229,67 +425,92 @@ function OneFieldDateTime({
   const popRef = useRef<HTMLDivElement>(null);
   const [triggerW, setTriggerW] = useState(320);
 
-  // helpers (chỉ 1 lần)
   const z2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  const toYMD = (d: Date) => `${d.getFullYear()}-${z2(d.getMonth() + 1)}-${z2(d.getDate())}`;
+  const toYMD = (d: Date) =>
+    `${d.getFullYear()}-${z2(d.getMonth() + 1)}-${z2(d.getDate())}`;
   const parseYMD = (s?: string | null) => {
     if (!s) return null;
     const [y, m, d] = s.split("-").map((x) => parseInt(x, 10));
     if (![y, m, d].every(Number.isFinite)) return null;
     return new Date(y, m - 1, d);
   };
-  const resetDraft = () => { setDraftDate(null); setDraftHour(null); setDraftMinute(null); setPhase("date"); };
+  const resetDraft = () => {
+    setDraftDate(null);
+    setDraftHour(null);
+    setDraftMinute(null);
+    setPhase("date");
+  };
 
-  // đo theo trigger và viewport để không tràn
+  // đo width
   useEffect(() => {
     const measure = () => {
       const w = Math.round(btnRef.current?.getBoundingClientRect().width ?? 320);
       const vw = Math.max(320, window.innerWidth);
-      const maxW = vw - 32;
-      setTriggerW(Math.max(260, Math.min(w, maxW)));
+      setTriggerW(Math.max(240, Math.min(w, vw - 16)));
     };
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
 
+  // sync value
   useEffect(() => {
-    if (!value) { setCommittedDate(""); setCommittedHour(null); setCommittedMinute(null); return; }
+    if (!value) {
+      setCommittedDate("");
+      setCommittedHour(null);
+      setCommittedMinute(null);
+      return;
+    }
     const [d, t] = value.split("T");
     setCommittedDate(d || "");
     if (t) {
-      const [hh, mm] = t.slice(0, 5).split(":").map((x) => parseInt(x, 10));
+      const [hh, mm] = t
+        .slice(0, 5)
+        .split(":")
+        .map((x) => parseInt(x, 10));
       setCommittedHour(Number.isFinite(hh) ? hh : null);
       setCommittedMinute(Number.isFinite(mm) ? mm : null);
-    } else { setCommittedHour(null); setCommittedMinute(null); }
+    } else {
+      setCommittedHour(null);
+      setCommittedMinute(null);
+    }
   }, [value]);
 
+  // Outside click
   useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (!open) return;
-      const t = e.target as Node;
-      if (!btnRef.current?.contains(t) && !popRef.current?.contains(t)) { setOpen(false); resetDraft(); }
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (btnRef.current?.contains(t)) return;
+      if (popRef.current?.contains(t)) return;
+      setOpen(false);
+      resetDraft();
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (!open) return;
-      if (e.key === "Escape") { e.preventDefault(); setOpen(false); resetDraft(); btnRef.current?.focus(); }
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
   }, [open]);
 
   // calendar
   const now = new Date();
-  const minDT = new Date(now.getTime() + Math.max(0, minOffsetMinutes) * 60 * 1000);
-  const minDProp = parseYMD(minDate) ?? new Date(minDT.getFullYear(), minDT.getMonth(), minDT.getDate());
+  const minDT = new Date(
+    now.getTime() + Math.max(0, minOffsetMinutes) * 60 * 1000
+  );
+  const minDProp =
+    parseYMD(minDate) ??
+    new Date(minDT.getFullYear(), minDT.getMonth(), minDT.getDate());
   const maxDProp = parseYMD(maxDate) ?? null;
 
   const today = { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
-  const [viewYM, setViewYM] = useState<{ y: number; m: number }>({ y: today.y, m: today.m });
+  const [viewYM, setViewYM] = useState<{ y: number; m: number }>({
+    y: today.y,
+    m: today.m,
+  });
 
-  const monthLabel = new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" })
-    .format(new Date(viewYM.y, viewYM.m, 1));
+  const monthLabel = new Intl.DateTimeFormat("vi-VN", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(viewYM.y, viewYM.m, 1));
 
   const monthMatrix = useMemo(() => {
     const first = new Date(viewYM.y, viewYM.m, 1);
@@ -310,37 +531,64 @@ function OneFieldDateTime({
 
   const MINUTES = useMemo(() => {
     const s = Math.max(1, Math.min(15, minuteStep));
-    const arr: number[] = []; for (let m = 0; m < 60; m += s) arr.push(m); return arr;
+    const arr: number[] = [];
+    for (let m = 0; m < 60; m += s) arr.push(m);
+    return arr;
   }, [minuteStep]);
 
   const sameDate = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
 
   const isDateDisabled = (d: Date) => {
     const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (minDProp && base < new Date(minDProp.getFullYear(), minDProp.getMonth(), minDProp.getDate())) return true;
-    if (maxDProp && base > new Date(maxDProp.getFullYear(), maxDProp.getMonth(), maxDProp.getDate())) return true;
+    if (
+      minDProp &&
+      base < new Date(minDProp.getFullYear(), minDProp.getMonth(), minDProp.getDate())
+    )
+      return true;
+    if (
+      maxDProp &&
+      base > new Date(maxDProp.getFullYear(), maxDProp.getMonth(), maxDProp.getDate())
+    )
+      return true;
     return false;
   };
 
   const minMinuteOfDay = useMemo(() => {
     const dd = parseYMD(draftDate);
     if (!dd) return null;
-    if (!(dd.getFullYear() === minDT.getFullYear() && dd.getMonth() === minDT.getMonth() && dd.getDate() === minDT.getDate())) return null;
+    if (
+      !(
+        dd.getFullYear() === minDT.getFullYear() &&
+        dd.getMonth() === minDT.getMonth() &&
+        dd.getDate() === minDT.getDate()
+      )
+    )
+      return null;
     return minDT.getHours() * 60 + minDT.getMinutes();
   }, [draftDate]);
 
-  const hourDisabled   = (h: number) => !!(minMinuteOfDay && h * 60 + 59 < minMinuteOfDay);
-  const minuteDisabled = (h: number | null, m: number) => !!(minMinuteOfDay && h !== null && h * 60 + m < minMinuteOfDay);
+  const hourDisabled = (h: number) => !!(minMinuteOfDay && h * 60 + 59 < minMinuteOfDay);
+  const minuteDisabled = (h: number | null, m: number) =>
+    !!(minMinuteOfDay && h !== null && h * 60 + m < minMinuteOfDay);
+
+  const z2str = (n: number) => String(n).padStart(2, "0");
 
   const pretty = () => {
-    if (!committedDate || committedHour === null || committedMinute === null) return "Thời gian đi";
+    if (!committedDate || committedHour === null || committedMinute === null)
+      return "Thời gian đi";
     const [, m, d] = committedDate.split("-");
-    return `${d}/${m} ${z2(committedHour)}:${z2(committedMinute)}`;
+    return `${d}/${m} ${z2str(committedHour)}:${z2str(committedMinute)}`;
   };
 
-  const openPicker = () => { setOpen((s) => !s); setPhase("date"); resetDraft(); setViewYM({ y: today.y, m: today.m }); };
-
+  const openPicker = () => {
+    setOpen((s) => !s);
+    setPhase("date");
+    resetDraft();
+    setViewYM({ y: today.y, m: today.m });
+  };
   const onPickDate = (d: Date) => {
     if (isDateDisabled(d)) return;
     const ymd = toYMD(d);
@@ -356,7 +604,7 @@ function OneFieldDateTime({
   const onPickMinute = (m: number) => {
     if (minuteDisabled(draftHour, m)) return;
     setDraftMinute(m);
-    const iso = `${draftDate}T${z2(draftHour ?? 0)}:${z2(m)}`;
+    const iso = `${draftDate}T${z2str(draftHour ?? 0)}:${z2str(m)}`;
     onChange(iso);
     setOpen(false);
     setCommittedDate(draftDate || "");
@@ -366,180 +614,555 @@ function OneFieldDateTime({
     btnRef.current?.focus();
   };
 
-  const canPrev = !minDProp || new Date(viewYM.y, viewYM.m, 1) > new Date(minDProp.getFullYear(), minDProp.getMonth(), 1);
-  const canNext = !maxDProp || new Date(viewYM.y, viewYM.m, 1) < new Date(maxDProp.getFullYear(), maxDProp.getMonth(), 1);
+  // Toạ độ panel khi mobile
+  const [panelPos, setPanelPos] = useState({ left: 0, top: 0, width: triggerW });
+  const calcPanel = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const vp = (window as any).visualViewport as VisualViewport | undefined;
+    const vw = vp?.width ?? window.innerWidth;
+    const offsetLeft = vp?.offsetLeft ?? 0;
+    const offsetTop = vp?.offsetTop ?? 0;
 
-  // Nút số
-  const NUM_BTN      = "px-3 py-2 sm:py-3 text-base sm:text-lg leading-none select-none bg-transparent border-0 focus:outline-none focus-visible:underline";
+    const width = Math.min(triggerW, vw - 16);
+    const left = Math.min(Math.max(8, r.left + offsetLeft), vw - width - 8);
+    const top = r.bottom + offsetTop + 4;
+
+    setPanelPos({ left, top, width });
+  };
+  useEffect(() => {
+    if (!open || !isMobile) return;
+    calcPanel();
+    const onReposition = () => calcPanel();
+    const vp = (window as any).visualViewport as VisualViewport | undefined;
+
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, { passive: true });
+    vp?.addEventListener("resize", onReposition);
+    vp?.addEventListener("scroll", onReposition);
+
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition as any);
+      vp?.removeEventListener("resize", onReposition);
+      vp?.removeEventListener("scroll", onReposition);
+    };
+  }, [open, triggerW, isMobile]);
+
+  const FRAME =
+    "overflow-auto overflow-x-auto max-h-[70vh] overscroll-contain";
+  const NUM_BTN =
+    "px-2.5 py-2 text-[14px] leading-none select-none bg-transparent border-0 focus:outline-none focus-visible:underline";
   const NUM_DISABLED = "text-gray-300 cursor-not-allowed";
-  const NUM_NORMAL   = "text-gray-800 hover:text-brand";
-  const NUM_ACTIVE   = "text-brand font-semibold";
-  const NUM_TODAY    = "text-brand";
+  const NUM_NORMAL = "text-gray-800 hover:text-brand";
+  const NUM_ACTIVE = "text-brand font-semibold";
+  const NUM_TODAY = "text-brand";
+
+  const PanelUI = (
+    <div
+      ref={popRef}
+      role="dialog"
+      aria-label="Chọn thời gian đi"
+      className={`${RADIUS} border border-gray-300 bg-white shadow-xl p-3 ${FRAME}`}
+      style={{ WebkitOverflowScrolling: "touch" as any }}
+    >
+      {phase === "date" && (
+        <div>
+          <div className="flex items-center justify-between mb-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => {
+                const { y, m } = viewYM;
+                const prevM = m === 0 ? 11 : m - 1;
+                const prevY = m === 0 ? y - 1 : y;
+                if (
+                  !minDProp ||
+                  new Date(y, m, 1) >
+                    new Date(
+                      minDProp.getFullYear(),
+                      minDProp.getMonth(),
+                      1
+                    )
+                ) {
+                  setViewYM({ y: prevY, m: prevM });
+                }
+              }}
+              className={`${NUM_BTN} ${NUM_NORMAL}`}
+              aria-label="Tháng trước"
+            >
+              ‹
+            </button>
+            <div className="font-semibold text-base truncate">{monthLabel}</div>
+            <button
+              type="button"
+              onClick={() => {
+                const { y, m } = viewYM;
+                const nextM = m === 11 ? 0 : m + 1;
+                const nextY = m === 11 ? y + 1 : y;
+                if (
+                  !maxDProp ||
+                  new Date(y, m, 1) < new Date(maxDProp.getFullYear(), maxDProp.getMonth(), 1)
+                ) {
+                  setViewYM({ y: nextY, m: nextM });
+                }
+              }}
+              className={`${NUM_BTN} ${NUM_NORMAL}`}
+              aria-label="Tháng sau"
+            >
+              ›
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 text-center text-[11px] text-gray-500 mb-1.5">
+            {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map((w) => (
+              <div key={w} className="py-0.5">
+                {w}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-0.5">
+            {monthMatrix.flat().map(({ date: d, inMonth }, idx) => {
+              const ymd = toYMD(d);
+              const isToday =
+                d.getFullYear() === now.getFullYear() &&
+                d.getMonth() === now.getMonth() &&
+                d.getDate() === now.getDate();
+              const isDraftSel = draftDate === ymd;
+              const disabled = isDateDisabled(d) || !inMonth;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => onPickDate(d)}
+                  disabled={disabled}
+                  className={[
+                    "h-9 sm:h-10 relative flex items-center justify-center rounded-lg",
+                    NUM_BTN,
+                    disabled
+                      ? NUM_DISABLED
+                      : isDraftSel
+                      ? NUM_ACTIVE
+                      : isToday
+                      ? NUM_TODAY
+                      : NUM_NORMAL,
+                  ].join(" ")}
+                  aria-label={`Chọn ngày ${d.getDate()}`}
+                >
+                  {d.getDate()}
+                  {isDraftSel && (
+                    <span
+                      className="absolute inset-0 rounded-lg ring-2 ring-brand pointer-events-none"
+                      aria-hidden
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {phase === "hour" && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className={`${NUM_BTN} ${NUM_NORMAL}`}
+              onClick={() => setPhase("date")}
+            >
+              ← Ngày
+            </button>
+            <div className="text-xs text-gray-600">{draftDate}</div>
+          </div>
+          <div className="grid grid-cols-4 gap-0.5">
+            {Array.from({ length: 24 }, (_, h) => h).map((h) => {
+              const active = h === draftHour;
+              const disabled = hourDisabled(h);
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => onPickHour(h)}
+                  disabled={disabled}
+                  className={[
+                    "text-center relative rounded",
+                    NUM_BTN,
+                    disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL,
+                  ].join(" ")}
+                  aria-label={`Chọn ${String(h).padStart(2, "0")} giờ`}
+                >
+                  {String(h).padStart(2, "0")}:00
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {phase === "minute" && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className={`${NUM_BTN} ${NUM_NORMAL}`}
+              onClick={() => setPhase("hour")}
+            >
+              ← Giờ
+            </button>
+            <div className="text-xs text-gray-600">
+              {draftDate} • {String(draftHour ?? 0).padStart(2, "0")}:__
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-0.5">
+            {MINUTES.map((m) => {
+              const active = m === draftMinute;
+              const disabled = minuteDisabled(draftHour, m);
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => onPickMinute(m)}
+                  disabled={disabled}
+                  className={[
+                    "text-center relative rounded",
+                    NUM_BTN,
+                    disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL,
+                  ].join(" ")}
+                  aria-label={`Chọn phút ${String(m).padStart(2, "0")}`}
+                >
+                  {String(m).padStart(2, "0")}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-gray-500 text-right">
+            Chọn phút là lưu & đóng ngay.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0 isolate">
       <label className="text-sm text-gray-700">{label}</label>
-
       <button
-        ref={btnRef}
+        ref={(node) => {
+          btnRef.current = node;
+          setExternalRef(triggerRef, node); // đồng bộ ra parent
+        }}
         type="button"
         onClick={openPicker}
         className={`${CARD_BTN} ${CARD_MINH}`}
         aria-expanded={open}
         aria-haspopup="dialog"
       >
-        <div className="flex items-center gap-3 min-w-0">
-          <svg width="18" height="18" viewBox="0 0 24 24" className="text-brand shrink-0" aria-hidden>
-            <path fill="currentColor" d="M7 2h2v2h6V2h2v2h3v4H4V4h3V2zM4 10h16v10H4z"/>
-          </svg>
-          <span className="font-medium truncate text-gray-900">{pretty()}</span>
-          <span className="ml-auto text-gray-500" aria-hidden>▾</span>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <CalendarClock className="h-5 w-5 text-brand shrink-0" aria-hidden />
+          <div className="font-medium truncate text-gray-900 min-w-0 text-[15px]">
+            {pretty()}
+          </div>
+          <span className="ml-auto text-gray-500 shrink-0" aria-hidden>
+            ▾
+          </span>
         </div>
       </button>
 
-      {open && (
-        <div
-          ref={popRef}
-          role="dialog"
-          aria-label="Chọn thời gian đi"
-          className={`absolute z-50 mt-1 ${RADIUS} border border-gray-300 bg-white shadow-xl p-4`}
-          style={{ width: `${triggerW}px`, maxWidth: "calc(100vw - 32px)" }}
-        >
-          {phase === "date" && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  type="button"
-                  onClick={() => canPrev && setViewYM(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
-                  disabled={!canPrev}
-                  className={`${NUM_BTN} ${canPrev ? NUM_NORMAL : NUM_DISABLED}`}
-                  aria-label="Tháng trước"
-                >‹</button>
-                <div className="font-semibold text-lg">{monthLabel}</div>
-                <button
-                  type="button"
-                  onClick={() => canNext && setViewYM(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
-                  disabled={!canNext}
-                  className={`${NUM_BTN} ${canNext ? NUM_NORMAL : NUM_DISABLED}`}
-                  aria-label="Tháng sau"
-                >›</button>
-              </div>
-
-              <div className="grid grid-cols-7 text-center text-xs text-gray-500 mb-2">
-                {["CN","T2","T3","T4","T5","T6","T7"].map((w) => <div key={w} className="py-1">{w}</div>)}
-              </div>
-
-              <div className="grid grid-cols-7 gap-1">
-                {monthMatrix.flat().map(({ date: d, inMonth }, idx) => {
-                  const ymd = toYMD(d);
-                  const isToday = d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
-                  const isDraftSel = draftDate === ymd;
-                  const disabled = isDateDisabled(d) || !inMonth;
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => onPickDate(d)}
-                      disabled={disabled}
-                      className={[
-                        "h-10 sm:h-12 relative flex items-center justify-center rounded-lg",
-                        NUM_BTN,
-                        disabled ? NUM_DISABLED : isDraftSel ? NUM_ACTIVE : isToday ? NUM_TODAY : NUM_NORMAL
-                      ].join(" ")}
-                      aria-label={`Chọn ngày ${d.getDate()}`}
-                    >
-                      {d.getDate()}
-                      {isDraftSel && (
-                        <span className="absolute inset-0 rounded-lg ring-2 ring-brand pointer-events-none" aria-hidden />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {phase === "hour" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <button type="button" className={`${NUM_BTN} ${NUM_NORMAL}`} onClick={() => setPhase("date")}>← Ngày</button>
-                <div className="text-sm text-gray-600">{draftDate}</div>
-              </div>
-              <div className="grid grid-cols-4 gap-1">
-                {Array.from({ length: 24 }, (_, h) => h).map((h) => {
-                  const active = h === draftHour;
-                  const disabled = hourDisabled(h);
-                  return (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={() => onPickHour(h)}
-                      disabled={disabled}
-                      className={[
-                        "text-center relative rounded",
-                        NUM_BTN,
-                        disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL
-                      ].join(" ")}
-                      aria-label={`Chọn ${z2(h)} giờ`}
-                    >
-                      {z2(h)}:00
-                      {active && <span className="absolute inset-x-2 -bottom-1 h-[2px] rounded" aria-hidden />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {phase === "minute" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <button type="button" className={`${NUM_BTN} ${NUM_NORMAL}`} onClick={() => setPhase("hour")}>← Giờ</button>
-                <div className="text-sm text-gray-600">{draftDate} • {z2(draftHour ?? 0)}:__</div>
-              </div>
-              <div className="grid grid-cols-4 gap-1">
-                {MINUTES.map((m) => {
-                  const active = m === draftMinute;
-                  const disabled = minuteDisabled(draftHour, m);
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => onPickMinute(m)}
-                      disabled={disabled}
-                      className={[
-                        "text-center relative rounded",
-                        NUM_BTN,
-                        disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL
-                      ].join(" ")}
-                      aria-label={`Chọn phút ${z2(m)}`}
-                    >
-                      {z2(m)}
-                      {active && <span className="absolute inset-x-4 -bottom-1 h-[2px] rounded" aria-hidden />}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-gray-500 text-right">Chọn phút là lưu & đóng ngay.</p>
-            </div>
-          )}
-        </div>
+      {showError && !value && (
+        <p className="text-[12px] text-rose-600 mt-1">
+          Xin vui lòng chọn Thời gian đi.
+        </p>
       )}
+
+      {open &&
+        (isMobile ? (
+          <Portal>
+            {/* FIX: đúng lớp z-index */}
+            <div
+              className="fixed z-[9999]"
+              style={{
+                left: panelPos.left,
+                top: panelPos.top,
+                width: panelPos.width,
+                maxWidth: "calc(100vw - 16px)",
+              }}
+            >
+              {PanelUI}
+            </div>
+          </Portal>
+        ) : (
+          <div
+            ref={popRef}
+            className="absolute z-[60] mt-1"
+            style={{ width: `${triggerW}px`, maxWidth: "calc(100vw - 16px)" }}
+          >
+            {PanelUI}
+          </div>
+        ))}
     </div>
   );
 }
 
-/** ================= Main Form ================= */
+/* ================= ConfirmPriceModal (Backdrop/X/Esc CLOSE ngay, không bật cảnh báo) ================= */
+function ConfirmPriceModal({
+  open,
+  onClose,
+  onConfirm,
+  price,
+  route,
+  timeLabel,
+  defaultPhone = "",
+  defaultName = "",
+  submitting = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (payload: { phone: string; name: string }) => void;
+  price: number;
+  route: string;
+  timeLabel: string;
+  defaultPhone?: string;
+  defaultName?: string;
+  submitting?: boolean;
+}) {
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // KHÔNG reset state khi đóng để giữ dữ liệu đã gõ
+  const [phone, setPhone] = useState(defaultPhone);
+  const [name, setName] = useState(defaultName);
+  const [touched, setTouched] = useState(false);
+
+  // NEW: cờ đang đóng modal để chặn onBlur bật touched
+  const closingRef = useRef(false);
+
+  const attemptClose = useCallback(() => {
+    closingRef.current = true; // báo là đang đóng -> chặn onBlur
+    onClose();                 // đóng modal (parent setShowConfirm(false))
+    // hạ cờ sau khi unmount & event blur kết thúc
+    setTimeout(() => { closingRef.current = false; }, 0);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    // Focus SĐT khi mở
+    const t = setTimeout(() => phoneRef.current?.focus({ preventScroll: true }), 50);
+
+    // Esc → đóng
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") attemptClose();
+    };
+    document.addEventListener("keydown", onEsc, { passive: true });
+
+    // Outside click: bắt ở capture để ưu tiên
+    const onDocPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (modalRef.current && !modalRef.current.contains(t)) {
+        attemptClose();
+      }
+    };
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+
+    // Khóa scroll nền
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("keydown", onEsc);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, attemptClose]);
+
+  if (!open) return null;
+
+  const phoneValid = /^\s*(0|\+84)\d{8,10}\s*$/.test(phone || "");
+  const nameValid = (name || "").trim().length > 1;
+  const canSubmit = phoneValid && nameValid && !submitting;
+
+  return (
+    <Portal>
+      {/* overlay: click là đóng ngay */}
+      <div
+        className="fixed inset-0 z-[10000] bg-black/40"
+        onMouseDown={attemptClose}
+        aria-hidden
+      />
+
+      {/* modal layer */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalTitle"
+        className="fixed inset-0 z-[10001] grid place-items-center p-4"
+      >
+        {/* container modal: chặn lan sự kiện ra overlay */}
+        <div
+          ref={modalRef}
+          className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* header */}
+          <div className="bg-brand text-white px-4 py-3 flex items-center gap-2 relative">
+            <Info className="h-5 w-5 shrink-0" aria-hidden />
+            <h3 id="modalTitle" className="font-semibold tracking-wide">
+              XÁC NHẬN THÔNG TIN
+            </h3>
+
+            {/* NEW: nút X đóng ngay bằng onMouseDown (tránh blur) */}
+            <button
+              type="button"
+              aria-label="Đóng"
+              onMouseDown={attemptClose}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50"
+              title="Đóng"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+          </div>
+
+          {/* body */}
+          <div className="p-4 space-y-3">
+            <p className="text-center text-[15px] text-gray-700">
+              Giá cước tạm tính, chưa bao gồm phí cầu đường phát sinh.
+            </p>
+
+            <div className="text-center">
+              <div className="text-4xl font-extrabold text-orange-500 leading-tight">
+                {fmtMoney(price)}
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-600 border-t pt-3">
+              <div><b>Tuyến:</b> {route}</div>
+              <div><b>Thời gian:</b> {timeLabel}</div>
+              <div className="mt-1">Vui lòng đặt xe sớm để đảm bảo giá này.</div>
+            </div>
+
+            {/* form */}
+            <div className="space-y-2 pt-1">
+              <label className="block">
+                <span className="text-sm text-gray-700">Điện thoại</span>
+                <input
+                  ref={phoneRef}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onBlur={() => { if (!closingRef.current) setTouched(true); }}
+                  inputMode="tel"
+                  placeholder="Ví dụ: 09xxxxxxxx"
+                  className={`mt-1 w-full ${RADIUS} border bg-white shadow-sm px-3 py-2 ${RING} ${
+                    touched && !phoneValid ? "border-rose-400" : "border-gray-300"
+                  }`}
+                  aria-invalid={touched && !phoneValid}
+                />
+                {touched && !phoneValid && (
+                  <span className="text-[12px] text-rose-600">SĐT không hợp lệ.</span>
+                )}
+              </label>
+
+              <label className="block">
+                <span className="text-sm text-gray-700">Họ và tên</span>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={() => { if (!closingRef.current) setTouched(true); }}
+                  placeholder="Nhập họ tên"
+                  className={`mt-1 w-full ${RADIUS} border bg-white shadow-sm px-3 py-2 ${RING} ${
+                    touched && !nameValid ? "border-rose-400" : "border-gray-300"
+                  }`}
+                  aria-invalid={touched && !nameValid}
+                />
+                {touched && !nameValid && (
+                  <span className="text-[12px] text-rose-600">Vui lòng nhập họ tên.</span>
+                )}
+              </label>
+            </div>
+          </div>
+
+          {/* footer */}
+          <div className="px-4 pb-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onMouseDown={attemptClose}
+              className={`px-4 py-2 ${RADIUS} border border-gray-300 bg-gray-100 hover:bg-gray-200 text-gray-800`}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={() => onConfirm({ phone, name })}
+              disabled={!canSubmit}
+              className={`px-4 py-2 ${RADIUS} text-white font-semibold shadow-sm ${
+                canSubmit ? "bg-brand hover:bg-brand-dark" : "bg-gray-300 cursor-not-allowed"
+              }`}
+            >
+              {submitting ? "Đang gửi..." : "XÁC NHẬN ĐẶT CHUYẾN"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* ================= Main Form ================= */
 export default function BookingForm() {
   const [tripType, setTripType] = useState<TripType>("airport");
   const [from, setFrom] = useState("");
-  const [to, setTo] = useState("Sân bay Nội Bài");
+  const [to, setTo] = useState(NOIBAI);
   const [stops, setStops] = useState<string[]>([]);
   const [vehicleTypeId, setVehicleTypeId] = useState<number>(2);
   const [startAt, setStartAt] = useState<string>(""); // yyyy-mm-ddTHH:MM
   const [roundTrip, setRoundTrip] = useState(false);
   const [vat, setVat] = useState(false);
-  const [promo, setPromo] = useState<string>(""); // mã giảm giá
+  const [promo, setPromo] = useState<string>("");
+
+  // Airport constraint
+  const [airportSide, setAirportSide] = useState<"from" | "to">("to"); // ô bị khóa = Nội Bài
+
+  // Wait hours (chỉ dùng khi 2 chiều)
+  const [waitHours, setWaitHours] = useState<string>(""); // để trống ⇒ hiểu 0
+
+  // Flag submit
+  const [submitted, setSubmitted] = useState(false);
+
+  // Modal state
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [submitBooking, setSubmitBooking] = useState(false);
+
+  // Refs cho input Điểm dừng
+  const stopRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const setStopRef = (i: number): React.RefCallback<HTMLInputElement> => (el) => {
+    stopRefs.current[i] = el;
+  };
+
+  // Refs cho auto-scroll/focus khi lỗi
+  const fromRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
+  const waitRef = useRef<HTMLInputElement>(null);
+  const dtBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Cuộn vào giữa màn hình rồi focus
+  const scrollAndFocus = (el: HTMLElement | null) => {
+    if (!el) return;
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => el.focus({ preventScroll: true }), 200);
+  };
+
+  // Lỗi inline
+  const fromErr = submitted && !from.trim() ? "Xin vui lòng nhập Điểm đi." : "";
+  const toErr = submitted && !to.trim() ? "Xin vui lòng nhập Điểm đến." : "";
+  const startAtErr = submitted && !startAt ? "Xin vui lòng chọn Thời gian đi." : "";
+  const waitErr = useMemo(() => {
+    if (!submitted || !roundTrip) return "";
+    const n = parseHoursLoose(waitHours ?? "");
+    return n === null ? WAIT_ERR_MSG : "";
+  }, [submitted, roundTrip, waitHours]);
 
   const selectedVehicle = useMemo(
     () => VEHICLES.find((v) => v.id === vehicleTypeId),
@@ -547,88 +1170,200 @@ export default function BookingForm() {
   );
 
   const addStop = () => setStops((arr) => [...arr, ""]);
-  const updateStop = (i: number, v: string) => setStops((arr) => arr.map((s, idx) => (idx === i ? v : s)));
-  const removeStop = (i: number) => setStops((arr) => arr.filter((_, idx) => idx !== i));
+  const updateStop = (i: number, v: string) =>
+    setStops((arr) => arr.map((s, idx) => (idx === i ? v : s)));
+  const removeStop = (i: number) =>
+    setStops((arr) => arr.filter((_, idx) => idx !== i));
 
   const swap = () => {
     setFrom((prev) => {
-      setTo(prev);
+      const oldFrom = prev;
+      setTo(oldFrom);
       return to;
     });
+    if (tripType === "airport") {
+      setAirportSide((s) => (s === "to" ? "from" : "to"));
+    }
   };
 
+  // Phí chờ
+  const waitFee = useMemo(() => {
+    if (!roundTrip) return 0;
+    const n = parseHoursLoose(waitHours ?? "");
+    if (n === null) return 0;
+    return calcWaitFee(n);
+  }, [roundTrip, waitHours]);
+
+  // Đổi loại chuyến → ràng buộc cho Sân bay, bỏ ràng buộc cho Đường dài
+  const onChangeTripType = (t: TripType) => {
+    if (t === tripType) return;
+    setTripType(t);
+
+    if (t === "airport") {
+      setAirportSide("to");
+      setTo(NOIBAI);
+      if (from === NOIBAI) setFrom("");
+      return;
+    }
+
+    // t === "road": mở tự do cả from/to, dọn mọi giá trị "Nội Bài"
+    if (from === NOIBAI) setFrom("");
+    if (to === NOIBAI) setTo("");
+  };
+
+  // Ép ràng buộc Nội Bài khi tab Sân bay
+  useEffect(() => {
+    if (tripType !== "airport") return;
+    if (airportSide === "to") {
+      if (to !== NOIBAI) setTo(NOIBAI);
+      if (from === NOIBAI) setFrom("");
+    } else {
+      if (from !== NOIBAI) setFrom(NOIBAI);
+      if (to === NOIBAI) setTo("");
+    }
+  }, [tripType, airportSide, from, to]);
+
+  // Validate tổng
   const validate = () => {
     const errs: string[] = [];
-    if (!from.trim()) errs.push("Vui lòng nhập Điểm đi.");
-    if (!to.trim()) errs.push("Vui lòng nhập Điểm đến.");
-    if (!startAt) errs.push("Vui lòng chọn Thời gian đi.");
+    if (!from.trim()) errs.push("from");
+    if (!to.trim()) errs.push("to");
+    if (!startAt) errs.push("startAt");
+    if (stops.some((s) => !s.trim())) errs.push("stops");
+    if (tripType === "airport") {
+      const nbCount = [from, to].filter((x) => x === NOIBAI).length;
+      if (nbCount !== 1) errs.push("nbRule");
+    }
+    if (roundTrip) {
+      const n = parseHoursLoose(waitHours ?? "");
+      if (n === null) errs.push("waitHours");
+    }
     return errs;
   };
 
-  const onCheckPrice = () => {
-    const errs = validate();
-    if (errs.length) return alert(errs.join("\n"));
-    alert(
-      [
-        "[DEMO] Kiểm tra giá",
-        `Loại: ${tripType === "airport" ? "Sân bay" : "Đường dài"}`,
-        `Tuyến: ${from} ${stops.length ? `→ ${stops.join(" → ")}` : ""} → ${to}`,
-        `Xe: ${selectedVehicle?.name}`,
-        `Thời gian: ${startAt}`,
-        `2 chiều: ${roundTrip ? "Có" : "Không"} | VAT: ${vat ? "Có" : "Không"}`,
-        `Mã giảm giá: ${promo || "(không)"}`
-      ].join("\n")
-    );
+  const prettyTime = (iso: string) => {
+    if (!iso) return "";
+    const [d, t] = iso.split("T");
+    const [y, m, dd] = d.split("-");
+    const hhmm = (t || "").slice(0, 5);
+    return `${dd}/${m} ${hhmm}`;
   };
 
-  const onChangeTripType = (t: TripType) => {
-    setTripType(t);
-    if (t === "airport" && !to.trim()) setTo("Sân bay Nội Bài");
+  const routeStr = `${from}${stops.length ? ` → ${stops.join(" → ")}` : ""} → ${to}`;
+  const priceTotal = calcQuoteTotal({
+    vehicleTypeId,
+    roundTrip,
+    waitFee,
+    vat,
+  });
+
+  const onCheckPrice = () => {
+    setSubmitted(true);
+    const errs = validate();
+
+    if (errs.length) {
+      if (errs.includes("from")) {
+        scrollAndFocus(fromRef.current);
+        return;
+      }
+      if (errs.includes("to")) {
+        scrollAndFocus(toRef.current);
+        return;
+      }
+      if (errs.includes("startAt")) {
+        scrollAndFocus(dtBtnRef.current);
+        return;
+      }
+      if (errs.includes("waitHours")) {
+        scrollAndFocus(waitRef.current);
+        return;
+      }
+      if (errs.includes("nbRule")) {
+        scrollAndFocus(fromRef.current);
+        return;
+      }
+      if (errs.includes("stops")) {
+        const idx = stops.findIndex((s) => !s.trim());
+        const el = stopRefs.current[idx];
+        if (el) {
+          (document.activeElement as HTMLElement | null)?.blur?.();
+          requestAnimationFrame(() => {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => el.focus({ preventScroll: true }), 220);
+          });
+        }
+        return;
+      }
+      scrollAndFocus(fromRef.current);
+      return;
+    }
+
+    setShowConfirm(true);
+  };
+
+  const handleConfirm = (payload: { phone: string; name: string }) => {
+    setSubmitBooking(true);
+    setTimeout(() => {
+      setSubmitBooking(false);
+      setShowConfirm(false);
+      alert(
+        [
+          "Đặt chuyến thành công (DEMO)!",
+          `Khách: ${payload.name} - ${payload.phone}`,
+          `Tuyến: ${routeStr}`,
+          `Thời gian: ${prettyTime(startAt)}`,
+          `Tổng tạm tính: ${fmtMoney(priceTotal)}`,
+        ].join("\n")
+      );
+    }, 900);
   };
 
   return (
-    <div className="space-y-4">
-      {/* ===== Header row: Text ĐẶT XE + Tabs icon (không khung) ===== */}
-      <div className="flex items-center justify-between gap-3 min-w-0">
-        <h2 className="text-2xl font-extrabold tracking-wide text-gray-900">ĐẶT XE</h2>
-
-        <div role="tablist" aria-label="Loại chuyến" className="flex items-center min-w-0">
+    <div className="space-y-4 isolate">
+      {/* Header */}
+      <div className="w-full flex items-center min-w-0">
+        <h2 className="hidden sm:block text-2xl font-extrabold tracking-wide text-gray-900 mr-auto">
+          ĐẶT XE
+        </h2>
+        <div
+          role="tablist"
+          aria-label="Loại chuyến"
+          className="flex items-center gap-6 mx-auto sm:mx-0 sm:ml-auto"
+        >
           <button
             type="button"
             role="tab"
             aria-selected={tripType === "airport"}
             onClick={() => onChangeTripType("airport")}
             className={[
-              "inline-flex items-center gap-2 px-2 py-1 text-base transition",
+              "inline-flex items-center gap-2 px-2 py-1 text-base transition min-w-0",
               "focus:outline-none focus-visible:underline",
               tripType === "airport"
                 ? "text-brand font-semibold"
-                : "text-gray-600 hover:text-brand"
+                : "text-gray-600 hover:text-brand",
             ].join(" ")}
             title="Sân bay"
           >
-            <Plane className="h-5 w-5" aria-hidden />
-            <span>Sân bay</span>
+            <Plane className="h-5 w-5 shrink-0" aria-hidden />
+            <span className="truncate">Sân bay</span>
           </button>
-
-          <span aria-hidden className="mx-4 h-6 w-px bg-gray-300" />
-
+          <span aria-hidden className="h-6 w-px bg-gray-300" />
           <button
             type="button"
             role="tab"
             aria-selected={tripType === "road"}
             onClick={() => onChangeTripType("road")}
             className={[
-              "inline-flex items-center gap-2 px-2 py-1 text-base transition",
+              "inline-flex items-center gap-2 px-2 py-1 text-base transition min-w-0",
               "focus:outline-none focus-visible:underline",
               tripType === "road"
                 ? "text-brand font-semibold"
-                : "text-gray-600 hover:text-brand"
+                : "text-gray-600 hover:text-brand",
             ].join(" ")}
             title="Đường dài"
           >
-            <Route className="h-5 w-5" aria-hidden />
-            <span>Đường dài</span>
+            <Route className="h-5 w-5 shrink-0" aria-hidden />
+            <span className="truncate">Đường dài</span>
           </button>
         </div>
       </div>
@@ -636,22 +1371,31 @@ export default function BookingForm() {
       {/* From */}
       <div>
         <label className="text-sm text-gray-700">Bạn đi từ:</label>
-        <div className="mt-1 relative w-full">
-          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-brand">
-            <CircleDot aria-hidden className="h-5 w-5" />
-          </span>
+        <div className="mt-1 w-full">
+          <div className={`${INPUT_GROUP} relative`}>
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center text-brand">
+              <CircleDot aria-hidden className="h-5 w-5" />
+            </span>
 
-          <div className={INPUT_GROUP}>
-            <input
-              className={INPUT_FIELD}
-              placeholder="Điểm đi"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              aria-label="Điểm đi"
-            />
+            <div className="relative flex-1 min-w-0">
+              <input
+                ref={fromRef}
+                className={INPUT_FIELD}
+                placeholder="Điểm đi"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                aria-label="Điểm đi"
+                disabled={tripType === "airport" && airportSide === "from"}
+                aria-invalid={!!fromErr}
+              />
+            </div>
+
             <button
               type="button"
-              onClick={(e) => { (e.currentTarget as HTMLButtonElement).blur(); addStop(); }}
+              onClick={(e) => {
+                (e.currentTarget as HTMLButtonElement).blur();
+                addStop();
+              }}
               className={
                 INPUT_RIGHT +
                 " hover:bg-gray-50 focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-brand/40"
@@ -662,59 +1406,88 @@ export default function BookingForm() {
               <Plus className="h-5 w-5 text-rose-500" aria-hidden />
             </button>
           </div>
+
+          {fromErr && (
+            <p className="text-[12px] text-rose-600 mt-1">{fromErr}</p>
+          )}
         </div>
       </div>
 
       {/* Stops */}
       {stops.length > 0 && (
         <div className="space-y-2">
-          {stops.map((s, i) => (
-            <div key={i} className="relative w-full">
-              <div className={INPUT_GROUP}>
-                <input
-                  className="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
-                  placeholder={`Điểm dừng #${i + 1}`}
-                  value={s}
-                  onChange={(e) => updateStop(i, e.target.value)}
-                  aria-label={`Điểm dừng ${i + 1}`}
-                />
-                <button
-                  type="button"
-                  onClick={(e) => { (e.currentTarget as HTMLButtonElement).blur(); removeStop(i); }}
-                  className={
-                    INPUT_RIGHT +
-                    " hover:bg-gray-50 focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-brand/40"
-                  }
-                  aria-label={`Xoá điểm dừng ${i + 1}`}
-                  title="Xoá điểm dừng"
-                >
-                  <Minus className="h-5 w-5 text-rose-500" aria-hidden />
-                </button>
+          {stops.map((s, i) => {
+            const showErr = submitted && !s.trim();
+            const errId = `stopErr-${i}`;
+            return (
+              <div key={i} className="relative w-full">
+                <div className={INPUT_GROUP}>
+                  <input
+                    ref={setStopRef(i)}
+                    className="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
+                    placeholder={`Điểm dừng #${i + 1}`}
+                    value={s}
+                    onChange={(e) => updateStop(i, e.target.value)}
+                    aria-label={`Điểm dừng ${i + 1}`}
+                    aria-invalid={showErr || undefined}
+                    aria-describedby={showErr ? errId : undefined}
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      (e.currentTarget as HTMLButtonElement).blur();
+                      removeStop(i);
+                    }}
+                    className={
+                      INPUT_RIGHT +
+                      " hover:bg-gray-50 focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-brand/40"
+                    }
+                    aria-label={`Xoá điểm dừng ${i + 1}`}
+                    title="Xoá điểm dừng"
+                  >
+                    <Minus className="h-5 w-5 text-rose-500" aria-hidden />
+                  </button>
+                </div>
+
+                {showErr && (
+                  <p id={errId} className="text-[12px] text-rose-600 mt-1">
+                    Xin vui lòng nhập Điểm dừng #{i + 1}.
+                  </p>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* To + swap */}
       <div>
         <label className="text-sm text-gray-700">Bạn muốn đến:</label>
-        <div className="mt-1 relative w-full">
-          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
-            <MapPin aria-hidden className="h-5 w-5 text-red-600" />
-          </span>
+        <div className="mt-1 w-full">
+          <div className={`${INPUT_GROUP} relative`}>
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
+              <MapPin aria-hidden className="h-5 w-5 text-red-600" />
+            </span>
 
-          <div className={INPUT_GROUP}>
-            <input
-              className={INPUT_FIELD}
-              placeholder="Điểm đến"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              aria-label="Điểm đến"
-            />
+            <div className="relative flex-1 min-w-0">
+              <input
+                ref={toRef}
+                className={INPUT_FIELD}
+                placeholder="Điểm đến"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                aria-label="Điểm đến"
+                disabled={tripType === "airport" && airportSide === "to"}
+                aria-invalid={!!toErr}
+              />
+            </div>
+
             <button
               type="button"
-              onClick={(e) => { (e.currentTarget as HTMLButtonElement).blur(); swap(); }}
+              onClick={(e) => {
+                (e.currentTarget as HTMLButtonElement).blur();
+                swap();
+              }}
               className={
                 INPUT_RIGHT +
                 " hover:bg-gray-50 focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-brand/40"
@@ -725,13 +1498,15 @@ export default function BookingForm() {
               <Repeat2 className="h-5 w-5 text-brand" aria-hidden />
             </button>
           </div>
+
+          {toErr && <p className="text-[12px] text-rose-600 mt-1">{toErr}</p>}
         </div>
       </div>
 
-      {/* Switches + Promo (cùng hàng, cho phép wrap) */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Switches row */}
+      <div className="flex items-center gap-2 flex-nowrap overflow-hidden">
         {/* 2 chiều */}
-        <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none shrink-0 whitespace-nowrap">
           <span className="relative inline-flex h-6 w-10 items-center">
             <input
               type="checkbox"
@@ -743,26 +1518,20 @@ export default function BookingForm() {
             />
             <span
               aria-hidden
-              className="
-                absolute inset-0 rounded-full transition
-                bg-gray-300
-                peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40
-                peer-checked:bg-brand
-              "
+              className="absolute inset-0 rounded-full transition bg-gray-300 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 peer-checked:bg-brand"
             />
             <span
               aria-hidden
-              className="
-                absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition
-                peer-checked:translate-x-4
-              "
+              className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-4"
             />
           </span>
-          2 chiều
+          <span className={roundTrip ? "text-brand font-semibold" : "text-gray-700"}>
+            2 chiều
+          </span>
         </label>
 
         {/* VAT */}
-        <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none shrink-0 whitespace-nowrap">
           <span className="relative inline-flex h-6 w-10 items-center">
             <input
               type="checkbox"
@@ -775,27 +1544,21 @@ export default function BookingForm() {
             />
             <span
               aria-hidden
-              className="
-                absolute inset-0 rounded-full transition
-                bg-gray-300
-                peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40
-                peer-checked:bg-brand
-              "
+              className="absolute inset-0 rounded-full transition bg-gray-300 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 peer-checked:bg-brand"
             />
             <span
               aria-hidden
-              className="
-                absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition
-                peer-checked:translate-x-4
-              "
+              className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-4"
             />
           </span>
-          VAT
+          <span className={vat ? "text-brand font-semibold" : "text-gray-700"}>VAT</span>
         </label>
 
-        {/* Mã giảm giá: full-width trên mobile */}
-        <div className="basis-full sm:basis-auto grow min-w-0">
-          <label className="sr-only" htmlFor="promo">Mã giảm giá</label>
+        {/* Promo */}
+        <div className="flex-1 min-w-0">
+          <label className="sr-only" htmlFor="promo">
+            Mã giảm giá
+          </label>
           <input
             id="promo"
             value={promo}
@@ -809,13 +1572,48 @@ export default function BookingForm() {
         </div>
       </div>
 
+      {/* Wait hours (only when roundTrip) */}
+      {roundTrip && (
+        <div className="grid grid-cols-1 gap-2">
+          <div className="min-w-0">
+            <label htmlFor="waitHours" className="text-sm text-gray-700">
+              Thời gian chờ
+            </label>
+            <input
+              ref={waitRef}
+              id="waitHours"
+              value={waitHours}
+              onChange={(e) => setWaitHours(e.target.value)}
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
+              className={`w-full ${RADIUS} border border-gray-300 bg-white shadow-sm px-3 py-2 ${RING}`}
+              placeholder=""
+              aria-invalid={!!waitErr}
+              aria-describedby="waitHoursHelp"
+            />
+            {submitted && waitErr ? (
+              <p className="text-[12px] text-rose-600 mt-1">{waitErr}</p>
+            ) : (
+              <p id="waitHoursHelp" className="text-[12px] text-gray-600 mt-1">
+                Phí chờ: <b>{fmtMoney(waitFee)}</b>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Loại xe + Thời gian đi */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <VehicleDropdown value={vehicleTypeId} onChange={setVehicleTypeId} />
-        <OneFieldDateTime value={startAt} onChange={setStartAt} />
+        <OneFieldDateTime
+          value={startAt}
+          onChange={(v) => setStartAt(v)}
+          showError={!!startAtErr}
+          triggerRef={dtBtnRef}
+        />
       </div>
 
-      {/* CTA dưới */}
+      {/* CTA */}
       <div className="pt-2">
         <button
           type="button"
@@ -825,6 +1623,17 @@ export default function BookingForm() {
           Kiểm Tra Giá →
         </button>
       </div>
+
+      {/* Modal xác nhận giá */}
+      <ConfirmPriceModal
+        open={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={handleConfirm}
+        submitting={submitBooking}
+        price={priceTotal}
+        route={routeStr}
+        timeLabel={prettyTime(startAt)}
+      />
     </div>
   );
 }

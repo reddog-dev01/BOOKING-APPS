@@ -16,7 +16,7 @@
     "forceConsistentCasingInFileNames": true,
     "incremental": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
+   // "baseUrl": ".",
     "paths": {},
     "isolatedModules": true,
     "plugins": [
