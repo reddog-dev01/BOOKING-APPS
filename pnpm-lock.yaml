@@ -41,41 +41,50 @@ importers:
   apps/admin:
     dependencies:
       next:
-        specifier: 15.5.4
-        version: 15.5.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+        specifier: 14.2.12
+        version: 14.2.12(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
-        specifier: 19.1.0
-        version: 19.1.0
+        specifier: 18.3.1
+        version: 18.3.1
       react-dom:
-        specifier: 19.1.0
-        version: 19.1.0(react@19.1.0)
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
     devDependencies:
-      '@eslint/eslintrc':
-        specifier: ^3
-        version: 3.3.1
-      '@tailwindcss/postcss':
-        specifier: ^4
-        version: 4.1.14
+      '@tailwindcss/aspect-ratio':
+        specifier: ^0.4.2
+        version: 0.4.2(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@24.6.1)(typescript@5.9.3)))
+      '@tailwindcss/forms':
+        specifier: ^0.5.10
+        version: 0.5.10(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@24.6.1)(typescript@5.9.3)))
+      '@tailwindcss/typography':
+        specifier: ^0.5.19
+        version: 0.5.19(tailwindcss@3.4.17(ts-node@10.9.2(@types/node@24.6.1)(typescript@5.9.3)))
       '@types/node':
-        specifier: ^20
-        version: 20.19.19
+        specifier: ^24.6.1
+        version: 24.6.1
       '@types/react':
-        specifier: ^19
+        specifier: ^19.1.16
         version: 19.1.16
       '@types/react-dom':
-        specifier: ^19
+        specifier: ^19.1.9
         version: 19.1.9(@types/react@19.1.16)
+      autoprefixer:
+        specifier: ^10.4.21
+        version: 10.4.21(postcss@8.5.6)
       eslint:
-        specifier: ^9
+        specifier: ^9.36.0
         version: 9.36.0(jiti@2.6.1)
       eslint-config-next:
         specifier: 15.5.4
         version: 15.5.4(eslint@9.36.0(jiti@2.6.1))(typescript@5.9.3)
+      postcss:
+        specifier: ^8.5.6
+        version: 8.5.6
       tailwindcss:
-        specifier: ^4
-        version: 4.1.14
+        specifier: ^3.4.17
+        version: 3.4.17(ts-node@10.9.2(@types/node@24.6.1)(typescript@5.9.3))
       typescript:
-        specifier: ^5
+        specifier: ^5.9.3
         version: 5.9.3
 
   apps/api:
@@ -200,7 +209,7 @@ importers:
         specifier: ^9.36.0
         version: 9.36.0(jiti@2.6.1)
       eslint-config-next:
-        specifier: ^15.5.4
+        specifier: 15.5.4
         version: 15.5.4(eslint@9.36.0(jiti@2.6.1))(typescript@5.9.3)
       postcss:
         specifier: ^8.5.6
