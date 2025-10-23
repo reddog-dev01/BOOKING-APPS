@@ -52,7 +52,7 @@ export async function configureApp(app: NestFastifyApplication) {
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
-  const fastify = app.getHttpAdapter().getInstance<FastifyInstance>();
+  const fastify = app.getHttpAdapter().getInstance() as FastifyInstance;
   fastify.get('/', async (_request, reply) => {
     reply
       .code(200)

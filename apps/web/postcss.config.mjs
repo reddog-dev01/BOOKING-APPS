@@ -1,30 +1,36 @@
-import autoprefixer from "autoprefixer";
+import { createRequire } from "node:module";
 
-async function loadTailwindPlugin() {
+const require = createRequire(import.meta.url);
+
+function resolvePluginName(id) {
   try {
-    const mod = await import("@tailwindcss/postcss");
-    return mod.default ?? mod;
+    require.resolve(id);
+    return id;
   } catch (error) {
-    if (error && typeof error === "object") {
-      const code = /** @type {{ code?: string }} */ (error).code;
-      if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
-        const legacy = await import("tailwindcss");
-        return legacy.default ?? legacy;
-      }
-      if (error instanceof Error && error.message.includes("@tailwindcss/postcss")) {
-        const legacy = await import("tailwindcss");
-        return legacy.default ?? legacy;
-      }
+    if (error && typeof error === "object" && "code" in error && error.code === "MODULE_NOT_FOUND") {
+      return null;
     }
     throw error;
   }
 }
 
-const tailwindEntry = await loadTailwindPlugin();
-const tailwindPlugin = typeof tailwindEntry === "function" ? tailwindEntry() : tailwindEntry;
+const tailwindPluginName = resolvePluginName("@tailwindcss/postcss") ?? resolvePluginName("tailwindcss");
+
+if (!tailwindPluginName) {
+  throw new Error(
+    "Tailwind CSS PostCSS plugin is missing. Install '@tailwindcss/postcss' (Tailwind v4) or 'tailwindcss' (Tailwind v3).",
+  );
+}
+
+if (!resolvePluginName("autoprefixer")) {
+  throw new Error("Autoprefixer is required. Install it with 'pnpm add -D autoprefixer'.");
+}
 
 const config = {
-  plugins: [tailwindPlugin, autoprefixer()],
+  plugins: {
+    [tailwindPluginName]: {},
+    autoprefixer: {},
+  },
 };
 
 export default config;
