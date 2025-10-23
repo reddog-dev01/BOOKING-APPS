@@ -183,13 +183,15 @@ async function upsertSiteSettingTyped() {
       id: 1,
       vatOptions: [0, 8, 10],
       defaultVatPct: 10,
-      waitRatePerHour: 60000, // 60k/h — admin chỉnh được
+      waitRatePerHour: 30000, // 60k/h — admin chỉnh được
+      roundTripWaitMinutes: 90,
       mapProvider: "google",
     },
     update: {
       vatOptions: [0, 8, 10],
       defaultVatPct: 10,
-      waitRatePerHour: 60000,
+      waitRatePerHour: 30000,
+      roundTripWaitMinutes: 90,
       mapProvider: "google",
     },
   });

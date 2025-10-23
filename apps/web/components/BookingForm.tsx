@@ -1,3 +1,4 @@
+// apps/web/components/BookingForm.tsx
 "use client";
 
 import Image from "next/image";
@@ -23,6 +24,18 @@ import {
   X,
 } from "lucide-react";
 import { createPortal } from "react-dom";
+
+/* ====== API helpers & types (server) ====== */
+import { fetchQuote, createBooking } from "../lib/api";
+import type {
+  QuoteRequestDto,
+  QuoteResponse,
+  CreateBookingRequestDto,
+  DirectionDto,
+} from "../lib/types";
+
+import AddressInput from "./AddressInput";
+import { AIRPORTS } from "../lib/airports";
 
 /* ================= Hook & Portal ================= */
 function useIsMobile(breakpointPx = 640) {
@@ -66,6 +79,10 @@ function Portal({ children }: { children: ReactNode }) {
 type TripType = "airport" | "road";
 type Vehicle = { id: number; name: string; img: string; alt: string };
 
+type Stop = { id: string; text: string };
+const genId = () =>
+  (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+
 const VEHICLES: Vehicle[] = [
   { id: 2, name: "4 chỗ cốp rộng", img: "/vehicles/5seats.png", alt: "Xe 4 chỗ cốp rộng" },
   { id: 3, name: "7 chỗ", img: "/vehicles/7seats.png", alt: "Xe 7 chỗ" },
@@ -88,21 +105,23 @@ const INPUT_RIGHT = "shrink-0 grid place-items-center w-12 border-l border-gray-
 /* ================= Consts & helpers ================= */
 const NOIBAI = "Sân bay Nội Bài";
 const fmtMoney = (n: number) => n.toLocaleString("vi-VN") + "đ";
+const normalizePhone = (s: string) =>
+  (s || "").replace(/\s+/g, "").replace(/^(?:\+84)(\d+)/, "0$1");
 
 // Thông điệp lỗi chung cho giờ chờ
 const WAIT_ERR_MSG =
   "Quý khách nhập sai giờ chờ. Vui lòng nhập số giờ ≥ 0 (ví dụ: 1; 1.5; 2).";
 
-// parse số giờ: "", "01", "1.5", "1,5" → số ≥ 0; chuỗi trống ⇒ 0; sai định dạng/âm ⇒ null
+// parse: "", "01", "1.5", "1,5" → số ≥ 0; chuỗi trống ⇒ 0; sai định dạng/âm ⇒ null
 const parseHoursLoose = (s: string): number | null => {
-  if (s == null || s.trim() === "") return 0; // mặc định 0 khi không nhập
+  if (s == null || s.trim() === "") return 0;
   const normalized = s.replace(",", ".").trim();
   const n = Number(normalized);
-  if (!Number.isFinite(n) || n < 0) return null; // sai định dạng/âm → null
+  if (!Number.isFinite(n) || n < 0) return null;
   return n;
 };
 
-/** Tính phí chờ theo luật demo:
+/** FE fallback phí chờ:
  * - ≤1h: 0
  * - >1h: base = 30k
  * - Mỗi giờ full sau đó: +30k
@@ -124,14 +143,11 @@ const calcWaitFee = (hours: number) => {
   return fee + 30000;
 };
 
-/** Helper: gán giá trị cho cả object-ref và callback-ref an toàn */
+/** Gán giá trị cho cả object-ref và callback-ref an toàn */
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
-  if (typeof ref === "function") {
-    ref(value);
-  } else {
-    (ref as React.MutableRefObject<T | null>).current = value;
-  }
+  if (typeof ref === "function") ref(value);
+  else (ref as React.MutableRefObject<T | null>).current = value;
 }
 
 /* ====== BẢNG GIÁ DEMO theo loại xe (1 chiều) ====== */
@@ -145,7 +161,7 @@ const BASE_PRICE_BY_VEHICLE: Record<number, number> = {
 };
 const roundTo = (n: number, step = 1000) => Math.round(n / step) * step;
 
-/** Tính tổng tiền quote (demo) */
+/** FE fallback tổng tiền */
 function calcQuoteTotal(params: {
   vehicleTypeId: number;
   roundTrip: boolean;
@@ -413,10 +429,12 @@ function OneFieldDateTime({
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("date");
 
+  // committed value đang hiển thị
   const [committedDate, setCommittedDate] = useState("");
   const [committedHour, setCommittedHour] = useState<number | null>(null);
   const [committedMinute, setCommittedMinute] = useState<number | null>(null);
 
+  // draft khi đang chọn trong panel
   const [draftDate, setDraftDate] = useState<string | null>(null);
   const [draftHour, setDraftHour] = useState<number | null>(null);
   const [draftMinute, setDraftMinute] = useState<number | null>(null);
@@ -493,29 +511,26 @@ function OneFieldDateTime({
 
   // calendar
   const now = new Date();
-  const minDT = new Date(
-    now.getTime() + Math.max(0, minOffsetMinutes) * 60 * 1000
-  );
-  const minDProp =
-    parseYMD(minDate) ??
-    new Date(minDT.getFullYear(), minDT.getMonth(), minDT.getDate());
+  const minDT = new Date(now.getTime() + Math.max(0, minOffsetMinutes) * 60 * 1000);
+  const minDProp = parseYMD(minDate) ?? new Date(minDT.getFullYear(), minDT.getMonth(), minDT.getDate());
   const maxDProp = parseYMD(maxDate) ?? null;
 
   const today = { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
-  const [viewYM, setViewYM] = useState<{ y: number; m: number }>({
-    y: today.y,
-    m: today.m,
-  });
+  const [viewYM, setViewYM] = useState<{ y: number; m: number }>({ y: today.y, m: today.m });
 
   const monthLabel = new Intl.DateTimeFormat("vi-VN", {
     month: "long",
     year: "numeric",
   }).format(new Date(viewYM.y, viewYM.m, 1));
 
+  // Tuần bắt đầu Thứ 2
   const monthMatrix = useMemo(() => {
     const first = new Date(viewYM.y, viewYM.m, 1);
     const start = new Date(first);
-    start.setDate(1 - first.getDay());
+    // 0=CN..6=T7 -> chuyển về offset Thứ 2=0
+    const firstDay = first.getDay(); // 0..6 (CN..T7)
+    const offset = (firstDay + 6) % 7; // Mon-first
+    start.setDate(1 - offset);
     const weeks: { date: Date; inMonth: boolean }[][] = [];
     for (let w = 0; w < 6; w++) {
       const row: { date: Date; inMonth: boolean }[] = [];
@@ -537,48 +552,28 @@ function OneFieldDateTime({
   }, [minuteStep]);
 
   const sameDate = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
   const isDateDisabled = (d: Date) => {
     const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (
-      minDProp &&
-      base < new Date(minDProp.getFullYear(), minDProp.getMonth(), minDProp.getDate())
-    )
-      return true;
-    if (
-      maxDProp &&
-      base > new Date(maxDProp.getFullYear(), maxDProp.getMonth(), maxDProp.getDate())
-    )
-      return true;
+    if (minDProp && base < new Date(minDProp.getFullYear(), minDProp.getMonth(), minDProp.getDate())) return true;
+    if (maxDProp && base > new Date(maxDProp.getFullYear(), maxDProp.getMonth(), maxDProp.getDate())) return true;
     return false;
   };
 
   const minMinuteOfDay = useMemo(() => {
     const dd = parseYMD(draftDate);
     if (!dd) return null;
-    if (
-      !(
-        dd.getFullYear() === minDT.getFullYear() &&
-        dd.getMonth() === minDT.getMonth() &&
-        dd.getDate() === minDT.getDate()
-      )
-    )
-      return null;
+    if (!(dd.getFullYear() === minDT.getFullYear() && dd.getMonth() === minDT.getMonth() && dd.getDate() === minDT.getDate())) return null;
     return minDT.getHours() * 60 + minDT.getMinutes();
   }, [draftDate]);
 
   const hourDisabled = (h: number) => !!(minMinuteOfDay && h * 60 + 59 < minMinuteOfDay);
-  const minuteDisabled = (h: number | null, m: number) =>
-    !!(minMinuteOfDay && h !== null && h * 60 + m < minMinuteOfDay);
+  const minuteDisabled = (h: number | null, m: number) => !!(minMinuteOfDay && h !== null && h * 60 + m < minMinuteOfDay);
 
   const z2str = (n: number) => String(n).padStart(2, "0");
-
   const pretty = () => {
-    if (!committedDate || committedHour === null || committedMinute === null)
-      return "Thời gian đi";
+    if (!committedDate || committedHour === null || committedMinute === null) return "Thời gian đi";
     const [, m, d] = committedDate.split("-");
     return `${d}/${m} ${z2str(committedHour)}:${z2str(committedMinute)}`;
   };
@@ -649,10 +644,8 @@ function OneFieldDateTime({
     };
   }, [open, triggerW, isMobile]);
 
-  const FRAME =
-    "overflow-auto overflow-x-auto max-h-[70vh] overscroll-contain";
-  const NUM_BTN =
-    "px-2.5 py-2 text-[14px] leading-none select-none bg-transparent border-0 focus:outline-none focus-visible:underline";
+  const FRAME = "overflow-auto overflow-x-auto max-h-[70vh] overscroll-contain";
+  const NUM_BTN = "px-2.5 py-2 text-[14px] leading-none select-none bg-transparent border-0 focus:outline-none focus-visible:underline";
   const NUM_DISABLED = "text-gray-300 cursor-not-allowed";
   const NUM_NORMAL = "text-gray-800 hover:text-brand";
   const NUM_ACTIVE = "text-brand font-semibold";
@@ -671,50 +664,39 @@ function OneFieldDateTime({
           <div className="flex items-center justify-between mb-2 min-w-0">
             <button
               type="button"
+              className={`${NUM_BTN} ${NUM_NORMAL}`}
+              aria-label="Tháng trước"
               onClick={() => {
                 const { y, m } = viewYM;
                 const prevM = m === 0 ? 11 : m - 1;
                 const prevY = m === 0 ? y - 1 : y;
-                if (
-                  !minDProp ||
-                  new Date(y, m, 1) >
-                    new Date(
-                      minDProp.getFullYear(),
-                      minDProp.getMonth(),
-                      1
-                    )
-                ) {
+                if (!minDProp || new Date(y, m, 1) > new Date(minDProp.getFullYear(), minDProp.getMonth(), 1)) {
                   setViewYM({ y: prevY, m: prevM });
                 }
               }}
-              className={`${NUM_BTN} ${NUM_NORMAL}`}
-              aria-label="Tháng trước"
             >
               ‹
             </button>
             <div className="font-semibold text-base truncate">{monthLabel}</div>
             <button
               type="button"
+              className={`${NUM_BTN} ${NUM_NORMAL}`}
+              aria-label="Tháng sau"
               onClick={() => {
                 const { y, m } = viewYM;
                 const nextM = m === 11 ? 0 : m + 1;
                 const nextY = m === 11 ? y + 1 : y;
-                if (
-                  !maxDProp ||
-                  new Date(y, m, 1) < new Date(maxDProp.getFullYear(), maxDProp.getMonth(), 1)
-                ) {
+                if (!maxDProp || new Date(y, m, 1) < new Date(maxDProp.getFullYear(), maxDProp.getMonth(), 1)) {
                   setViewYM({ y: nextY, m: nextM });
                 }
               }}
-              className={`${NUM_BTN} ${NUM_NORMAL}`}
-              aria-label="Tháng sau"
             >
               ›
             </button>
           </div>
 
           <div className="grid grid-cols-7 text-center text-[11px] text-gray-500 mb-1.5">
-            {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map((w) => (
+            {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((w) => (
               <div key={w} className="py-0.5">
                 {w}
               </div>
@@ -766,11 +748,7 @@ function OneFieldDateTime({
       {phase === "hour" && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <button
-              type="button"
-              className={`${NUM_BTN} ${NUM_NORMAL}`}
-              onClick={() => setPhase("date")}
-            >
+            <button type="button" className={`${NUM_BTN} ${NUM_NORMAL}`} onClick={() => setPhase("date")}>
               ← Ngày
             </button>
             <div className="text-xs text-gray-600">{draftDate}</div>
@@ -785,11 +763,7 @@ function OneFieldDateTime({
                   type="button"
                   onClick={() => onPickHour(h)}
                   disabled={disabled}
-                  className={[
-                    "text-center relative rounded",
-                    NUM_BTN,
-                    disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL,
-                  ].join(" ")}
+                  className={["text-center relative rounded", NUM_BTN, disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL].join(" ")}
                   aria-label={`Chọn ${String(h).padStart(2, "0")} giờ`}
                 >
                   {String(h).padStart(2, "0")}:00
@@ -803,11 +777,7 @@ function OneFieldDateTime({
       {phase === "minute" && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <button
-              type="button"
-              className={`${NUM_BTN} ${NUM_NORMAL}`}
-              onClick={() => setPhase("hour")}
-            >
+            <button type="button" className={`${NUM_BTN} ${NUM_NORMAL}`} onClick={() => setPhase("hour")}>
               ← Giờ
             </button>
             <div className="text-xs text-gray-600">
@@ -824,11 +794,7 @@ function OneFieldDateTime({
                   type="button"
                   onClick={() => onPickMinute(m)}
                   disabled={disabled}
-                  className={[
-                    "text-center relative rounded",
-                    NUM_BTN,
-                    disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL,
-                  ].join(" ")}
+                  className={["text-center relative rounded", NUM_BTN, disabled ? NUM_DISABLED : active ? NUM_ACTIVE : NUM_NORMAL].join(" ")}
                   aria-label={`Chọn phút ${String(m).padStart(2, "0")}`}
                 >
                   {String(m).padStart(2, "0")}
@@ -836,9 +802,7 @@ function OneFieldDateTime({
               );
             })}
           </div>
-          <p className="text-[11px] text-gray-500 text-right">
-            Chọn phút là lưu & đóng ngay.
-          </p>
+          <p className="text-[11px] text-gray-500 text-right">Chọn phút là lưu & đóng ngay.</p>
         </div>
       )}
     </div>
@@ -850,7 +814,7 @@ function OneFieldDateTime({
       <button
         ref={(node) => {
           btnRef.current = node;
-          setExternalRef(triggerRef, node); // đồng bộ ra parent
+          setExternalRef(triggerRef, node);
         }}
         type="button"
         onClick={openPicker}
@@ -860,25 +824,18 @@ function OneFieldDateTime({
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <CalendarClock className="h-5 w-5 text-brand shrink-0" aria-hidden />
-          <div className="font-medium truncate text-gray-900 min-w-0 text-[15px]">
-            {pretty()}
-          </div>
+          <div className="font-medium truncate text-gray-900 min-w-0 text-[15px]">{pretty()}</div>
           <span className="ml-auto text-gray-500 shrink-0" aria-hidden>
             ▾
           </span>
         </div>
       </button>
 
-      {showError && !value && (
-        <p className="text-[12px] text-rose-600 mt-1">
-          Xin vui lòng chọn Thời gian đi.
-        </p>
-      )}
+      {showError && !value && <p className="text-[12px] text-rose-600 mt-1" role="alert" aria-live="polite">Xin vui lòng chọn Thời gian đi.</p>}
 
       {open &&
         (isMobile ? (
           <Portal>
-            {/* FIX: đúng lớp z-index */}
             <div
               className="fixed z-[9999]"
               style={{
@@ -904,7 +861,7 @@ function OneFieldDateTime({
   );
 }
 
-/* ================= ConfirmPriceModal (Backdrop/X/Esc CLOSE ngay, không bật cảnh báo) ================= */
+/* ================= ConfirmPriceModal (Backdrop/X/Esc CLOSE ngay + Focus Trap) ================= */
 function ConfirmPriceModal({
   open,
   onClose,
@@ -928,35 +885,62 @@ function ConfirmPriceModal({
 }) {
   const phoneRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const focusablesRef = useRef<HTMLElement[]>([]);
 
   // KHÔNG reset state khi đóng để giữ dữ liệu đã gõ
   const [phone, setPhone] = useState(defaultPhone);
   const [name, setName] = useState(defaultName);
   const [touched, setTouched] = useState(false);
 
-  // NEW: cờ đang đóng modal để chặn onBlur bật touched
+  // cờ đang đóng modal để chặn onBlur bật touched
   const closingRef = useRef(false);
 
   const attemptClose = useCallback(() => {
-    closingRef.current = true; // báo là đang đóng -> chặn onBlur
-    onClose();                 // đóng modal (parent setShowConfirm(false))
-    // hạ cờ sau khi unmount & event blur kết thúc
-    setTimeout(() => { closingRef.current = false; }, 0);
+    closingRef.current = true;
+    onClose();
+    setTimeout(() => {
+      closingRef.current = false;
+    }, 0);
   }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
 
+    // Lấy focusable elements cho trap
+    focusablesRef.current = Array.from(
+      modalRef.current?.querySelectorAll<HTMLElement>(
+        'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'
+      ) ?? []
+    );
+
+    // Keydown handler: Esc để đóng, Tab để trap
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        attemptClose();
+        return;
+      }
+      if (e.key !== "Tab" || focusablesRef.current.length === 0) return;
+      const items = focusablesRef.current;
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      if (e.shiftKey) {
+        if (i <= 0) {
+          items[items.length - 1].focus();
+          e.preventDefault();
+        }
+      } else {
+        if (i === items.length - 1) {
+          items[0].focus();
+          e.preventDefault();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+
     // Focus SĐT khi mở
     const t = setTimeout(() => phoneRef.current?.focus({ preventScroll: true }), 50);
 
-    // Esc → đóng
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") attemptClose();
-    };
-    document.addEventListener("keydown", onEsc, { passive: true });
-
-    // Outside click: bắt ở capture để ưu tiên
+    // Outside click (capture)
     const onDocPointerDown = (e: PointerEvent) => {
       const t = e.target as Node | null;
       if (!t) return;
@@ -972,7 +956,7 @@ function ConfirmPriceModal({
 
     return () => {
       clearTimeout(t);
-      document.removeEventListener("keydown", onEsc);
+      document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onDocPointerDown, true);
       document.body.style.overflow = prevOverflow;
     };
@@ -980,27 +964,19 @@ function ConfirmPriceModal({
 
   if (!open) return null;
 
-  const phoneValid = /^\s*(0|\+84)\d{8,10}\s*$/.test(phone || "");
+  const p = normalizePhone(phone || "");
+  const phoneValid = /^0\d{9,10}$/.test(p);
   const nameValid = (name || "").trim().length > 1;
   const canSubmit = phoneValid && nameValid && !submitting;
 
   return (
     <Portal>
       {/* overlay: click là đóng ngay */}
-      <div
-        className="fixed inset-0 z-[10000] bg-black/40"
-        onMouseDown={attemptClose}
-        aria-hidden
-      />
+      <div className="fixed inset-0 z-[10000] bg-black/40" onMouseDown={attemptClose} aria-hidden />
 
       {/* modal layer */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modalTitle"
-        className="fixed inset-0 z-[10001] grid place-items-center p-4"
-      >
-        {/* container modal: chặn lan sự kiện ra overlay */}
+      <div role="dialog" aria-modal="true" aria-labelledby="modalTitle" className="fixed inset-0 z-[10001] grid place-items-center p-4">
+        {/* container modal */}
         <div
           ref={modalRef}
           className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
@@ -1009,11 +985,9 @@ function ConfirmPriceModal({
           {/* header */}
           <div className="bg-brand text-white px-4 py-3 flex items-center gap-2 relative">
             <Info className="h-5 w-5 shrink-0" aria-hidden />
-            <h3 id="modalTitle" className="font-semibold tracking-wide">
-              XÁC NHẬN THÔNG TIN
-            </h3>
+            <h3 id="modalTitle" className="font-semibold tracking-wide">XÁC NHẬN THÔNG TIN</h3>
 
-            {/* NEW: nút X đóng ngay bằng onMouseDown (tránh blur) */}
+            {/* nút X đóng ngay bằng onMouseDown (tránh blur) */}
             <button
               type="button"
               aria-label="Đóng"
@@ -1060,7 +1034,7 @@ function ConfirmPriceModal({
                   aria-invalid={touched && !phoneValid}
                 />
                 {touched && !phoneValid && (
-                  <span className="text-[12px] text-rose-600">SĐT không hợp lệ.</span>
+                  <span className="text-[12px] text-rose-600" role="alert" aria-live="polite">SĐT không hợp lệ.</span>
                 )}
               </label>
 
@@ -1077,7 +1051,7 @@ function ConfirmPriceModal({
                   aria-invalid={touched && !nameValid}
                 />
                 {touched && !nameValid && (
-                  <span className="text-[12px] text-rose-600">Vui lòng nhập họ tên.</span>
+                  <span className="text-[12px] text-rose-600" role="alert" aria-live="polite">Vui lòng nhập họ tên.</span>
                 )}
               </label>
             </div>
@@ -1112,46 +1086,61 @@ function ConfirmPriceModal({
 /* ================= Main Form ================= */
 export default function BookingForm() {
   const [tripType, setTripType] = useState<TripType>("airport");
+
+  // From/to text + coords (AddressInput)
   const [from, setFrom] = useState("");
+  const [fromLat, setFromLat] = useState<number | undefined>(undefined);
+  const [fromLng, setFromLng] = useState<number | undefined>(undefined);
+
   const [to, setTo] = useState(NOIBAI);
-  const [stops, setStops] = useState<string[]>([]);
+  const [toLat, setToLat] = useState<number | undefined>(AIRPORTS.HAN.lat);
+  const [toLng, setToLng] = useState<number | undefined>(AIRPORTS.HAN.lng);
+
+  const [stops, setStops] = useState<Stop[]>([]);
   const [vehicleTypeId, setVehicleTypeId] = useState<number>(2);
   const [startAt, setStartAt] = useState<string>(""); // yyyy-mm-ddTHH:MM
   const [roundTrip, setRoundTrip] = useState(false);
   const [vat, setVat] = useState(false);
   const [promo, setPromo] = useState<string>("");
 
-  // Airport constraint
-  const [airportSide, setAirportSide] = useState<"from" | "to">("to"); // ô bị khóa = Nội Bài
+  // Airport constraint: ô bị khóa = Nội Bài
+  const [airportSide, setAirportSide] = useState<"from" | "to">("to");
 
-  // Wait hours (chỉ dùng khi 2 chiều)
-  const [waitHours, setWaitHours] = useState<string>(""); // để trống ⇒ hiểu 0
+  // Wait hours (chỉ khi 2 chiều)
+  const [waitHours, setWaitHours] = useState<string>("");
 
-  // Flag submit
+  // UX flags
   const [submitted, setSubmitted] = useState(false);
-
-  // Modal state
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitBooking, setSubmitBooking] = useState(false);
+  const [quoting, setQuoting] = useState(false);
 
-  // Refs cho input Điểm dừng
+  // Quote snapshot (ưu tiên giá từ server)
+  const [quote, setQuote] = useState<QuoteResponse | null>(null);
+  const [lastDtoUsedForQuote, setLastDtoUsedForQuote] = useState<QuoteRequestDto | null>(null);
+
+  // Refs
   const stopRefs = useRef<(HTMLInputElement | null)[]>([]);
   const setStopRef = (i: number): React.RefCallback<HTMLInputElement> => (el) => {
     stopRefs.current[i] = el;
   };
 
-  // Refs cho auto-scroll/focus khi lỗi
-  const fromRef = useRef<HTMLInputElement>(null);
-  const toRef = useRef<HTMLInputElement>(null);
+  // Box refs (để scroll) + Input refs (để focus đúng ô)
+  const fromBoxRef = useRef<HTMLDivElement>(null);
+  const toBoxRef = useRef<HTMLDivElement>(null);
+  const fromInputRef = useRef<HTMLInputElement>(null);
+  const toInputRef = useRef<HTMLInputElement>(null);
+
   const waitRef = useRef<HTMLInputElement>(null);
   const dtBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // Cuộn vào giữa màn hình rồi focus
-  const scrollAndFocus = (el: HTMLElement | null) => {
-    if (!el) return;
+  // Cuộn vào giữa màn hình rồi focus input thật (fallback: querySelector)
+  const scrollAndFocus = (boxEl: HTMLElement | null, focusEl: HTMLElement | null) => {
+    if (!boxEl && !focusEl) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setTimeout(() => el.focus({ preventScroll: true }), 200);
+    boxEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const target = focusEl || (boxEl?.querySelector("input") as HTMLElement | null);
+    setTimeout(() => target?.focus?.({ preventScroll: true }), 200);
   };
 
   // Lỗi inline
@@ -1164,29 +1153,25 @@ export default function BookingForm() {
     return n === null ? WAIT_ERR_MSG : "";
   }, [submitted, roundTrip, waitHours]);
 
-  const selectedVehicle = useMemo(
-    () => VEHICLES.find((v) => v.id === vehicleTypeId),
-    [vehicleTypeId]
-  );
-
-  const addStop = () => setStops((arr) => [...arr, ""]);
-  const updateStop = (i: number, v: string) =>
-    setStops((arr) => arr.map((s, idx) => (idx === i ? v : s)));
-  const removeStop = (i: number) =>
-    setStops((arr) => arr.filter((_, idx) => idx !== i));
+  const addStop = () => setStops((arr) => [...arr, { id: genId(), text: "" }]);
+  const updateStop = (i: number, v: string) => setStops((arr) => arr.map((s, idx) => (idx === i ? { ...s, text: v } : s)));
+  const removeStop = (i: number) => setStops((arr) => arr.filter((_, idx) => idx !== i));
 
   const swap = () => {
-    setFrom((prev) => {
-      const oldFrom = prev;
-      setTo(oldFrom);
-      return to;
-    });
+    const newFrom = to;
+    const newFromLat = toLat;
+    const newFromLng = toLng;
+    const newTo = from;
+    const newToLat = fromLat;
+    const newToLng = fromLng;
+    setFrom(newFrom); setFromLat(newFromLat); setFromLng(newFromLng);
+    setTo(newTo);     setToLat(newToLat);     setToLng(newToLng);
     if (tripType === "airport") {
       setAirportSide((s) => (s === "to" ? "from" : "to"));
     }
   };
 
-  // Phí chờ
+  // Phí chờ (FE fallback)
   const waitFee = useMemo(() => {
     if (!roundTrip) return 0;
     const n = parseHoursLoose(waitHours ?? "");
@@ -1194,7 +1179,7 @@ export default function BookingForm() {
     return calcWaitFee(n);
   }, [roundTrip, waitHours]);
 
-  // Đổi loại chuyến → ràng buộc cho Sân bay, bỏ ràng buộc cho Đường dài
+  // Đổi loại chuyến → ràng buộc
   const onChangeTripType = (t: TripType) => {
     if (t === tripType) return;
     setTripType(t);
@@ -1202,13 +1187,27 @@ export default function BookingForm() {
     if (t === "airport") {
       setAirportSide("to");
       setTo(NOIBAI);
-      if (from === NOIBAI) setFrom("");
+      setToLat(AIRPORTS.HAN.lat);
+      setToLng(AIRPORTS.HAN.lng);
+      if (from === NOIBAI) {
+        setFrom("");
+        setFromLat(undefined);
+        setFromLng(undefined);
+      }
       return;
     }
 
-    // t === "road": mở tự do cả from/to, dọn mọi giá trị "Nội Bài"
-    if (from === NOIBAI) setFrom("");
-    if (to === NOIBAI) setTo("");
+    // road: mở tự do, clear mọi giá trị "Nội Bài" fix cứng trước đó
+    if (from === NOIBAI) {
+      setFrom("");
+      setFromLat(undefined);
+      setFromLng(undefined);
+    }
+    if (to === NOIBAI) {
+      setTo("");
+      setToLat(undefined);
+      setToLng(undefined);
+    }
   };
 
   // Ép ràng buộc Nội Bài khi tab Sân bay
@@ -1216,10 +1215,22 @@ export default function BookingForm() {
     if (tripType !== "airport") return;
     if (airportSide === "to") {
       if (to !== NOIBAI) setTo(NOIBAI);
-      if (from === NOIBAI) setFrom("");
+      setToLat(AIRPORTS.HAN.lat);
+      setToLng(AIRPORTS.HAN.lng);
+      if (from === NOIBAI) {
+        setFrom("");
+        setFromLat(undefined);
+        setFromLng(undefined);
+      }
     } else {
       if (from !== NOIBAI) setFrom(NOIBAI);
-      if (to === NOIBAI) setTo("");
+      setFromLat(AIRPORTS.HAN.lat);
+      setFromLng(AIRPORTS.HAN.lng);
+      if (to === NOIBAI) {
+        setTo("");
+        setToLat(undefined);
+        setToLng(undefined);
+      }
     }
   }, [tripType, airportSide, from, to]);
 
@@ -1229,7 +1240,7 @@ export default function BookingForm() {
     if (!from.trim()) errs.push("from");
     if (!to.trim()) errs.push("to");
     if (!startAt) errs.push("startAt");
-    if (stops.some((s) => !s.trim())) errs.push("stops");
+    if (stops.some((s) => !s.text.trim())) errs.push("stops");
     if (tripType === "airport") {
       const nbCount = [from, to].filter((x) => x === NOIBAI).length;
       if (nbCount !== 1) errs.push("nbRule");
@@ -1244,46 +1255,32 @@ export default function BookingForm() {
   const prettyTime = (iso: string) => {
     if (!iso) return "";
     const [d, t] = iso.split("T");
-    const [y, m, dd] = d.split("-");
+    const [, m, dd] = d.split("-");
     const hhmm = (t || "").slice(0, 5);
     return `${dd}/${m} ${hhmm}`;
   };
 
-  const routeStr = `${from}${stops.length ? ` → ${stops.join(" → ")}` : ""} → ${to}`;
-  const priceTotal = calcQuoteTotal({
+  const routeStr = `${from}${stops.length ? ` → ${stops.map((s) => s.text).join(" → ")}` : ""} → ${to}`;
+  const priceTotalFallback = calcQuoteTotal({
     vehicleTypeId,
     roundTrip,
     waitFee,
     vat,
   });
 
-  const onCheckPrice = () => {
+  /* ====== ACTION: CHECK PRICE (QUOTE) ====== */
+  const onCheckPrice = async () => {
     setSubmitted(true);
     const errs = validate();
 
     if (errs.length) {
-      if (errs.includes("from")) {
-        scrollAndFocus(fromRef.current);
-        return;
-      }
-      if (errs.includes("to")) {
-        scrollAndFocus(toRef.current);
-        return;
-      }
-      if (errs.includes("startAt")) {
-        scrollAndFocus(dtBtnRef.current);
-        return;
-      }
-      if (errs.includes("waitHours")) {
-        scrollAndFocus(waitRef.current);
-        return;
-      }
-      if (errs.includes("nbRule")) {
-        scrollAndFocus(fromRef.current);
-        return;
-      }
+      if (errs.includes("from")) return scrollAndFocus(fromBoxRef.current, fromInputRef.current);
+      if (errs.includes("to")) return scrollAndFocus(toBoxRef.current, toInputRef.current);
+      if (errs.includes("startAt")) return scrollAndFocus(dtBtnRef.current, dtBtnRef.current);
+      if (errs.includes("waitHours")) return scrollAndFocus(waitRef.current, waitRef.current);
+      if (errs.includes("nbRule")) return scrollAndFocus(fromBoxRef.current, fromInputRef.current);
       if (errs.includes("stops")) {
-        const idx = stops.findIndex((s) => !s.trim());
+        const idx = stops.findIndex((s) => !s.text.trim());
         const el = stopRefs.current[idx];
         if (el) {
           (document.activeElement as HTMLElement | null)?.blur?.();
@@ -1292,30 +1289,75 @@ export default function BookingForm() {
             setTimeout(() => el.focus({ preventScroll: true }), 220);
           });
         }
-        return;
       }
-      scrollAndFocus(fromRef.current);
       return;
     }
 
-    setShowConfirm(true);
+    // Map UI -> DTO (một biến dto duy nhất)
+    const dto: QuoteRequestDto = {
+      tripType: tripType === "airport" ? "AIRPORT" : "ROAD",
+      vehicleTypeId,
+      startAt,
+      roundTrip,
+      withVat: vat,
+      fromText: from,
+      toText: to,
+      fromLat,
+      fromLng,
+      toLat,
+      toLng,
+      couponCode: promo?.trim() || undefined,
+    };
+    if (tripType === "airport") {
+      dto.airportCode = "HAN";
+      dto.direction = (airportSide === "to" ? "to_airport" : "from_airport") as DirectionDto;
+    }
+    if (roundTrip) dto.waitHours = parseHoursLoose(waitHours || "0") ?? 0;
+
+    try {
+      setQuoting(true);
+      const q = await fetchQuote(dto, { timeoutMs: 10_000 });
+      setQuote(q);
+      setLastDtoUsedForQuote(dto);
+      setShowConfirm(true);
+    } catch (e: any) {
+      // Fallback: vẫn mở modal với giá FE để không chặn đặt xe
+      setQuote(null);
+      setLastDtoUsedForQuote(dto);
+      setShowConfirm(true);
+      alert(`Không tính được giá từ server, dùng giá tạm: ${e?.message || e}`);
+    } finally {
+      setQuoting(false);
+    }
   };
 
-  const handleConfirm = (payload: { phone: string; name: string }) => {
-    setSubmitBooking(true);
-    setTimeout(() => {
-      setSubmitBooking(false);
+  /* ====== ACTION: CONFIRM BOOKING ====== */
+  const handleConfirm = async (payload: { phone: string; name: string }) => {
+    if (!lastDtoUsedForQuote) return;
+    try {
+      setSubmitBooking(true);
+
+      const body: CreateBookingRequestDto = {
+        ...lastDtoUsedForQuote,
+        stops: stops.map((s) => s.text).filter(Boolean),
+        customerName: payload.name.trim(),
+        phone: normalizePhone(payload.phone),
+        // quoteId: quote?.id, // nếu BE trả về id; nếu chưa có thì bỏ
+      };
+
+      const idemKey = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+      await createBooking(body, {
+        headers: { "Idempotency-Key": idemKey },
+        timeoutMs: 12_000,
+      });
+
       setShowConfirm(false);
-      alert(
-        [
-          "Đặt chuyến thành công (DEMO)!",
-          `Khách: ${payload.name} - ${payload.phone}`,
-          `Tuyến: ${routeStr}`,
-          `Thời gian: ${prettyTime(startAt)}`,
-          `Tổng tạm tính: ${fmtMoney(priceTotal)}`,
-        ].join("\n")
-      );
-    }, 900);
+      alert("Đặt chuyến thành công! Cảm ơn bạn.");
+    } catch (e: any) {
+      alert(`Đặt chuyến thất bại: ${e?.message || e}`);
+    } finally {
+      setSubmitBooking(false);
+    }
   };
 
   return (
@@ -1325,11 +1367,7 @@ export default function BookingForm() {
         <h2 className="hidden sm:block text-2xl font-extrabold tracking-wide text-gray-900 mr-auto">
           ĐẶT XE
         </h2>
-        <div
-          role="tablist"
-          aria-label="Loại chuyến"
-          className="flex items-center gap-6 mx-auto sm:mx-0 sm:ml-auto"
-        >
+        <div role="tablist" aria-label="Loại chuyến" className="flex items-center gap-6 mx-auto sm:mx-0 sm:ml-auto">
           <button
             type="button"
             role="tab"
@@ -1338,9 +1376,7 @@ export default function BookingForm() {
             className={[
               "inline-flex items-center gap-2 px-2 py-1 text-base transition min-w-0",
               "focus:outline-none focus-visible:underline",
-              tripType === "airport"
-                ? "text-brand font-semibold"
-                : "text-gray-600 hover:text-brand",
+              tripType === "airport" ? "text-brand font-semibold" : "text-gray-600 hover:text-brand",
             ].join(" ")}
             title="Sân bay"
           >
@@ -1356,9 +1392,7 @@ export default function BookingForm() {
             className={[
               "inline-flex items-center gap-2 px-2 py-1 text-base transition min-w-0",
               "focus:outline-none focus-visible:underline",
-              tripType === "road"
-                ? "text-brand font-semibold"
-                : "text-gray-600 hover:text-brand",
+              tripType === "road" ? "text-brand font-semibold" : "text-gray-600 hover:text-brand",
             ].join(" ")}
             title="Đường dài"
           >
@@ -1372,24 +1406,28 @@ export default function BookingForm() {
       <div>
         <label className="text-sm text-gray-700">Bạn đi từ:</label>
         <div className="mt-1 w-full">
-          <div className={`${INPUT_GROUP} relative`}>
+          <div
+            ref={fromBoxRef}
+            tabIndex={-1}
+            className={`${INPUT_GROUP} relative`}
+          >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center text-brand">
               <CircleDot aria-hidden className="h-5 w-5" />
             </span>
-
             <div className="relative flex-1 min-w-0">
-              <input
-                ref={fromRef}
-                className={INPUT_FIELD}
-                placeholder="Điểm đi"
+              <AddressInput
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                aria-label="Điểm đi"
+                placeholder="Điểm đi"
                 disabled={tripType === "airport" && airportSide === "from"}
-                aria-invalid={!!fromErr}
+                inputClassName={INPUT_FIELD}
+                inputRef={fromInputRef}
+                onChange={(v: { text: string; lat?: number; lng?: number }) => {
+                  setFrom(v.text);
+                  setFromLat(v.lat);
+                  setFromLng(v.lng);
+                }}
               />
             </div>
-
             <button
               type="button"
               onClick={(e) => {
@@ -1406,10 +1444,7 @@ export default function BookingForm() {
               <Plus className="h-5 w-5 text-rose-500" aria-hidden />
             </button>
           </div>
-
-          {fromErr && (
-            <p className="text-[12px] text-rose-600 mt-1">{fromErr}</p>
-          )}
+          {fromErr && <p className="text-[12px] text-rose-600 mt-1" role="alert" aria-live="polite">{fromErr}</p>}
         </div>
       </div>
 
@@ -1417,16 +1452,16 @@ export default function BookingForm() {
       {stops.length > 0 && (
         <div className="space-y-2">
           {stops.map((s, i) => {
-            const showErr = submitted && !s.trim();
-            const errId = `stopErr-${i}`;
+            const showErr = submitted && !s.text.trim();
+            const errId = `stopErr-${s.id}`;
             return (
-              <div key={i} className="relative w-full">
+              <div key={s.id} className="relative w-full">
                 <div className={INPUT_GROUP}>
                   <input
                     ref={setStopRef(i)}
                     className="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
                     placeholder={`Điểm dừng #${i + 1}`}
-                    value={s}
+                    value={s.text}
                     onChange={(e) => updateStop(i, e.target.value)}
                     aria-label={`Điểm dừng ${i + 1}`}
                     aria-invalid={showErr || undefined}
@@ -1448,9 +1483,8 @@ export default function BookingForm() {
                     <Minus className="h-5 w-5 text-rose-500" aria-hidden />
                   </button>
                 </div>
-
                 {showErr && (
-                  <p id={errId} className="text-[12px] text-rose-600 mt-1">
+                  <p id={errId} className="text-[12px] text-rose-600 mt-1" role="alert" aria-live="polite">
                     Xin vui lòng nhập Điểm dừng #{i + 1}.
                   </p>
                 )}
@@ -1464,24 +1498,28 @@ export default function BookingForm() {
       <div>
         <label className="text-sm text-gray-700">Bạn muốn đến:</label>
         <div className="mt-1 w-full">
-          <div className={`${INPUT_GROUP} relative`}>
+          <div
+            ref={toBoxRef}
+            tabIndex={-1}
+            className={`${INPUT_GROUP} relative`}
+          >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
               <MapPin aria-hidden className="h-5 w-5 text-red-600" />
             </span>
-
             <div className="relative flex-1 min-w-0">
-              <input
-                ref={toRef}
-                className={INPUT_FIELD}
-                placeholder="Điểm đến"
+              <AddressInput
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
-                aria-label="Điểm đến"
+                placeholder="Điểm đến"
                 disabled={tripType === "airport" && airportSide === "to"}
-                aria-invalid={!!toErr}
+                inputClassName={INPUT_FIELD}
+                inputRef={toInputRef}
+                onChange={(v: { text: string; lat?: number; lng?: number }) => {
+                  setTo(v.text);
+                  setToLat(v.lat);
+                  setToLng(v.lng);
+                }}
               />
             </div>
-
             <button
               type="button"
               onClick={(e) => {
@@ -1498,8 +1536,7 @@ export default function BookingForm() {
               <Repeat2 className="h-5 w-5 text-brand" aria-hidden />
             </button>
           </div>
-
-          {toErr && <p className="text-[12px] text-rose-600 mt-1">{toErr}</p>}
+          {toErr && <p className="text-[12px] text-rose-600 mt-1" role="alert" aria-live="polite">{toErr}</p>}
         </div>
       </div>
 
@@ -1516,18 +1553,10 @@ export default function BookingForm() {
               role="switch"
               aria-checked={roundTrip}
             />
-            <span
-              aria-hidden
-              className="absolute inset-0 rounded-full transition bg-gray-300 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 peer-checked:bg-brand"
-            />
-            <span
-              aria-hidden
-              className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-4"
-            />
+            <span aria-hidden className="absolute inset-0 rounded-full transition bg-gray-300 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 peer-checked:bg-brand" />
+            <span aria-hidden className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
           </span>
-          <span className={roundTrip ? "text-brand font-semibold" : "text-gray-700"}>
-            2 chiều
-          </span>
+          <span className={roundTrip ? "text-brand font-semibold" : "text-gray-700"}>2 chiều</span>
         </label>
 
         {/* VAT */}
@@ -1542,23 +1571,15 @@ export default function BookingForm() {
               aria-checked={vat}
               title="Hóa đơn VAT chỉ xuất trong ngày"
             />
-            <span
-              aria-hidden
-              className="absolute inset-0 rounded-full transition bg-gray-300 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 peer-checked:bg-brand"
-            />
-            <span
-              aria-hidden
-              className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-4"
-            />
+            <span aria-hidden className="absolute inset-0 rounded-full transition bg-gray-300 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 peer-checked:bg-brand" />
+            <span aria-hidden className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
           </span>
           <span className={vat ? "text-brand font-semibold" : "text-gray-700"}>VAT</span>
         </label>
 
         {/* Promo */}
         <div className="flex-1 min-w-0">
-          <label className="sr-only" htmlFor="promo">
-            Mã giảm giá
-          </label>
+          <label className="sr-only" htmlFor="promo">Mã giảm giá</label>
           <input
             id="promo"
             value={promo}
@@ -1576,9 +1597,7 @@ export default function BookingForm() {
       {roundTrip && (
         <div className="grid grid-cols-1 gap-2">
           <div className="min-w-0">
-            <label htmlFor="waitHours" className="text-sm text-gray-700">
-              Thời gian chờ
-            </label>
+            <label htmlFor="waitHours" className="text-sm text-gray-700">Thời gian chờ</label>
             <input
               ref={waitRef}
               id="waitHours"
@@ -1587,12 +1606,11 @@ export default function BookingForm() {
               inputMode="decimal"
               pattern="[0-9]*[.,]?[0-9]*"
               className={`w-full ${RADIUS} border border-gray-300 bg-white shadow-sm px-3 py-2 ${RING}`}
-              placeholder=""
               aria-invalid={!!waitErr}
               aria-describedby="waitHoursHelp"
             />
             {submitted && waitErr ? (
-              <p className="text-[12px] text-rose-600 mt-1">{waitErr}</p>
+              <p className="text-[12px] text-rose-600 mt-1" role="alert" aria-live="polite">{waitErr}</p>
             ) : (
               <p id="waitHoursHelp" className="text-[12px] text-gray-600 mt-1">
                 Phí chờ: <b>{fmtMoney(waitFee)}</b>
@@ -1618,9 +1636,10 @@ export default function BookingForm() {
         <button
           type="button"
           onClick={onCheckPrice}
-          className={`w-full bg-brand text-white font-semibold text-lg py-3 ${RADIUS} shadow-sm hover:bg-brand-dark`}
+          disabled={quoting}
+          className={`w-full ${quoting ? "bg-gray-400" : "bg-brand hover:bg-brand-dark"} text-white font-semibold text-lg py-3 ${RADIUS} shadow-sm`}
         >
-          Kiểm Tra Giá →
+          {quoting ? "Đang tính giá..." : "Kiểm Tra Giá →"}
         </button>
       </div>
 
@@ -1629,8 +1648,8 @@ export default function BookingForm() {
         open={showConfirm}
         onClose={() => setShowConfirm(false)}
         onConfirm={handleConfirm}
-        submitting={submitBooking}
-        price={priceTotal}
+        submitting={submitBooking || quoting}
+        price={quote?.totalVnd ?? priceTotalFallback}
         route={routeStr}
         timeLabel={prettyTime(startAt)}
       />
