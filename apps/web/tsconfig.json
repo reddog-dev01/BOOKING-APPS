@@ -1,14 +1,21 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "target": "ES2022",
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "jsx": "preserve",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "allowJs": false,
+    "strict": true,
     "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
     "incremental": true,
-    "plugins": [{ "name": "next" }],
-    "types": ["node", "google.maps"]
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": ["node", "google.maps"],          // ⬅️ thêm dòng này
+    "plugins": [{ "name": "next" }]
   },
   "include": [
     "next-env.d.ts",

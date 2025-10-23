@@ -2,10 +2,10 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-function resolvePluginName(id) {
+function tryLoad(id) {
   try {
-    require.resolve(id);
-    return id;
+    const mod = require(id);
+    return typeof mod === "object" && mod !== null && "default" in mod ? mod.default : mod;
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "MODULE_NOT_FOUND") {
       return null;
@@ -14,23 +14,24 @@ function resolvePluginName(id) {
   }
 }
 
-const tailwindPluginName = resolvePluginName("@tailwindcss/postcss") ?? resolvePluginName("tailwindcss");
+const tailwindPlugin = tryLoad("@tailwindcss/postcss") ?? tryLoad("tailwindcss");
 
-if (!tailwindPluginName) {
+if (!tailwindPlugin) {
   throw new Error(
     "Tailwind CSS PostCSS plugin is missing. Install '@tailwindcss/postcss' (Tailwind v4) or 'tailwindcss' (Tailwind v3).",
   );
 }
 
-if (!resolvePluginName("autoprefixer")) {
-  throw new Error("Autoprefixer is required. Install it with 'pnpm add -D autoprefixer'.");
+const autoprefixerPlugin = tryLoad("autoprefixer");
+
+const plugins = [tailwindPlugin];
+
+if (autoprefixerPlugin) {
+  plugins.push(autoprefixerPlugin);
 }
 
 const config = {
-  plugins: {
-    [tailwindPluginName]: {},
-    autoprefixer: {},
-  },
+  plugins,
 };
 
 export default config;
