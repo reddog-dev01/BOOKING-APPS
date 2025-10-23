@@ -13,6 +13,12 @@ export class BookingsService {
     private pricing: PricingService,
   ) {}
 
+  private normalizePhone(phone: string) {
+    return (phone ?? '')
+      .replace(/\s+/g, '')
+      .replace(/^(?:\+?84)(\d+)/, '0$1');
+  }
+
   private async resolveRefs(dto: CreateBookingDto) {
     let routeId: string | null = null; let airportId: string | null = null;
     if (dto.tripType === TripTypeDto.ROAD) {
@@ -22,6 +28,7 @@ export class BookingsService {
       routeId = r.id;
     } else {
       if (!dto.airportCode) throw new BadRequestException('airportCode required for AIRPORT');
+      if (!dto.direction) throw new BadRequestException('direction required for AIRPORT');
       const a = await this.prisma.airport.findUnique({ where: { code: dto.airportCode } });
       if (!a || !a.isActive) throw new NotFoundException('Airport not found');
       airportId = a.id;
@@ -63,8 +70,24 @@ export class BookingsService {
     } as any);
 
     const { routeId, airportId } = await this.resolveRefs(dto);
+    const direction = dto.tripType === TripTypeDto.AIRPORT ? dto.direction ?? null : null;
 
     const waitMinutes = Math.max(0, Math.round(((dto.waitHours ?? 0) * 60)));
+    const stops = Array.isArray(dto.stops)
+      ? dto.stops.map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    const normalizedPhone = this.normalizePhone(dto.phone);
+    const customerName = dto.customerName?.trim();
+    if (!customerName) throw new BadRequestException('customerName required');
+    if (!/^0\d{9,10}$/.test(normalizedPhone)) {
+      throw new BadRequestException('phone must start with 0 and contain 10-11 digits');
+    }
+    const couponCode = dto.couponCode?.trim();
+
+    const rawDistanceKm = distanceKm ?? (quote as any).distanceKm ?? 0;
+    const persistedDistanceKm = Number.isFinite(rawDistanceKm)
+      ? Math.max(0, Number(rawDistanceKm))
+      : 0;
 
     const created = await this.prisma.booking.create({
       data: {
@@ -72,18 +95,19 @@ export class BookingsService {
         routeId: routeId || undefined,
         airportId: airportId || undefined,
         vehicleTypeId: dto.vehicleTypeId,
+        direction: direction || undefined,
 
         // DB chỉ có fromText/toText
         fromText, toText,
         fromLat: dto.fromLat, fromLng: dto.fromLng,
         toLat: dto.toLat, toLng: dto.toLng,
-        distanceKm: distanceKm ?? 0,
+        distanceKm: persistedDistanceKm,
         isRoundTrip: !!dto.roundTrip,
         waitMinutes,
 
         // Thuế: lấy theo quote (ưu tiên) hoặc suy ra
         vatPct: (quote as any).vatPct ?? (dto.withVat ? (quote as any).defaultVatPct ?? 10 : (dto.vatPct ?? 0)),
-        couponCode: dto.couponCode,
+        couponCode: couponCode || undefined,
 
         priceDistanceVnd: (quote as any).priceDistanceVnd ?? 0,
         priceWaitingVnd: (quote as any).priceWaitingVnd ?? 0,
@@ -92,10 +116,10 @@ export class BookingsService {
         vatVnd: (quote as any).vatVnd ?? 0,
         totalVnd: (quote as any).totalVnd ?? 0,
 
-        stopsJson: dto.stops ? JSON.stringify(dto.stops) as any : undefined,
+        stopsJson: stops && stops.length ? JSON.stringify(stops) as any : undefined,
 
-        customerName: dto.customerName,
-        phone: dto.phone,
+        customerName,
+        phone: normalizedPhone,
         status: BookingStatus.PENDING,
         startAt: dto.startAt ? new Date(dto.startAt) : new Date(),
       },

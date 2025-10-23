@@ -20,6 +20,9 @@ export class QuoteRequestDto {
 
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) distanceKm?: number;
   @IsOptional() @IsBoolean() roundTrip?: boolean;
+  @IsOptional() @IsBoolean() withVat?: boolean;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) waitHours?: number;
+  @IsOptional() @IsString() startAt?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(10) vatPct?: number; // 0|8|10
   @IsOptional() @IsString() couponCode?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(5) stops?: string[];

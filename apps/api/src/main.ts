@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 
 // Fastify v5 plugins (đã đồng bộ major)
 import cors from '@fastify/cors';
@@ -16,6 +16,13 @@ async function bootstrap() {
     trustProxy: true,  // chạy sau Caddy/Nginx/Cloud
   });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
+
+  app.setGlobalPrefix('api', {
+    exclude: [
+      { path: 'health', method: RequestMethod.GET },
+      { path: 'healthz', method: RequestMethod.GET },
+    ],
+  });
 
   await app.register(cors, {
     origin: (origin, cb) => {

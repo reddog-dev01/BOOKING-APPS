@@ -11,9 +11,17 @@ type FetchOpts = {
   timeoutMs?: number;
 };
 
-const API_BASE =
-  (typeof window !== "undefined" && (process as any)?.env?.NEXT_PUBLIC_API_BASE) ||
-  "";
+const rawApiBase =
+  typeof process !== "undefined"
+    ? (process.env.NEXT_PUBLIC_API_BASE as string | undefined)
+    : undefined;
+const base = rawApiBase && rawApiBase.trim().length > 0
+  ? rawApiBase.trim()
+  : "http://localhost:3001/api";
+const API_BASE = base.replace(/\/$/, "");
+
+const makeUrl = (path: string) =>
+  `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 
 // Simple fetch with timeout
 async function fetchJson<T>(
@@ -47,7 +55,7 @@ export async function fetchQuote(
   dto: QuoteRequestDto,
   opts: FetchOpts = {}
 ): Promise<QuoteResponse> {
-  return fetchJson<QuoteResponse>(`${API_BASE}/api/quote`, {
+  return fetchJson<QuoteResponse>(makeUrl("/quote"), {
     method: "POST",
     body: JSON.stringify(dto),
     headers: opts.headers,
@@ -60,7 +68,7 @@ export async function createBooking(
   dto: CreateBookingRequestDto,
   opts: FetchOpts = {}
 ): Promise<CreateBookingResponse> {
-  return fetchJson<CreateBookingResponse>(`${API_BASE}/api/bookings`, {
+  return fetchJson<CreateBookingResponse>(makeUrl("/bookings"), {
     method: "POST",
     body: JSON.stringify(dto),
     headers: opts.headers,

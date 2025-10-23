@@ -14,8 +14,8 @@ export class CreateBookingDto {
   @ValidateIf(o=>o.tripType===TripTypeDto.ROAD) @IsOptional() @IsString() routeCode?: string;
 
   // AIRPORT
-  @ValidateIf(o=>o.tripType===TripTypeDto.AIRPORT) @IsOptional() @IsString() airportCode?: string;
-  @ValidateIf(o=>o.tripType===TripTypeDto.AIRPORT) @IsOptional() @IsString() direction?: DirectionDto;
+  @ValidateIf(o=>o.tripType===TripTypeDto.AIRPORT) @IsString() airportCode?: string;
+  @ValidateIf(o=>o.tripType===TripTypeDto.AIRPORT) @IsEnum(DirectionDto) direction?: DirectionDto;
 
   @IsInt() @Type(()=>Number) vehicleTypeId!: number;
 
