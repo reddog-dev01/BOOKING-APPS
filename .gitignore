@@ -10,5 +10,11 @@ apps/web/.next/
 apps/web/out/
 apps/web/node_modules/
 
+apps/admin/.next/
+apps/admin/out/
+apps/admin/node_modules/
+
 apps/api/dist/
 apps/api/node_modules/
+
+packages/db/dist/

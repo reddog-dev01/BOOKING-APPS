@@ -2,6 +2,7 @@
   "name": "@booking/db",
   "private": true,
   "version": "1.0.0",
+  "type": "module",
   "main": "src/client.ts",
   "types": "src/client.ts",
   "peerDependencies": {
@@ -9,5 +10,6 @@
   },
   "devDependencies": {
     "prisma": "6.18.0"
-  }
+  },
+  "packageManager": "pnpm@10.17.1"
 }
