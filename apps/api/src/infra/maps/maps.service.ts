@@ -26,8 +26,15 @@ export class GoogleMapsService {
       + `&region=vn`
       + `&key=${enc(process.env.GOOGLE_MAPS_API_KEY!)}`;
     const resp = await fetch(url);
-    const json = await resp.json();
-    const meters = json?.routes?.[0]?.legs?.[0]?.distance?.value ?? 0;
+    type DirectionsResponse = {
+      routes?: Array<{
+        legs?: Array<{
+          distance?: { value?: number | null } | null;
+        }> | null;
+      }>;
+    };
+    const json = (await resp.json()) as DirectionsResponse;
+    const meters = json.routes?.[0]?.legs?.[0]?.distance?.value ?? 0;
     const km = Math.round((meters / 1000) * 10) / 10;
     return { meters, km, raw: json };
   }

@@ -5,7 +5,7 @@ import {
 } from 'class-validator';
 
 export enum TripTypeDto { AIRPORT='AIRPORT', ROAD='ROAD' }
-export type DirectionDto = 'to_airport' | 'from_airport';
+export enum DirectionDto { TO_AIRPORT = 'to_airport', FROM_AIRPORT = 'from_airport' }
 
 export class CreateBookingDto {
   @IsEnum(TripTypeDto) tripType!: TripTypeDto;
