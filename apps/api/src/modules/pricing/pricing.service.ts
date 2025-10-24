@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Airport, Prisma, TripType, Quote } from '@prisma/client';
+import { Airport, Prisma, TripType } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { QuoteRequestDto, TripTypeDto } from './dto/quote-request.dto';
@@ -8,9 +8,26 @@ import { QuoteResponseDto } from './dto/quote-response.dto';
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
 
+type QuoteRecord = {
+  id: string;
+  tripType: TripType;
+  routeId: string | null;
+  airportId: string | null;
+  vehicleTypeId: number;
+  basePriceVnd: number;
+  distanceKm: number;
+  timeMinutes: number;
+  vatPct: number;
+  vatAmountVnd: number;
+  totalVnd: number;
+  currency: string;
+  expiresAt: Date;
+  meta: Prisma.JsonValue | null;
+};
+
 type QuoteDelegateLike = {
-  findUnique: (args: Prisma.QuoteFindUniqueArgs) => Promise<Quote | null>;
-  create: (args: Prisma.QuoteCreateArgs) => Promise<Quote>;
+  findUnique: (args: Record<string, unknown>) => Promise<QuoteRecord | null>;
+  create: (args: { data: Record<string, unknown> }) => Promise<QuoteRecord>;
 };
 
 type QuoteMeta = Prisma.JsonObject & {
@@ -139,7 +156,7 @@ export class PricingService {
       data: {
         tripType: dto.tripType === TripTypeDto.AIRPORT ? TripType.AIRPORT : TripType.ROAD,
         routeId,
-        airportId: airport?.id,
+        airportId: airport?.id ?? null,
         vehicleTypeId: dto.vehicleTypeId,
         basePriceVnd: basePrice,
         distanceKm,
@@ -169,7 +186,9 @@ export class PricingService {
   }
 
   private getQuoteDelegate(): QuoteDelegateLike {
-    const delegate = (this.prisma as unknown as { quote?: QuoteDelegateLike }).quote;
+    const delegate = (this.prisma as unknown as Record<string, unknown>).quote as
+      | QuoteDelegateLike
+      | undefined;
     if (!delegate) {
       this.throwError(
         HttpStatus.INTERNAL_SERVER_ERROR,

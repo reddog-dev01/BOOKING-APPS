@@ -1,12 +1,28 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Prisma, Quote } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
 
 type QuoteDelegateLike = {
-  findUnique: (args: Prisma.QuoteFindUniqueArgs) => Promise<Quote | null>;
+  findUnique: (args: Record<string, unknown>) => Promise<
+    | (Record<string, unknown> & {
+        id: string;
+        expiresAt: Date;
+        tripType: Prisma.TripType;
+        routeId?: string | null;
+        airportId?: string | null;
+        vehicleTypeId: number;
+        basePriceVnd: number;
+        distanceKm?: number | null;
+        vatPct: number;
+        vatAmountVnd: number;
+        totalVnd: number;
+        meta?: Prisma.JsonValue | null;
+      })
+    | null
+  >;
 };
 
 @Injectable()
@@ -70,7 +86,7 @@ export class BookingsService {
       quote.distanceKm ??
       0;
 
-    const data: Prisma.BookingUncheckedCreateInput = {
+    const data = {
       tripType: quote.tripType,
       routeId: quote.routeId ?? null,
       airportId: quote.airportId ?? null,
@@ -102,10 +118,10 @@ export class BookingsService {
       customerNote: dto.customerNote ?? null,
       startAt,
       quoteId: quote.id,
-    };
+    } as Record<string, unknown>;
 
     const booking = await this.prisma.booking.create({
-      data,
+      data: data as Prisma.BookingUncheckedCreateInput,
       select: { id: true },
     });
 
@@ -116,7 +132,9 @@ export class BookingsService {
   }
 
   private getQuoteDelegate(): QuoteDelegateLike {
-    const delegate = (this.prisma as unknown as { quote?: QuoteDelegateLike }).quote;
+    const delegate = (this.prisma as unknown as Record<string, unknown>).quote as
+      | QuoteDelegateLike
+      | undefined;
     if (!delegate) {
       this.throwError(
         HttpStatus.INTERNAL_SERVER_ERROR,
