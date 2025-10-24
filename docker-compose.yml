@@ -1,0 +1,86 @@
+services:
+  db:
+    image: postgres:16
+    container_name: booking-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: booking
+    ports:
+      - "5432:5432"          # dev only
+    volumes:
+      - pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: booking-api
+    env_file:
+      - ./apps/api/.env
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://127.0.0.1:3001}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ}
+        NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
+        NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
+    container_name: booking-web
+    env_file:
+      - ./apps/web/.env.local
+    environment:
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://127.0.0.1:3001}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ}
+      NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
+      NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  caddy:
+    image: caddy:2.7
+    container_name: booking-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+volumes:
+  pg:
+  caddy_data:
+  caddy_config:
