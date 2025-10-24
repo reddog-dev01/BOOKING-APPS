@@ -58,8 +58,17 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
 
+  const defaultOrigins = [
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3002',
+    'http://127.0.0.1:3002',
+  ];
+
   const allowedOrigins = new Set(
-    parseCsv(process.env.CORS_ORIGINS, [`http://localhost:${port}`]),
+    parseCsv(process.env.CORS_ORIGINS, defaultOrigins),
   );
 
   await app.register(cors, {
