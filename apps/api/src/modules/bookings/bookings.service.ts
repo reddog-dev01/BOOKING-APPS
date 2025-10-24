@@ -47,11 +47,20 @@ export class BookingsService {
     const waitHours = this.asNumber(requestMeta.waitHours);
     const waitMinutes = waitHours ? Math.max(0, Math.round(waitHours * 60)) : 0;
 
+    const couponCode = this.normalizeCoupon(dto.couponCode ?? this.asString(requestMeta.couponCode));
+    const direction = this.asString(requestMeta.direction);
+    const resolvedDistance =
+      dto.distanceKm ??
+      this.asNumber(requestMeta.distanceKmOverride) ??
+      quote.distanceKm ??
+      0;
+
     const booking = await this.prisma.booking.create({
       data: {
         tripType: quote.tripType,
         routeId: quote.routeId ?? null,
         airportId: quote.airportId ?? null,
+        direction: direction ?? null,
         vehicleTypeId: quote.vehicleTypeId,
         fromText,
         toText,
@@ -59,7 +68,7 @@ export class BookingsService {
         fromLng: fromLng ?? null,
         toLat: toLat ?? null,
         toLng: toLng ?? null,
-        distanceKm: dto.distanceKm ?? quote.distanceKm,
+        distanceKm: resolvedDistance,
         isRoundTrip: this.asBoolean(requestMeta.roundTrip) ?? false,
         waitMinutes,
         priceDistanceVnd: quote.basePriceVnd,
@@ -69,8 +78,8 @@ export class BookingsService {
         vatPct: quote.vatPct,
         vatVnd: quote.vatAmountVnd,
         totalVnd: quote.totalVnd,
-        couponCode: dto.couponCode ?? this.asString(requestMeta.couponCode) ?? null,
-        stopsJson: stops ? (stops as unknown as Prisma.InputJsonValue) : undefined,
+        couponCode,
+        stopsJson: stops && stops.length > 0 ? (stops as unknown as Prisma.JsonArray) : undefined,
         customerName: dto.customerName,
         phone: dto.customerPhone,
         customerNote: dto.customerNote ?? null,
@@ -100,6 +109,14 @@ export class BookingsService {
     }
     const items = value.filter((item): item is string => typeof item === 'string' && item.length > 0);
     return items.length > 0 ? items : undefined;
+  }
+
+  private normalizeCoupon(value: string | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   private asBoolean(value: unknown): boolean | undefined {
