@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Airport, Prisma, TripType } from '@prisma/client';
+import { Airport, Prisma, TripType, Quote } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { QuoteRequestDto, TripTypeDto } from './dto/quote-request.dto';
@@ -7,6 +7,11 @@ import { QuoteResponseDto } from './dto/quote-response.dto';
 
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
+
+type QuoteDelegateLike = {
+  findUnique: (args: Prisma.QuoteFindUniqueArgs) => Promise<Quote | null>;
+  create: (args: Prisma.QuoteCreateArgs) => Promise<Quote>;
+};
 
 type QuoteMeta = Prisma.JsonObject & {
   request: Record<string, unknown>;
@@ -68,10 +73,15 @@ export class PricingService {
         orderBy: { effectiveFrom: 'desc' },
       });
       if (!policy) {
-        this.throwError(HttpStatus.NOT_FOUND, 'PRICE_POLICY_NOT_FOUND', 'Price policy not found', {
-          routeCode: dto.routeCode,
-          vehicleTypeId: dto.vehicleTypeId,
-        });
+        this.throwError(
+          HttpStatus.NOT_FOUND,
+          'PRICE_POLICY_NOT_FOUND',
+          'Price policy not found',
+          {
+            routeCode: dto.routeCode,
+            vehicleTypeId: dto.vehicleTypeId,
+          },
+        );
       }
 
       basePrice = policy.basePriceVnd;
@@ -124,7 +134,8 @@ export class PricingService {
       },
     };
 
-    const created = await this.prisma.quote.create({
+    const quoteDelegate = this.getQuoteDelegate();
+    const created = await quoteDelegate.create({
       data: {
         tripType: dto.tripType === TripTypeDto.AIRPORT ? TripType.AIRPORT : TripType.ROAD,
         routeId,
@@ -157,6 +168,18 @@ export class PricingService {
     };
   }
 
+  private getQuoteDelegate(): QuoteDelegateLike {
+    const delegate = (this.prisma as unknown as { quote?: QuoteDelegateLike }).quote;
+    if (!delegate) {
+      this.throwError(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'MISSING_SCHEMA_FIELD',
+        'Quote model is not available on the Prisma client',
+      );
+    }
+    return delegate;
+  }
+
   private resolveRoadDistance(dto: QuoteRequestDto, fallback: number): number {
     if (dto.distanceKm && dto.distanceKm > 0) {
       return dto.distanceKm;
@@ -172,23 +195,39 @@ export class PricingService {
       ? dto.distanceKm
       : this.resolveDistanceFromCoordinates(dto, airport);
     if (distance <= 0) {
-      this.throwError(HttpStatus.BAD_REQUEST, 'INVALID_DISTANCE', 'Unable to resolve distance for airport trip');
+      this.throwError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_DISTANCE',
+        'Unable to resolve distance for airport trip',
+      );
     }
     return distance;
   }
 
   private async resolveAirport(code: string | undefined): Promise<Airport> {
     if (!code) {
-      this.throwError(HttpStatus.BAD_REQUEST, 'AIRPORT_REQUIRED', 'airportCode is required for AIRPORT trips');
+      this.throwError(
+        HttpStatus.BAD_REQUEST,
+        'AIRPORT_REQUIRED',
+        'airportCode is required for AIRPORT trips',
+      );
     }
     const airport = await this.prisma.airport.findFirst({ where: { code, isActive: true } });
     if (!airport) {
-      this.throwError(HttpStatus.NOT_FOUND, 'AIRPORT_NOT_FOUND', 'Airport not found', { airportCode: code });
+      this.throwError(
+        HttpStatus.NOT_FOUND,
+        'AIRPORT_NOT_FOUND',
+        'Airport not found',
+        { airportCode: code },
+      );
     }
     return airport;
   }
 
-  private resolveDistanceFromCoordinates(dto: QuoteRequestDto, airport?: Airport | null): number {
+  private resolveDistanceFromCoordinates(
+    dto: QuoteRequestDto,
+    airport?: Airport | null,
+  ): number {
     const points: Array<{ lat: number; lng: number }> = [];
     if (dto.fromLat != null && dto.fromLng != null) {
       points.push({ lat: dto.fromLat, lng: dto.fromLng });
@@ -236,5 +275,4 @@ export class PricingService {
   ): never {
     throw new HttpException({ error: code, message, details }, status);
   }
-
 }

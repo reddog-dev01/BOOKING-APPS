@@ -1,16 +1,21 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, Quote } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
+
+type QuoteDelegateLike = {
+  findUnique: (args: Prisma.QuoteFindUniqueArgs) => Promise<Quote | null>;
+};
 
 @Injectable()
 export class BookingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateBookingDto): Promise<CreateBookingResponseDto> {
-    const quote = await this.prisma.quote.findUnique({ where: { id: dto.quoteId } });
+    const quoteDelegate = this.getQuoteDelegate();
+    const quote = await quoteDelegate.findUnique({ where: { id: dto.quoteId } });
     if (!quote) {
       this.throwError(HttpStatus.NOT_FOUND, 'QUOTE_NOT_FOUND', 'Quote not found', {
         quoteId: dto.quoteId,
@@ -29,7 +34,11 @@ export class BookingsService {
     const fromText = dto.fromText ?? this.asString(requestMeta.fromText);
     const toText = dto.toText ?? this.asString(requestMeta.toText);
     if (!fromText || !toText) {
-      this.throwError(HttpStatus.BAD_REQUEST, 'LOCATION_REQUIRED', 'fromText and toText are required');
+      this.throwError(
+        HttpStatus.BAD_REQUEST,
+        'LOCATION_REQUIRED',
+        'fromText and toText are required',
+      );
     }
 
     const fromLat = dto.fromLat ?? this.asNumber(requestMeta.fromLat);
@@ -41,13 +50,19 @@ export class BookingsService {
     const startAtIso = this.asString(requestMeta.startAt);
     const startAt = startAtIso ? new Date(startAtIso) : new Date();
     if (Number.isNaN(startAt.getTime())) {
-      this.throwError(HttpStatus.BAD_REQUEST, 'INVALID_START_AT', 'startAt must be a valid ISO8601 string');
+      this.throwError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_START_AT',
+        'startAt must be a valid ISO8601 string',
+      );
     }
 
     const waitHours = this.asNumber(requestMeta.waitHours);
     const waitMinutes = waitHours ? Math.max(0, Math.round(waitHours * 60)) : 0;
 
-    const couponCode = this.normalizeCoupon(dto.couponCode ?? this.asString(requestMeta.couponCode));
+    const couponCode = this.normalizeCoupon(
+      dto.couponCode ?? this.asString(requestMeta.couponCode),
+    );
     const direction = this.asString(requestMeta.direction);
     const resolvedDistance =
       dto.distanceKm ??
@@ -55,7 +70,7 @@ export class BookingsService {
       quote.distanceKm ??
       0;
 
-    const data: Prisma.BookingCreateInput = {
+    const data: Prisma.BookingUncheckedCreateInput = {
       tripType: quote.tripType,
       routeId: quote.routeId ?? null,
       airportId: quote.airportId ?? null,
@@ -98,6 +113,18 @@ export class BookingsService {
       bookingId: booking.id,
       status: 'PENDING',
     };
+  }
+
+  private getQuoteDelegate(): QuoteDelegateLike {
+    const delegate = (this.prisma as unknown as { quote?: QuoteDelegateLike }).quote;
+    if (!delegate) {
+      this.throwError(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'MISSING_SCHEMA_FIELD',
+        'Quote model is not available on the Prisma client',
+      );
+    }
+    return delegate;
   }
 
   private asString(value: unknown): string | undefined {
