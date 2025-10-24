@@ -2,16 +2,10 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
-/** ================= Brand tokens (Tailwind utility aliases) ================= */
-const CONTAINER = "mx-auto max-w-7xl px-4 sm:px-6";
-// Dùng brand làm focus ring, không dùng emerald nữa
-const RING = "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/45";
-const GLASS = "bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60";
-
-/** --------------------------- Navigation model --------------------------- */
+/** ---------------------- Navigation model ---------------------- */
 const NAV = [
   { href: "/", label: "Trang chủ" },
   {
@@ -45,7 +39,7 @@ const NAV = [
   { href: "/lien-he", label: "Liên hệ" },
 ] as const;
 
-/** ------------------------------ Icons ------------------------------ */
+/** --------------------------- Icons ---------------------------- */
 function PhoneIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -75,111 +69,28 @@ function CloseIcon({ className }: { className?: string }) {
   );
 }
 
-/** ---------------------------- Component ---------------------------- */
+/** ------------------------- Component -------------------------- */
 export default function Header() {
-  // Mobile drawer
   const [open, setOpen] = useState(false);
-  // Desktop: shadow on scroll
   const [scrolled, setScrolled] = useState(false);
-  // Desktop dropdown (keyboard + hover)
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
-
   const pathname = usePathname();
-  const panelRef = useRef<HTMLDivElement>(null);
-  const openerRef = useRef<HTMLButtonElement>(null);
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname?.startsWith(href));
-  const isParentActive = (children?: readonly { href: string; label: string }[]) =>
-    !!children?.some((c) => pathname?.startsWith(c.href));
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname?.startsWith(href);
 
-  // Scroll listener (passive + rAF throttle)
   useEffect(() => {
-    let ticking = false;
-    const onScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          setScrolled(window.scrollY > 8);
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
+    const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Mobile drawer: scroll-lock, Escape, focus trap, return focus
-  useEffect(() => {
-    if (!open) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const keyHandler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-      if (e.key === "Tab") {
-        // simple focus trap
-        const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
-          'a,button,input,select,textarea,[tabindex]:not([tabindex="-1"])'
-        );
-        if (!focusables || focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }
-    };
-
-    // focus first focusable
-    setTimeout(() => {
-      const first = panelRef.current?.querySelector<HTMLElement>(
-        'a,button,input,select,textarea,[tabindex]:not([tabindex="-1"])'
-      );
-      first?.focus();
-    }, 0);
-
-    document.addEventListener("keydown", keyHandler);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      document.removeEventListener("keydown", keyHandler);
-      openerRef.current?.focus();
-    };
-  }, [open]);
-
-  // Close drawer when route changes
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
-  // Desktop dropdown helpers
-  const openMenu = (i: number) => setOpenIdx(i);
-  const closeMenu = () => setOpenIdx(null);
-  const onMenuKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, i: number) => {
-    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
-      e.preventDefault();
-      openMenu(i);
-    }
-    if (e.key === "Escape") {
-      closeMenu();
-      (e.currentTarget as HTMLButtonElement).focus();
-    }
-  };
-
   return (
     <header className="sticky top-0 z-50">
-      {/* ===== Top notice bar (CTA) – GIỮ NGUYÊN NHƯ CŨ, CHỈ ĐỔI MÀU BRAND ===== */}
+      {/* ===== Top notice bar (CTA) ===== */}
       <div className="relative">
-        <div className="bg-gradient-to-r from-brand via-brand-dark to-brand text-white">
-          <div className={CONTAINER}>
+        <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
             <div className="flex flex-col sm:flex-row items-center justify-center text-center gap-1 sm:gap-4 py-1">
               <span className="text-sm sm:text-base md:text-lg font-extrabold uppercase tracking-wider drop-shadow-sm leading-tight">
                 <span className="hidden sm:inline">GỌI NGAY ĐỂ ĐẶT XE</span>
@@ -188,15 +99,13 @@ export default function Header() {
 
               <div className="flex justify-center items-center gap-1 sm:gap-3 mt-1 sm:mt-0">
                 <PhoneIcon className="h-5 w-5 md:h-6 md:w-6 opacity-95" />
-                {/* Nút gọi 1 */}
                 <a
                   href="tel:0855951536"
-                  className="inline-flex items-center h-9 sm:h-10 rounded-full bg-white text-brand-dark px-3 sm:px-4 text-base sm:text-lg font-extrabold tabular-nums shadow-sm hover:shadow-md leading-tight"
+                  className="inline-flex items-center h-9 sm:h-10 rounded-full bg-white text-emerald-700/95 px-3 sm:px-4 text-base sm:text-lg font-extrabold tabular-nums shadow-sm hover:shadow-md leading-tight"
                 >
                   0855.951.536
                 </a>
                 <span className="text-white/80 text-xs sm:text-sm font-medium leading-tight">hoặc</span>
-                {/* Nút gọi 2 (nhấn mạnh khác màu nhẹ) */}
                 <a
                   href="tel:0915588508"
                   className="inline-flex items-center h-9 sm:h-10 rounded-full bg-amber-300 text-slate-900 px-3 sm:px-4 text-base sm:text-lg font-extrabold tabular-nums shadow-sm hover:shadow-md leading-tight"
@@ -210,109 +119,87 @@ export default function Header() {
       </div>
 
       {/* ===== Main bar ===== */}
-      <div className={`${GLASS} border-b transition-shadow ${scrolled ? "shadow-sm" : "shadow-none"}`}>
-        <div className={CONTAINER}>
-          <div className="h-16 flex items-center justify-between">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-3" aria-label="Trang chủ">
-              <Image
-                src="/logo.svg"
-                alt="Taxi Nội Bài"
-                width={180}
-                height={48}
-                priority={pathname === "/"}
-                sizes="(min-width:1024px) 180px, 40vw"
-                className="h-10 sm:h-9 w-auto"
-              />
-            </Link>
+      <div
+        className={`border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 transition-shadow ${
+          scrolled ? "shadow-sm" : "shadow-none"
+        }`}
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="h-16 flex items-center justify-between overflow-visible">
+            {/* Logo (to hơn trên mobile) */}
+            <div className="flex items-center gap-3">
+              <Link href="/" className="flex items-center gap-3" aria-label="Trang chủ">
+                <Image
+                  src="/logo.svg"
+                  alt="Taxi Nội Bài"
+                  width={180}
+                  height={48}
+                  priority
+                  className="h-12 w-auto sm:h-9"
+                />
+              </Link>
+            </div>
 
-            {/* Desktop nav (ARIA + keyboard) */}
-            <nav className="hidden lg:flex items-center gap-1" aria-label="Chính" role="menubar">
-              {NAV.map((item, idx) => {
-                const hasChildren = "children" in item;
-                const parentActive = hasChildren ? isParentActive(item.children) : false;
-
-                return (
-                  <div
-                    key={idx}
-                    className="relative group"
-                    onMouseEnter={() => hasChildren && openMenu(idx)}
-                    onMouseLeave={() => hasChildren && closeMenu()}
-                  >
-                    {hasChildren ? (
-                      <>
-                        <button
-                          role="menuitem"
-                          aria-haspopup="true"
-                          aria-expanded={openIdx === idx}
-                          onKeyDown={(e) => onMenuKeyDown(e, idx)}
-                          onFocus={() => openMenu(idx)}
-                          className={`px-2.5 xl:px-3 py-2 text-[14px] xl:text-[15px] font-medium rounded-lg transition ${RING} inline-flex items-center gap-1 ${
-                            parentActive
-                              ? "text-brand-dark bg-brand/10 ring-1 ring-brand/30"
-                              : "text-gray-700 hover:text-brand-dark"
-                          }`}
-                        >
-                          <span className="whitespace-nowrap">{item.label}</span>
-                          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-                            <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.172l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" />
-                          </svg>
-                          {/* hover underline */}
-                          <span className="pointer-events-none absolute left-2 right-2 -bottom-0.5 h-[2px] scale-x-0 bg-brand-dark rounded-full transition-transform duration-300 group-hover:scale-x-100" />
-                        </button>
-
-                        <div
-                          role="menu"
-                          aria-label={item.label}
-                          className={`absolute left-0 top-full pt-2 z-30 transition ${
-                            openIdx === idx ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-                          }`}
-                        >
-                          <div className="min-w-[220px] rounded-2xl border bg-white shadow-xl p-2">
-                            {(item.children || []).map((child) => (
-                              <Link
-                                key={child.href}
-                                href={child.href}
-                                className="block rounded-xl px-3 py-2 text-sm text-gray-700 hover:bg-brand/10 hover:text-brand-dark focus:bg-brand/10 focus:text-brand-dark outline-none transition whitespace-nowrap"
-                                role="menuitem"
-                              >
-                                {child.label}
-                              </Link>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <Link
-                        href={item.href}
-                        aria-current={isActive(item.href) ? "page" : undefined}
-                        role="menuitem"
-                        className={`relative px-2.5 xl:px-3 py-2 text-[14px] xl:text-[15px] font-medium rounded-lg transition ${RING} whitespace-nowrap ${
-                          isActive(item.href)
-                            ? "text-brand-dark bg-brand/10 ring-1 ring-brand/30"
-                            : "text-gray-700 hover:text-brand-dark hover:bg-brand/10"
-                        }`}
+            {/* Desktop nav (giữ lg, co chữ + không wrap) */}
+            <nav className="hidden lg:flex items-center gap-1 overflow-visible" aria-label="Chính">
+              {NAV.map((item, idx) => (
+                <div key={idx} className="relative group">
+                  {"children" in item ? (
+                    <>
+                      <button
+                        className="px-2.5 lg:px-2.5 xl:px-3 py-2 text-[14px] lg:text-[14px] xl:text-[15px] leading-tight font-medium text-gray-700 hover:text-emerald-700 inline-flex items-center gap-1 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 hover:bg-emerald-50/70 transition whitespace-nowrap"
+                        aria-haspopup="true"
+                        aria-expanded="false"
                       >
-                        {item.label}
-                        {/* hover underline */}
-                        <span className="pointer-events-none absolute left-2 right-2 -bottom-0.5 h-[2px] scale-x-0 bg-brand-dark rounded-full transition-transform duration-300 group-hover:scale-x-100" />
-                      </Link>
-                    )}
-                  </div>
-                );
-              })}
+                        <span className="whitespace-nowrap">{item.label}</span>
+                        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+                          <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.172l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" />
+                        </svg>
+                      </button>
+                      <div className="pointer-events-none absolute left-0 top-full pt-2 opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto transition z-30">
+                        <div className="min-w-[220px] rounded-2xl border bg-white shadow-xl p-2">
+                          {(item.children || []).map((child) => (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              className="block rounded-xl px-3 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 focus-visible:ring-2 focus-visible:ring-emerald-300 outline-none transition whitespace-nowrap"
+                            >
+                              {child.label}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      aria-current={isActive(item.href) ? "page" : undefined}
+                      className={`relative px-2.5 lg:px-2.5 xl:px-3 py-2 text-[14px] lg:text-[14px] xl:text-[15px] leading-tight font-medium rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-emerald-300 whitespace-nowrap ${
+                        isActive(item.href)
+                          ? "text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 z-10"
+                          : "text-gray-700 hover:text-emerald-700 hover:bg-emerald-50/70"
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  )}
+                </div>
+              ))}
             </nav>
 
-            {/* Right actions (KHÔNG hiển thị hotline desktop) */}
+            {/* Hotline + Mobile button */}
             <div className="flex items-center gap-2">
-              {/* Only mobile menu button */}
+              {/* <a
+                href="tel:0915588508"
+                className="hidden md:inline-flex items-center gap-2 rounded-full bg-emerald-600 text-white h-10 px-4 text-sm font-semibold tabular-nums shadow-sm hover:bg-emerald-700 hover:shadow-md hover:shadow-emerald-300/40 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 transition whitespace-nowrap"
+                aria-label="Gọi hotline 091 5588 508"
+              >
+                <PhoneIcon className="h-5 w-5" />
+                <span className="font-bold">091 5588 508</span>
+              </a> */}
               <button
-                ref={openerRef}
                 onClick={() => setOpen(true)}
-                className={`inline-flex lg:hidden items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium hover:bg-gray-50 transition ${RING}`}
-                aria-label="Mở menu"
-                aria-haspopup="dialog"
-                aria-expanded={open}
+                className="inline-flex lg:hidden items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 transition"
               >
                 <MenuIcon className="h-5 w-5" />
                 <span className="sr-only">Mở menu</span>
@@ -331,16 +218,23 @@ export default function Header() {
         />
         {/* panel */}
         <div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          className={`absolute right-0 top-0 h-full w-[88%] max-w-sm bg-white shadow-xl transition-transform overscroll-contain ${
+          className={`absolute right-0 top-0 h-full w-[88%] max-w-sm bg-white shadow-xl transition-transform ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
         >
           <div className="flex items-center justify-between px-4 h-14 border-b">
-            <Image src="/logo.svg" alt="Taxi Nội Bài" width={160} height={40} className="h-9 w-auto" />
-            <button onClick={() => setOpen(false)} className={`p-2 rounded-lg border hover:bg-gray-50 transition ${RING}`} aria-label="Đóng menu">
+            <Image
+              src="/logo.svg"
+              alt="Taxi Nội Bài"
+              width={160}
+              height={40}
+              className="h-9 w-auto"
+            />
+            <button
+              onClick={() => setOpen(false)}
+              className="p-2 rounded-lg border hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 transition"
+              aria-label="Đóng menu"
+            >
               <CloseIcon className="h-5 w-5" />
             </button>
           </div>
@@ -350,14 +244,11 @@ export default function Header() {
               <div key={idx} className="py-1">
                 {"children" in item ? (
                   <details className="group">
-                    <summary
-                      className={`flex items-center justify-between rounded-lg px-2 py-3 text-base font-medium text-gray-800 cursor-pointer transition ${RING}`}
-                    >
+                    <summary className="flex items-center justify-between rounded-lg px-2 py-3 text-base font-medium text-gray-800 hover:bg-gray-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 transition">
                       <span>{item.label}</span>
                       <svg viewBox="0 0 20 20" className="h-5 w-5 transition group-open:rotate-180" fill="currentColor" aria-hidden="true">
-  <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.172l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" />
-</svg>
-
+                        <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.172l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" />
+                      </svg>
                     </summary>
                     <div className="pl-2 pb-2">
                       {(item.children || []).map((child) => (
@@ -365,8 +256,10 @@ export default function Header() {
                           key={child.href}
                           href={child.href}
                           onClick={() => setOpen(false)}
-                          className={`block rounded-lg px-3 py-2 text-sm transition outline-none ${RING} ${
-                            isActive(child.href) ? "text-brand-dark bg-brand/10" : "text-gray-700 hover:bg-brand/10 hover:text-brand-dark"
+                          className={`block rounded-lg px-3 py-2 text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${
+                            isActive(child.href)
+                              ? "text-emerald-800 bg-emerald-50"
+                              : "text-gray-700 hover:bg-emerald-50"
                           }`}
                           aria-current={isActive(child.href) ? "page" : undefined}
                         >
@@ -379,8 +272,8 @@ export default function Header() {
                   <Link
                     href={item.href}
                     onClick={() => setOpen(false)}
-                    className={`block rounded-lg px-2 py-3 text-base font-medium transition outline-none ${RING} ${
-                      isActive(item.href) ? "text-brand-dark bg-brand/10" : "text-gray-800 hover:bg-gray-50"
+                    className={`block rounded-lg px-2 py-3 text-base font-medium transition outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${
+                      isActive(item.href) ? "text-emerald-800 bg-emerald-50" : "text-gray-800 hover:bg-gray-50"
                     }`}
                     aria-current={isActive(item.href) ? "page" : undefined}
                   >
@@ -390,11 +283,11 @@ export default function Header() {
               </div>
             ))}
 
-            {/* Hotline mobile (giữ, chỉ đổi màu brand nhạt) */}
+            {/* Hotline mobile */}
             <div className="pt-2 px-2">
               <a
                 href="tel:02477778888"
-                className="flex items-center gap-3 rounded-xl bg-brand/10 text-brand-dark h-11 px-4 font-extrabold tabular-nums ring-1 ring-brand/30 hover:ring-brand/40 hover:bg-brand/15 active:scale-[0.98] transition"
+                className="flex items-center gap-3 rounded-xl bg-emerald-50 text-emerald-800 h-11 px-4 font-extrabold tabular-nums ring-1 ring-emerald-200 hover:ring-emerald-300 hover:bg-emerald-100 active:scale-[0.98] transition"
               >
                 <PhoneIcon className="h-5 w-5" /> 024.7777.8888
               </a>

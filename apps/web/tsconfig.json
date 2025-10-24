@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "lib": [
+      "DOM",
+      "ES2022"
+    ],
     "jsx": "preserve",
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -13,9 +16,14 @@
     "forceConsistentCasingInFileNames": true,
     "incremental": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {},
     "isolatedModules": true,
-    "types": ["node", "google.maps"],          // ⬅️ thêm dòng này
-    "plugins": [{ "name": "next" }]
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
   "include": [
     "next-env.d.ts",
@@ -23,5 +31,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

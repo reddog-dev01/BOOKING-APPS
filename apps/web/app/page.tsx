@@ -12,9 +12,9 @@ export default function Home() {
   return (
     <main className="max-w-6xl mx-auto px-4">
       {/* Hero ngắn */}
-      <section className="py-3 text-center space-y-2">
-        {/* <h1 className="text-2xl md:text-3xl font-extrabold">Taxi Nội Bài — Giá trọn gói</h1>
-        <p className="text-gray-600">Đặt nhanh 24/7 • 1 chiều / 2 chiều • Xuất VAT.</p> */}
+      <section className="py-6 text-center space-y-2">
+        <h1 className="text-2xl md:text-3xl font-extrabold">Taxi Nội Bài — Giá trọn gói</h1>
+        <p className="text-gray-600">Đặt nhanh 24/7 • 1 chiều / 2 chiều • Xuất VAT.</p>
       </section>
 
       {/* LAYOUT: Trái Form nhỏ, Phải Carousel */}
@@ -22,7 +22,7 @@ export default function Home() {
         {/* Card form nhỏ bên trái */}
         <div>
           <div className="bg-white border rounded-2xl shadow-sm p-4 md:p-5 max-w-md">
-            {/* <div className="text-xl font-bold mb-3">ĐẶT XE</div> */}
+            <div className="text-xl font-bold mb-3">ĐẶT XE</div>
             <BookingForm />
           </div>
         </div>
