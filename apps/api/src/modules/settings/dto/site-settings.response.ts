@@ -3,5 +3,4 @@ export class SiteSettingsResponseDto {
   defaultVatPct!: number;
   waitRatePerHour!: number;
   roundTripWaitMinutes!: number;
-  mapProvider!: string;
 }

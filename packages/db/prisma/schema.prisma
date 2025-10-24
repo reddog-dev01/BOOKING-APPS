@@ -235,7 +235,6 @@ model SiteSetting {
   defaultVatPct        Int      @default(10)
   waitRatePerHour      Int      @default(30000) // VND/giờ đợi
   roundTripWaitMinutes Int      @default(90) // thời gian chờ mặc định (phút) cho chuyến hai chiều
-  mapProvider          String   @default("google")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }

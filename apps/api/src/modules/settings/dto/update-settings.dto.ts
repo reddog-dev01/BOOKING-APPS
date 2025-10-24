@@ -1,7 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayNotEmpty, IsArray, IsIn, IsInt, Min } from 'class-validator';
-
-type MapProvider = 'google' | 'manual';
+import { ArrayNotEmpty, IsArray, IsInt, Min } from 'class-validator';
 
 export class UpdateSettingsDto {
   @IsArray()
@@ -25,7 +23,4 @@ export class UpdateSettingsDto {
   @IsInt()
   @Min(0)
   roundTripWaitMinutes!: number;
-
-  @IsIn(['google', 'manual'])
-  mapProvider!: MapProvider;
 }

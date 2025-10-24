@@ -7,7 +7,6 @@ type SiteSetting = {
   defaultVatPct: number;
   waitRatePerHour: number;
   roundTripWaitMinutes: number;
-  mapProvider: string;
 };
 
 type VehicleType = {
@@ -86,7 +85,6 @@ export default function DashboardPage() {
     defaultVatPct: 10,
     waitRatePerHour: 60000,
     roundTripWaitMinutes: 90,
-    mapProvider: "google",
   });
   const [vehicles, setVehicles] = useState<VehicleType[]>([]);
   const [vehicleDrafts, setVehicleDrafts] = useState<Record<number, { perKmVnd: number; isActive: boolean }>>({});
@@ -127,7 +125,6 @@ export default function DashboardPage() {
           defaultVatPct: settingResponse.defaultVatPct,
           waitRatePerHour: settingResponse.waitRatePerHour,
           roundTripWaitMinutes: settingResponse.roundTripWaitMinutes,
-          mapProvider: settingResponse.mapProvider,
         });
         setVehicles(vehicleResponse);
         setVehicleDrafts(
@@ -174,7 +171,6 @@ export default function DashboardPage() {
         defaultVatPct: settingsForm.defaultVatPct,
         waitRatePerHour: settingsForm.waitRatePerHour,
         roundTripWaitMinutes: settingsForm.roundTripWaitMinutes,
-        mapProvider: settingsForm.mapProvider,
       };
 
       const updated = await requestJson<SiteSetting>("/settings", {
@@ -336,21 +332,6 @@ export default function DashboardPage() {
                 />
               </label>
 
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-slate-700">Nhà cung cấp bản đồ</span>
-                <select
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                  value={settingsForm.mapProvider}
-                  onChange={(event) => handleSettingsChange("mapProvider", event.target.value)}
-                  disabled={savingSettings || loading}
-                >
-                  <option value="google">Google Maps</option>
-                  <option value="manual">Tự nhập toạ độ</option>
-                </select>
-                <span className="text-xs text-slate-500">
-                  Khi chọn Google Maps cần thiết lập biến môi trường <code>GOOGLE_MAPS_API_KEY</code> cho API.
-                </span>
-              </label>
             </div>
 
             <div className="mt-6 flex items-center justify-end gap-3">

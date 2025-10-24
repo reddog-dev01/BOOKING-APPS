@@ -10,7 +10,6 @@ const DEFAULT_SETTINGS: SiteSettingsResponseDto = {
   defaultVatPct: 10,
   waitRatePerHour: 30000,
   roundTripWaitMinutes: 90,
-  mapProvider: 'google',
 };
 
 @Injectable()
@@ -47,7 +46,6 @@ export class SettingsService {
       defaultVatPct: dto.defaultVatPct,
       waitRatePerHour: dto.waitRatePerHour,
       roundTripWaitMinutes: dto.roundTripWaitMinutes,
-      mapProvider: dto.mapProvider,
     };
 
     const updated = await this.prisma.siteSetting.upsert({
@@ -57,7 +55,6 @@ export class SettingsService {
         defaultVatPct: dto.defaultVatPct,
         waitRatePerHour: dto.waitRatePerHour,
         roundTripWaitMinutes: dto.roundTripWaitMinutes,
-        mapProvider: dto.mapProvider,
       },
       create: payload,
     });
@@ -76,7 +73,6 @@ export class SettingsService {
       defaultVatPct: record.defaultVatPct,
       waitRatePerHour: record.waitRatePerHour,
       roundTripWaitMinutes: record.roundTripWaitMinutes,
-      mapProvider: record.mapProvider,
     };
   }
 
