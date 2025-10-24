@@ -3,6 +3,10 @@ pnpm-debug.log*
 .yarn/*
 .DS_Store
 .env*
+!apps/api/.env
+!apps/api/.env.example
+!apps/web/.env.local
+!apps/web/.env.local.example
 coverage/
 tmp/
 
