@@ -5,6 +5,24 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { QuoteRequestDto, TripTypeDto } from './dto/quote-request.dto';
 import { QuoteResponseDto } from './dto/quote-response.dto';
 
+interface QuoteCreateDelegate {
+  create(args: { data: Record<string, unknown> }): Promise<QuoteRecord>;
+}
+
+interface QuoteRecord {
+  id: string;
+  vehicleTypeId: number;
+  basePriceVnd: number;
+  distanceKm: number;
+  timeMinutes: number;
+  vatPct: number;
+  vatAmountVnd: number;
+  totalVnd: number;
+  currency: string;
+  expiresAt: Date;
+  meta?: Prisma.JsonValue | null;
+}
+
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
 
@@ -129,7 +147,8 @@ export class PricingService {
       },
     };
 
-    const created = await this.prisma.quote.create({
+    const quoteDelegate = this.getQuoteDelegate();
+    const created = await quoteDelegate.create({
       data: {
         tripType:
           dto.tripType === TripTypeDto.AIRPORT ? TripType.AIRPORT : TripType.ROAD,
@@ -241,6 +260,18 @@ export class PricingService {
       Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
     const distance = 2 * 6371 * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
     return Math.max(0, Math.round(distance * 100) / 100);
+  }
+
+  private getQuoteDelegate(): QuoteCreateDelegate {
+    const delegate = (this.prisma as Record<string, unknown>).quote as QuoteCreateDelegate | undefined;
+    if (!delegate || typeof delegate.create !== 'function') {
+      this.throwError(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'MISSING_SCHEMA_FIELD',
+        'Quote model is not available in Prisma client',
+      );
+    }
+    return delegate;
   }
 
   private estimateMinutes(distanceKm: number): number {
