@@ -5,12 +5,14 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
 
+type TripTypeValue = 'AIRPORT' | 'ROAD';
+
 type QuoteDelegateLike = {
   findUnique: (args: Record<string, unknown>) => Promise<
     | (Record<string, unknown> & {
         id: string;
         expiresAt: Date;
-        tripType: Prisma.TripType;
+        tripType: TripTypeValue;
         routeId?: string | null;
         airportId?: string | null;
         vehicleTypeId: number;

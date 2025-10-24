@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Airport, Prisma, TripType } from '@prisma/client';
+import { Airport, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { QuoteRequestDto, TripTypeDto } from './dto/quote-request.dto';
@@ -8,9 +8,11 @@ import { QuoteResponseDto } from './dto/quote-response.dto';
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
 
+type TripTypeValue = 'AIRPORT' | 'ROAD';
+
 type QuoteRecord = {
   id: string;
-  tripType: TripType;
+  tripType: TripTypeValue;
   routeId: string | null;
   airportId: string | null;
   vehicleTypeId: number;
@@ -66,7 +68,7 @@ export class PricingService {
       const route = await this.prisma.route.findFirst({
         where: {
           code: dto.routeCode,
-          tripType: TripType.ROAD,
+          tripType: 'ROAD',
           isActive: true,
         },
       });
@@ -154,7 +156,7 @@ export class PricingService {
     const quoteDelegate = this.getQuoteDelegate();
     const created = await quoteDelegate.create({
       data: {
-        tripType: dto.tripType === TripTypeDto.AIRPORT ? TripType.AIRPORT : TripType.ROAD,
+        tripType: dto.tripType === TripTypeDto.AIRPORT ? 'AIRPORT' : 'ROAD',
         routeId,
         airportId: airport?.id ?? null,
         vehicleTypeId: dto.vehicleTypeId,
