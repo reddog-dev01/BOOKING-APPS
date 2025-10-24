@@ -10,8 +10,7 @@ export class BookingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateBookingDto): Promise<CreateBookingResponseDto> {
-    const quoteDelegate = this.getQuoteDelegate();
-    const quote = await quoteDelegate.findUnique({ where: { id: dto.quoteId } });
+    const quote = await this.prisma.quote.findUnique({ where: { id: dto.quoteId } });
     if (!quote) {
       this.throwError(HttpStatus.NOT_FOUND, 'QUOTE_NOT_FOUND', 'Quote not found', {
         quoteId: dto.quoteId,
@@ -56,7 +55,7 @@ export class BookingsService {
       quote.distanceKm ??
       0;
 
-    const data = {
+    const data: Prisma.BookingCreateInput = {
       tripType: quote.tripType,
       routeId: quote.routeId ?? null,
       airportId: quote.airportId ?? null,
@@ -78,7 +77,7 @@ export class BookingsService {
       vatPct: quote.vatPct,
       vatVnd: quote.vatAmountVnd,
       totalVnd: quote.totalVnd,
-      couponCode,
+      couponCode: couponCode ?? null,
       stopsJson:
         stops && stops.length > 0
           ? (stops as unknown as Prisma.InputJsonValue)
@@ -87,8 +86,8 @@ export class BookingsService {
       phone: dto.customerPhone,
       customerNote: dto.customerNote ?? null,
       startAt,
-      quote: { connect: { id: quote.id } },
-    } as Prisma.BookingCreateInput;
+      quoteId: quote.id,
+    };
 
     const booking = await this.prisma.booking.create({
       data,
@@ -127,20 +126,6 @@ export class BookingsService {
 
   private asBoolean(value: unknown): boolean | undefined {
     return typeof value === 'boolean' ? value : undefined;
-  }
-
-  private getQuoteDelegate(): { findUnique: (args: Record<string, unknown>) => Promise<any> } {
-    const delegate = (this.prisma as Record<string, unknown>).quote as
-      | { findUnique: (args: Record<string, unknown>) => Promise<any> }
-      | undefined;
-    if (!delegate) {
-      this.throwError(
-        HttpStatus.INTERNAL_SERVER_ERROR,
-        'MISSING_SCHEMA_FIELD',
-        'Quote model is not available in Prisma client',
-      );
-    }
-    return delegate;
   }
 
   private throwError(
