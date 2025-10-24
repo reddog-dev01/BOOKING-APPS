@@ -71,6 +71,9 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // ignore JSON parse error, use raw text
     }
+    if (!message || message.trim().startsWith('<')) {
+      message = `Request failed with status ${res.status}`;
+    }
     throw new Error(message);
   }
   return text ? (JSON.parse(text) as T) : (undefined as T);
