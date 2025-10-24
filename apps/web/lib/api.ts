@@ -47,7 +47,7 @@ export async function fetchQuote(
   dto: QuoteRequestDto,
   opts: FetchOpts = {}
 ): Promise<QuoteResponse> {
-  return fetchJson<QuoteResponse>(`${API_BASE}/api/quote`, {
+  return fetchJson<QuoteResponse>(`${API_BASE}/pricing/quote`, {
     method: "POST",
     body: JSON.stringify(dto),
     headers: opts.headers,
@@ -60,7 +60,7 @@ export async function createBooking(
   dto: CreateBookingRequestDto,
   opts: FetchOpts = {}
 ): Promise<CreateBookingResponse> {
-  return fetchJson<CreateBookingResponse>(`${API_BASE}/api/bookings`, {
+  return fetchJson<CreateBookingResponse>(`${API_BASE}/bookings`, {
     method: "POST",
     body: JSON.stringify(dto),
     headers: opts.headers,
