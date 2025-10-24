@@ -23,7 +23,10 @@ type ApiError = {
   message: string;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  "http://localhost:3001";
 
 const TRUNK_SIZE_LABEL: Record<string, string> = {
   SMALL: "Cốp nhỏ",
@@ -65,7 +68,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       if (parsed?.message) {
         message = parsed.message;
       }
-    } catch (err) {
+    } catch {
       // ignore JSON parse error, use raw text
     }
     throw new Error(message);
