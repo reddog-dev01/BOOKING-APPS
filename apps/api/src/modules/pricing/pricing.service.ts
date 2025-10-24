@@ -263,7 +263,9 @@ export class PricingService {
   }
 
   private getQuoteDelegate(): QuoteCreateDelegate {
-    const delegate = (this.prisma as Record<string, unknown>).quote as QuoteCreateDelegate | undefined;
+    const delegate = (
+      this.prisma as unknown as Record<string, unknown>
+    ).quote as QuoteCreateDelegate | undefined;
     if (!delegate || typeof delegate.create !== 'function') {
       this.throwError(
         HttpStatus.INTERNAL_SERVER_ERROR,

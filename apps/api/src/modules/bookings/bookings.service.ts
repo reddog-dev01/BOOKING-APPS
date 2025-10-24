@@ -155,7 +155,9 @@ export class BookingsService {
   }
 
   private getQuoteDelegate(): QuoteDelegateLike {
-    const delegate = (this.prisma as Record<string, unknown>).quote as QuoteDelegateLike | undefined;
+    const delegate = (
+      this.prisma as unknown as Record<string, unknown>
+    ).quote as QuoteDelegateLike | undefined;
     if (!delegate || typeof delegate.findUnique !== 'function') {
       this.throwError(
         HttpStatus.INTERNAL_SERVER_ERROR,
