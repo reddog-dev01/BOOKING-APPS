@@ -7,7 +7,7 @@ export class QuoteResponseDto {
   vatPct!: number;
   vatAmount!: number;
   total!: number;
-  currency!: 'VND' | 'USD';
+  currency!: 'VND';
   expiresAt!: string;
   meta?: Record<string, unknown>;
 }

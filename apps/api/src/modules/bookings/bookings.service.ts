@@ -5,35 +5,12 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
 
-type TripTypeValue = 'AIRPORT' | 'ROAD';
-
-type QuoteDelegateLike = {
-  findUnique: (args: Record<string, unknown>) => Promise<
-    | (Record<string, unknown> & {
-        id: string;
-        expiresAt: Date;
-        tripType: TripTypeValue;
-        routeId?: string | null;
-        airportId?: string | null;
-        vehicleTypeId: number;
-        basePriceVnd: number;
-        distanceKm?: number | null;
-        vatPct: number;
-        vatAmountVnd: number;
-        totalVnd: number;
-        meta?: Prisma.JsonValue | null;
-      })
-    | null
-  >;
-};
-
 @Injectable()
 export class BookingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateBookingDto): Promise<CreateBookingResponseDto> {
-    const quoteDelegate = this.getQuoteDelegate();
-    const quote = await quoteDelegate.findUnique({ where: { id: dto.quoteId } });
+    const quote = await this.prisma.quote.findUnique({ where: { id: dto.quoteId } });
     if (!quote) {
       this.throwError(HttpStatus.NOT_FOUND, 'QUOTE_NOT_FOUND', 'Quote not found', {
         quoteId: dto.quoteId,
@@ -88,7 +65,7 @@ export class BookingsService {
       quote.distanceKm ??
       0;
 
-    const data = {
+    const data: Prisma.BookingUncheckedCreateInput = {
       tripType: quote.tripType,
       routeId: quote.routeId ?? null,
       airportId: quote.airportId ?? null,
@@ -120,10 +97,10 @@ export class BookingsService {
       customerNote: dto.customerNote ?? null,
       startAt,
       quoteId: quote.id,
-    } as Record<string, unknown>;
+    };
 
     const booking = await this.prisma.booking.create({
-      data: data as Prisma.BookingUncheckedCreateInput,
+      data,
       select: { id: true },
     });
 
@@ -131,20 +108,6 @@ export class BookingsService {
       bookingId: booking.id,
       status: 'PENDING',
     };
-  }
-
-  private getQuoteDelegate(): QuoteDelegateLike {
-    const delegate = (this.prisma as unknown as Record<string, unknown>).quote as
-      | QuoteDelegateLike
-      | undefined;
-    if (!delegate) {
-      this.throwError(
-        HttpStatus.INTERNAL_SERVER_ERROR,
-        'MISSING_SCHEMA_FIELD',
-        'Quote model is not available on the Prisma client',
-      );
-    }
-    return delegate;
   }
 
   private asString(value: unknown): string | undefined {

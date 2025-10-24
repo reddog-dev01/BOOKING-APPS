@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Airport, Prisma } from '@prisma/client';
+import { Airport, Prisma, TripType } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { QuoteRequestDto, TripTypeDto } from './dto/quote-request.dto';
@@ -7,30 +7,6 @@ import { QuoteResponseDto } from './dto/quote-response.dto';
 
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
-
-type TripTypeValue = 'AIRPORT' | 'ROAD';
-
-type QuoteRecord = {
-  id: string;
-  tripType: TripTypeValue;
-  routeId: string | null;
-  airportId: string | null;
-  vehicleTypeId: number;
-  basePriceVnd: number;
-  distanceKm: number;
-  timeMinutes: number;
-  vatPct: number;
-  vatAmountVnd: number;
-  totalVnd: number;
-  currency: string;
-  expiresAt: Date;
-  meta: Prisma.JsonValue | null;
-};
-
-type QuoteDelegateLike = {
-  findUnique: (args: Record<string, unknown>) => Promise<QuoteRecord | null>;
-  create: (args: { data: Record<string, unknown> }) => Promise<QuoteRecord>;
-};
 
 type QuoteMeta = Prisma.JsonObject & {
   request: Record<string, unknown>;
@@ -68,7 +44,7 @@ export class PricingService {
       const route = await this.prisma.route.findFirst({
         where: {
           code: dto.routeCode,
-          tripType: 'ROAD',
+          tripType: TripType.ROAD,
           isActive: true,
         },
       });
@@ -153,11 +129,11 @@ export class PricingService {
       },
     };
 
-    const quoteDelegate = this.getQuoteDelegate();
-    const created = await quoteDelegate.create({
+    const created = await this.prisma.quote.create({
       data: {
-        tripType: dto.tripType === TripTypeDto.AIRPORT ? 'AIRPORT' : 'ROAD',
-        routeId,
+        tripType:
+          dto.tripType === TripTypeDto.AIRPORT ? TripType.AIRPORT : TripType.ROAD,
+        routeId: routeId ?? null,
         airportId: airport?.id ?? null,
         vehicleTypeId: dto.vehicleTypeId,
         basePriceVnd: basePrice,
@@ -185,20 +161,6 @@ export class PricingService {
       expiresAt: created.expiresAt.toISOString(),
       meta,
     };
-  }
-
-  private getQuoteDelegate(): QuoteDelegateLike {
-    const delegate = (this.prisma as unknown as Record<string, unknown>).quote as
-      | QuoteDelegateLike
-      | undefined;
-    if (!delegate) {
-      this.throwError(
-        HttpStatus.INTERNAL_SERVER_ERROR,
-        'MISSING_SCHEMA_FIELD',
-        'Quote model is not available on the Prisma client',
-      );
-    }
-    return delegate;
   }
 
   private resolveRoadDistance(dto: QuoteRequestDto, fallback: number): number {
