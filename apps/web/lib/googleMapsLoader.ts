@@ -2,8 +2,6 @@ const GOOGLE_MAPS_URL_BASE = "https://maps.googleapis.com/maps/api/js";
 
 const LIBRARIES = ["places"];
 
-let loadPromise: Promise<typeof google> | null = null;
-
 declare global {
   interface Window {
     __googleMapsLoadPromise__?: Promise<typeof google>;
@@ -18,6 +16,19 @@ function createScriptSrc(apiKey: string) {
     language: "vi",
   });
   return `${GOOGLE_MAPS_URL_BASE}?${params.toString()}`;
+}
+
+function findExistingScript() {
+  const byDataset = document.querySelector<HTMLScriptElement>("script[data-google-maps]");
+  if (byDataset) return byDataset;
+
+  const candidates = Array.from(document.getElementsByTagName("script"));
+  return (
+    candidates.find(
+      (script) =>
+        script.src.startsWith(GOOGLE_MAPS_URL_BASE) && script.src.includes("libraries=places")
+    ) ?? null
+  );
 }
 
 export function loadGoogleMapsPlaces(): Promise<typeof google> {
@@ -38,9 +49,10 @@ export function loadGoogleMapsPlaces(): Promise<typeof google> {
     return Promise.reject(new Error("Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"));
   }
 
-  loadPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>("script[data-google-maps]");
+  const loadPromise = new Promise<typeof google>((resolve, reject) => {
+    const existing = findExistingScript();
     if (existing) {
+      existing.dataset.googleMaps = "true";
       if (window.google?.maps?.places) {
         resolve(window.google);
         return;
@@ -63,6 +75,7 @@ export function loadGoogleMapsPlaces(): Promise<typeof google> {
     script.src = createScriptSrc(apiKey);
     script.async = true;
     script.defer = true;
+    script.setAttribute("loading", "async");
     script.dataset.googleMaps = "true";
     script.onerror = () => {
       window.__googleMapsLoadPromise__ = undefined;
