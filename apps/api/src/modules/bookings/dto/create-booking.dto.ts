@@ -1,53 +1,73 @@
 import { Type } from 'class-transformer';
 import {
-  IsArray, ArrayMaxSize, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional,
-  IsString, Min, Max, ValidateIf
+  ArrayMaxSize,
+  IsArray,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  Min,
 } from 'class-validator';
 
-export enum TripTypeDto { AIRPORT='AIRPORT', ROAD='ROAD' }
-export type DirectionDto = 'to_airport' | 'from_airport';
-
 export class CreateBookingDto {
-  @IsEnum(TripTypeDto) tripType!: TripTypeDto;
+  @IsUUID('4')
+  quoteId!: string;
 
-  // ROAD
-  @ValidateIf(o=>o.tripType===TripTypeDto.ROAD) @IsOptional() @IsString() routeCode?: string;
+  @IsString()
+  @MaxLength(160)
+  customerName!: string;
 
-  // AIRPORT
-  @ValidateIf(o=>o.tripType===TripTypeDto.AIRPORT) @IsOptional() @IsString() airportCode?: string;
-  @ValidateIf(o=>o.tripType===TripTypeDto.AIRPORT) @IsOptional() @IsString() direction?: DirectionDto;
+  @IsString()
+  @MaxLength(32)
+  customerPhone!: string;
 
-  @IsInt() @Type(()=>Number) vehicleTypeId!: number;
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  customerNote?: string;
 
-  // FE ưu tiên fromText/toText; nhưng chấp nhận alias fromLabel/toLabel
-  @IsOptional() @IsString() fromText?: string;
-  @IsOptional() @IsString() toText?: string;
-  @IsOptional() @IsString() fromLabel?: string;
-  @IsOptional() @IsString() toLabel?: string;
+  @IsOptional()
+  @IsString()
+  fromText?: string;
 
-  @IsOptional() @Type(()=>Number) @IsNumber() fromLat?: number;
-  @IsOptional() @Type(()=>Number) @IsNumber() fromLng?: number;
-  @IsOptional() @Type(()=>Number) @IsNumber() toLat?: number;
-  @IsOptional() @Type(()=>Number) @IsNumber() toLng?: number;
+  @IsOptional()
+  @IsString()
+  toText?: string;
 
-  @IsOptional() @Type(()=>Number) @IsNumber() @Min(0) distanceKm?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fromLat?: number;
 
-  @IsOptional() @IsBoolean() roundTrip?: boolean;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fromLng?: number;
 
-  // FE gửi withVat; map sang vatPct ở service
-  @IsOptional() @IsBoolean() withVat?: boolean;
-  @IsOptional() @Type(()=>Number) @IsInt() @Min(0) @Max(10) vatPct?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  toLat?: number;
 
-  // FE gửi waitHours khi roundTrip; map sang minutes ở service
-  @IsOptional() @Type(()=>Number) @IsNumber() @Min(0) waitHours?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  toLng?: number;
 
-  @IsOptional() @IsString() couponCode?: string;
-  @IsOptional() @IsArray() @ArrayMaxSize(5) stops?: string[];
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
 
-  // Thời gian đi
-  @IsOptional() @IsString() startAt?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsString({ each: true })
+  stops?: string[];
 
-  // Contact
-  @IsString() customerName!: string;
-  @IsString() phone!: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  distanceKm?: number;
 }

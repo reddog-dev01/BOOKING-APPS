@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
+
+import { PrismaModule } from '../../infra/prisma/prisma.module';
 import { PricingController } from './pricing.controller';
 import { PricingService } from './pricing.service';
-import { MapsModule } from '../maps/maps.module';
 
 @Module({
-  imports: [MapsModule],               // cần để inject GoogleMapsService
+  imports: [PrismaModule],
   controllers: [PricingController],
   providers: [PricingService],
   exports: [PricingService],

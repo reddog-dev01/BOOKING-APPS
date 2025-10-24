@@ -7,7 +7,6 @@ type SiteSetting = {
   defaultVatPct: number;
   waitRatePerHour: number;
   roundTripWaitMinutes: number;
-  mapProvider: string;
 };
 
 type VehicleType = {
@@ -23,7 +22,10 @@ type ApiError = {
   message: string;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  "http://localhost:3001";
 
 const TRUNK_SIZE_LABEL: Record<string, string> = {
   SMALL: "Cốp nhỏ",
@@ -48,14 +50,22 @@ function parseVatOptions(input: string): number[] {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    cache: "no-store",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      cache: "no-store",
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    const hint =
+      "Không thể kết nối tới API. Hãy kiểm tra rằng dịch vụ API và Postgres đang chạy (ví dụ: `docker compose up -d db` và `pnpm --filter api dev`).";
+    const message = error instanceof Error ? `${error.message}. ${hint}` : hint;
+    throw new Error(message);
+  }
 
   const text = await res.text();
   if (!res.ok) {
@@ -65,8 +75,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       if (parsed?.message) {
         message = parsed.message;
       }
-    } catch (err) {
+    } catch {
       // ignore JSON parse error, use raw text
+    }
+    if (!message || message.trim().startsWith('<')) {
+      message = `Request failed with status ${res.status}`;
     }
     throw new Error(message);
   }
@@ -80,7 +93,6 @@ export default function DashboardPage() {
     defaultVatPct: 10,
     waitRatePerHour: 60000,
     roundTripWaitMinutes: 90,
-    mapProvider: "google",
   });
   const [vehicles, setVehicles] = useState<VehicleType[]>([]);
   const [vehicleDrafts, setVehicleDrafts] = useState<Record<number, { perKmVnd: number; isActive: boolean }>>({});
@@ -121,7 +133,6 @@ export default function DashboardPage() {
           defaultVatPct: settingResponse.defaultVatPct,
           waitRatePerHour: settingResponse.waitRatePerHour,
           roundTripWaitMinutes: settingResponse.roundTripWaitMinutes,
-          mapProvider: settingResponse.mapProvider,
         });
         setVehicles(vehicleResponse);
         setVehicleDrafts(
@@ -168,7 +179,6 @@ export default function DashboardPage() {
         defaultVatPct: settingsForm.defaultVatPct,
         waitRatePerHour: settingsForm.waitRatePerHour,
         roundTripWaitMinutes: settingsForm.roundTripWaitMinutes,
-        mapProvider: settingsForm.mapProvider,
       };
 
       const updated = await requestJson<SiteSetting>("/settings", {
@@ -330,21 +340,6 @@ export default function DashboardPage() {
                 />
               </label>
 
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-slate-700">Nhà cung cấp bản đồ</span>
-                <select
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                  value={settingsForm.mapProvider}
-                  onChange={(event) => handleSettingsChange("mapProvider", event.target.value)}
-                  disabled={savingSettings || loading}
-                >
-                  <option value="google">Google Maps</option>
-                  <option value="manual">Tự nhập toạ độ</option>
-                </select>
-                <span className="text-xs text-slate-500">
-                  Khi chọn Google Maps cần thiết lập biến môi trường <code>GOOGLE_MAPS_API_KEY</code> cho API.
-                </span>
-              </label>
             </div>
 
             <div className="mt-6 flex items-center justify-end gap-3">

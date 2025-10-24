@@ -8,7 +8,6 @@ type FormState = {
   vatOptionsInput: string;
   defaultVatPct: number;
   waitRatePerHour: number;
-  mapProvider: SiteSetting["mapProvider"];
 };
 
 const formatVatOptions = (options: number[]) => options.join(", ");
@@ -19,18 +18,11 @@ const parseVatOptions = (input: string) =>
     .map((value) => Number.parseInt(value, 10))
     .filter((value) => !Number.isNaN(value));
 
-const MAP_PROVIDERS: { value: SiteSetting["mapProvider"]; label: string; description: string }[] = [
-  { value: "local", label: "Local", description: "Tra cứu trong bảng Location" },
-  { value: "google", label: "Google Maps", description: "Yêu cầu API key" },
-  { value: "mapbox", label: "Mapbox", description: "Yêu cầu token" },
-];
-
 export default function SettingsForm({ initialSettings }: { initialSettings: SiteSetting }) {
   const [formState, setFormState] = useState<FormState>({
     vatOptionsInput: formatVatOptions(initialSettings.vatOptions),
     defaultVatPct: initialSettings.defaultVatPct,
     waitRatePerHour: initialSettings.waitRatePerHour,
-    mapProvider: initialSettings.mapProvider,
   });
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,20 +42,19 @@ export default function SettingsForm({ initialSettings }: { initialSettings: Sit
 
     startTransition(async () => {
       try {
-        const response = await fetch(`${getApiBaseUrl()}/settings/site`, {
+        const response = await fetch(`${getApiBaseUrl()}/settings`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             vatOptions,
             defaultVatPct: formState.defaultVatPct,
             waitRatePerHour: formState.waitRatePerHour,
-            mapProvider: formState.mapProvider,
           }),
         });
 
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
-          const message = payload?.error?.message;
+          const message = (payload as { error?: { message?: string } })?.error?.message;
           throw new Error(message ?? "Không cập nhật được cài đặt");
         }
 
@@ -112,26 +103,6 @@ export default function SettingsForm({ initialSettings }: { initialSettings: Sit
             value={formState.waitRatePerHour}
             onChange={(event) => setFormState((prev) => ({ ...prev, waitRatePerHour: Number(event.target.value) }))}
           />
-        </label>
-
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-slate-700">Nhà cung cấp bản đồ</span>
-          <select
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-            value={formState.mapProvider}
-            onChange={(event) =>
-              setFormState((prev) => ({ ...prev, mapProvider: event.target.value as SiteSetting["mapProvider"] }))
-            }
-          >
-            {MAP_PROVIDERS.map((provider) => (
-              <option key={provider.value} value={provider.value}>
-                {provider.label}
-              </option>
-            ))}
-          </select>
-          <span className="text-xs text-slate-500">
-            {MAP_PROVIDERS.find((provider) => provider.value === formState.mapProvider)?.description}
-          </span>
         </label>
       </div>
 

@@ -1,98 +1,109 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Booking API (NestJS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+This service powers the pricing and booking flows for the Booking platform. It exposes REST endpoints for generating price quotes and creating bookings while enforcing validation, rate limiting, and structured logging.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Features
 
-## Description
+- NestJS + Fastify stack with global `ValidationPipe` (`whitelist`, `transform`).
+- JSON logging via Fastify/Pino.
+- CORS allow-list derived from `CORS_ORIGINS` (CSV) with sensible localhost fallbacks.
+- Lightweight in-memory rate limiter configured through `RL_MAX`, `RL_WINDOW`, and `RL_ALLOWLIST`.
+- Graceful shutdown (SIGINT/SIGTERM) with Prisma disconnection.
+- Pricing module supporting `/pricing/quote` and `/price/quote` for both road and airport trips.
+- Booking module providing `/bookings` creation with quote expiry validation.
+- Settings and vehicle management endpoints used by the admin dashboard.
+- `/healthz` endpoint for liveness probes.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Prerequisites
 
-## Project setup
+- Node.js 20+
+- pnpm 8+
+- Docker (for running Postgres via `docker compose`)
 
-```bash
-$ pnpm install
+### Environment variables
+
+Copy the project level `.env` (or create one) that contains at least:
+
+```env
+PORT=3001
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3002
+DATABASE_URL=postgresql://booking:secret@localhost:5432/booking?schema=public
+RL_MAX=120
+RL_WINDOW=1 minute
+RL_ALLOWLIST=
 ```
 
-## Compile and run the project
+> ℹ️ When the API runs inside Docker, set the `DATABASE_URL` host to `db` instead of `localhost`.
 
-```bash
-# development
-$ pnpm run start
+## Local development
 
-# watch mode
-$ pnpm run start:dev
+1. Install dependencies (run once):
+   ```bash
+   pnpm install
+   ```
+2. Start Postgres:
+   ```bash
+   docker compose up -d db
+   ```
+3. Generate the Prisma client and apply the existing schema:
+   ```bash
+   export PRISMA_SCHEMA=packages/db/prisma/schema.prisma
+   pnpm -w prisma generate --schema "$PRISMA_SCHEMA"
+   ```
+4. Seed reference data (airports, routes, price policies, etc.):
+   ```bash
+   pnpm -w prisma db seed
+   ```
+5. Launch the API on port 3001:
+   ```bash
+   pnpm --filter api dev
+   ```
 
-# production mode
-$ pnpm run start:prod
+The Fastify logger prints JSON lines to STDOUT. When the API starts successfully you should see a message similar to:
+
+```json
+{"level":"info","time":"2025-10-24T11:00:00.000Z","port":3001,"msg":"API server is listening"}
 ```
 
-## Run tests
+If the API cannot reach Postgres you will receive a single log entry like:
 
-```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+```text
+[Nest] ... ERROR [PrismaService] Failed to connect to the database: Can't reach database server at `localhost:5432`
 ```
 
-## Deployment
+Ensure Postgres is running (`docker compose up -d db`) and that `DATABASE_URL` points to the correct host before retrying.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Testing the endpoints
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+After the API starts, you can issue sample requests:
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+now=$(date -Iseconds)
+# Create an airport quote (aliases: /pricing/quote or /price/quote)
+curl -i -H 'content-type: application/json' \
+  -d '{"tripType":"AIRPORT","vehicleTypeId":1,"startAt":"'"$now"'","roundTrip":false,"withVat":true,"vatPct":10,"fromText":"Noi Bai","toText":"Old Quarter","fromLat":21.214,"fromLng":105.806,"toLat":21.033,"toLng":105.851,"airportCode":"HAN","direction":"IN"}' \
+  http://localhost:3001/pricing/quote
+
+# Use the returned quote id to create a booking
+QUOTE_ID="<replace-with-quote-id>"
+curl -i -H 'content-type: application/json' \
+  -d '{"quoteId":"'"$QUOTE_ID"'","customerName":"A","customerPhone":"+84900000000","fromText":"Noi Bai","toText":"Old Quarter"}' \
+  http://localhost:3001/bookings
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Validation errors return HTTP 400 responses with the standard NestJS validation payload that lists the failing fields.
 
-## Resources
+## Production notes
 
-Check out a few resources that may come in handy when working with NestJS:
+- Run `pnpm --filter api build` and start with `pnpm --filter api start:prod`.
+- Configure CORS origins, rate limit values, and logging level via environment variables.
+- Backup the database before applying new Prisma migrations.
+- Monitor `/healthz` for liveness and forward structured logs to your observability stack.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Troubleshooting
 
-## Support
+- **`Can't reach database server at 'localhost:5432'`** – ensure Postgres is running locally or update the `DATABASE_URL` host (`db` when using Docker Compose).
+- **CORS errors from the browser** – append the frontend origin to `CORS_ORIGINS` (comma separated) and restart the API.
+- **429 rate limit responses** – increase `RL_MAX` or extend `RL_WINDOW` during development, or add your IP to `RL_ALLOWLIST`.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+For additional questions see the inline comments in `pricing.controller.ts` and `bookings.controller.ts` for curl snippets.

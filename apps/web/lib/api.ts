@@ -11,9 +11,10 @@ type FetchOpts = {
   timeoutMs?: number;
 };
 
-const API_BASE =
-  (typeof window !== "undefined" && (process as any)?.env?.NEXT_PUBLIC_API_BASE) ||
-  "";
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001").replace(
+  /\/$/,
+  ""
+);
 
 // Simple fetch with timeout
 async function fetchJson<T>(
@@ -47,7 +48,7 @@ export async function fetchQuote(
   dto: QuoteRequestDto,
   opts: FetchOpts = {}
 ): Promise<QuoteResponse> {
-  return fetchJson<QuoteResponse>(`${API_BASE}/api/quote`, {
+  return fetchJson<QuoteResponse>(`${API_BASE}/pricing/quote`, {
     method: "POST",
     body: JSON.stringify(dto),
     headers: opts.headers,
@@ -60,7 +61,7 @@ export async function createBooking(
   dto: CreateBookingRequestDto,
   opts: FetchOpts = {}
 ): Promise<CreateBookingResponse> {
-  return fetchJson<CreateBookingResponse>(`${API_BASE}/api/bookings`, {
+  return fetchJson<CreateBookingResponse>(`${API_BASE}/bookings`, {
     method: "POST",
     body: JSON.stringify(dto),
     headers: opts.headers,
