@@ -124,7 +124,8 @@ export class PricingService {
       },
     };
 
-    const created = await this.prisma.quote.create({
+    const quoteDelegate = this.getQuoteDelegate();
+    const created = await quoteDelegate.create({
       data: {
         tripType: dto.tripType === TripTypeDto.AIRPORT ? TripType.AIRPORT : TripType.ROAD,
         routeId,
@@ -235,5 +236,19 @@ export class PricingService {
     details: Record<string, unknown> = {},
   ): never {
     throw new HttpException({ error: code, message, details }, status);
+  }
+
+  private getQuoteDelegate(): { create: (args: Record<string, unknown>) => Promise<any> } {
+    const delegate = (this.prisma as Record<string, unknown>).quote as
+      | { create: (args: Record<string, unknown>) => Promise<any> }
+      | undefined;
+    if (!delegate) {
+      this.throwError(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'MISSING_SCHEMA_FIELD',
+        'Quote model is not available in Prisma client',
+      );
+    }
+    return delegate;
   }
 }

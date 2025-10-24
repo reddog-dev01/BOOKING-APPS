@@ -10,7 +10,8 @@ export class BookingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateBookingDto): Promise<CreateBookingResponseDto> {
-    const quote = await this.prisma.quote.findUnique({ where: { id: dto.quoteId } });
+    const quoteDelegate = this.getQuoteDelegate();
+    const quote = await quoteDelegate.findUnique({ where: { id: dto.quoteId } });
     if (!quote) {
       this.throwError(HttpStatus.NOT_FOUND, 'QUOTE_NOT_FOUND', 'Quote not found', {
         quoteId: dto.quoteId,
@@ -55,37 +56,42 @@ export class BookingsService {
       quote.distanceKm ??
       0;
 
+    const data = {
+      tripType: quote.tripType,
+      routeId: quote.routeId ?? null,
+      airportId: quote.airportId ?? null,
+      direction: direction ?? null,
+      vehicleTypeId: quote.vehicleTypeId,
+      fromText,
+      toText,
+      fromLat: fromLat ?? null,
+      fromLng: fromLng ?? null,
+      toLat: toLat ?? null,
+      toLng: toLng ?? null,
+      distanceKm: resolvedDistance,
+      isRoundTrip: this.asBoolean(requestMeta.roundTrip) ?? false,
+      waitMinutes,
+      priceDistanceVnd: quote.basePriceVnd,
+      priceWaitingVnd: 0,
+      subtotalVnd: quote.basePriceVnd,
+      discountVnd: 0,
+      vatPct: quote.vatPct,
+      vatVnd: quote.vatAmountVnd,
+      totalVnd: quote.totalVnd,
+      couponCode,
+      stopsJson:
+        stops && stops.length > 0
+          ? (stops as unknown as Prisma.InputJsonValue)
+          : undefined,
+      customerName: dto.customerName,
+      phone: dto.customerPhone,
+      customerNote: dto.customerNote ?? null,
+      startAt,
+      quote: { connect: { id: quote.id } },
+    } as Prisma.BookingCreateInput;
+
     const booking = await this.prisma.booking.create({
-      data: {
-        tripType: quote.tripType,
-        routeId: quote.routeId ?? null,
-        airportId: quote.airportId ?? null,
-        direction: direction ?? null,
-        vehicleTypeId: quote.vehicleTypeId,
-        fromText,
-        toText,
-        fromLat: fromLat ?? null,
-        fromLng: fromLng ?? null,
-        toLat: toLat ?? null,
-        toLng: toLng ?? null,
-        distanceKm: resolvedDistance,
-        isRoundTrip: this.asBoolean(requestMeta.roundTrip) ?? false,
-        waitMinutes,
-        priceDistanceVnd: quote.basePriceVnd,
-        priceWaitingVnd: 0,
-        subtotalVnd: quote.basePriceVnd,
-        discountVnd: 0,
-        vatPct: quote.vatPct,
-        vatVnd: quote.vatAmountVnd,
-        totalVnd: quote.totalVnd,
-        couponCode,
-        stopsJson: stops && stops.length > 0 ? (stops as unknown as Prisma.JsonArray) : undefined,
-        customerName: dto.customerName,
-        phone: dto.customerPhone,
-        customerNote: dto.customerNote ?? null,
-        startAt,
-        quote: { connect: { id: quote.id } },
-      },
+      data,
       select: { id: true },
     });
 
@@ -121,6 +127,20 @@ export class BookingsService {
 
   private asBoolean(value: unknown): boolean | undefined {
     return typeof value === 'boolean' ? value : undefined;
+  }
+
+  private getQuoteDelegate(): { findUnique: (args: Record<string, unknown>) => Promise<any> } {
+    const delegate = (this.prisma as Record<string, unknown>).quote as
+      | { findUnique: (args: Record<string, unknown>) => Promise<any> }
+      | undefined;
+    if (!delegate) {
+      this.throwError(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        'MISSING_SCHEMA_FIELD',
+        'Quote model is not available in Prisma client',
+      );
+    }
+    return delegate;
   }
 
   private throwError(
