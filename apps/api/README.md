@@ -31,6 +31,22 @@
 $ pnpm install
 ```
 
+### Database readiness
+
+The API attempts to connect to Postgres when the Nest application boots. If the database container is still starting up, the Prisma client will retry the connection a few times before aborting. You can tweak the behaviour with the following optional environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PRISMA_INIT_MAX_RETRIES` | `5` | Number of connection attempts before the process fails. |
+| `PRISMA_INIT_BACKOFF_MS` | `3000` | Delay (in milliseconds) between retries. |
+
+When developing locally, ensure the database is up before launching the API:
+
+```bash
+docker compose up -d db
+pnpm --filter api dev
+```
+
 ## Compile and run the project
 
 ```bash

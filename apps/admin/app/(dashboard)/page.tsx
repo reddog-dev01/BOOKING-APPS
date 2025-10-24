@@ -50,14 +50,22 @@ function parseVatOptions(input: string): number[] {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    cache: "no-store",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      cache: "no-store",
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    const hint =
+      "Không thể kết nối tới API. Hãy kiểm tra rằng dịch vụ API và Postgres đang chạy (ví dụ: `docker compose up -d db` và `pnpm --filter api dev`).";
+    const message = error instanceof Error ? `${error.message}. ${hint}` : hint;
+    throw new Error(message);
+  }
 
   const text = await res.text();
   if (!res.ok) {
