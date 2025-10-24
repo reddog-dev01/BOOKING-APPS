@@ -5,14 +5,17 @@ import { PrismaModule } from './infra/prisma/prisma.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './app/health.controller';
-import { PricingController } from './modules/pricing/pricing.controller';
-import { PricingService } from './modules/pricing/pricing.service';
-import { BookingsController } from './modules/bookings/bookings.controller';
-import { BookingsService } from './modules/bookings/bookings.service';
+import { PricingModule } from './modules/pricing/pricing.module';
+import { BookingsModule } from './modules/bookings/bookings.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env'] }), PrismaModule],
-  controllers: [AppController, HealthController, PricingController, BookingsController],
-  providers: [AppService, PricingService, BookingsService],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env'] }),
+    PrismaModule,
+    PricingModule,
+    BookingsModule,
+  ],
+  controllers: [AppController, HealthController],
+  providers: [AppService],
 })
 export class AppModule {}
