@@ -86,7 +86,7 @@ async function bootstrap() {
     allowList: new Set(parseCsv(process.env.RL_ALLOWLIST, [])),
   });
 
-  const fastify = app.getHttpAdapter().getInstance<FastifyInstance>();
+  const fastify = app.getHttpAdapter().getInstance() as FastifyInstance;
   fastify.addHook('onRequest', async (request, reply) => {
     const result = rateLimiter.consume(request);
     if (!result.allowed) {
