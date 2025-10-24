@@ -1,17 +1,40 @@
 {
   "name": "booking-monorepo",
   "private": true,
-  "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "dev": "concurrently -k -n web,api -c green,cyan \"pnpm --filter web dev\" \"pnpm --filter api dev\"",
     "build": "pnpm -r build",
-    "start": "pnpm --filter web start & pnpm --filter api start",
+    "db:reset": "prisma migrate reset --force --schema=packages/db/prisma/schema.prisma && prisma db seed --schema=packages/db/prisma/schema.prisma",
+    "db:seed": "prisma db seed --schema=packages/db/prisma/schema.prisma",
+    "dev": "concurrently -k -n admin,web,api -c magenta,green,cyan \"pnpm --filter admin dev\" \"pnpm --filter web dev\" \"pnpm --filter api dev\"",
     "lint": "pnpm -r lint",
-    "prisma:generate": "pnpm --filter api prisma:generate",
-    "prisma:migrate": "pnpm --filter api prisma:migrate",
-    "seed": "pnpm --filter api seed"
+    "prisma:format": "prisma format --schema=packages/db/prisma/schema.prisma",
+    "prisma:generate": "prisma generate --schema=packages/db/prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema=packages/db/prisma/schema.prisma",
+    "prisma:migrate:dev": "prisma migrate dev --schema=packages/db/prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema=packages/db/prisma/schema.prisma",
+    "prisma:validate": "prisma validate --schema=packages/db/prisma/schema.prisma",
+    "start": "concurrently -n web,api -c green,cyan \"pnpm --filter web start\" \"pnpm --filter api start\""
+  },
+  "dependencies": {
+    "@prisma/client": "6.18.0",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
-    "concurrently": "^9.0.1"
+    "@types/google.maps": "^3.58.1",
+    "@types/node": "^22.18.12",
+    "concurrently": "^9.0.1",
+    "dotenv": "^17.2.3",
+    "husky": "^9.1.7",
+    "prisma": "6.18.0"
+  },
+  "packageManager": "pnpm@10.17.1",
+  "prisma": {
+    "seed": "node packages/db/prisma/seed.cjs"
+  },
+  "pnpm": {
+    "overrides": {
+      "prisma": "6.18.0",
+      "@prisma/client": "6.18.0"
+    }
   }
 }
