@@ -1,20 +1,22 @@
-/// <reference types="google.maps" />
-// apps/web/components/AddressInput.tsx
 "use client";
 
 import React, {
-  useRef,
-  useEffect,
-  useCallback,
-  useState,
-  KeyboardEvent,
   FocusEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
-import { loadGoogleMapsPlaces } from "../lib/googleMapsLoader";
+import {
+  createSessionToken,
+  fetchAutocompleteSuggestions,
+  fetchPlaceDetails,
+  PlacesApiError,
+  type PlaceSuggestion,
+} from "../lib/googlePlacesApi";
 
 type AddressValue = { text: string; lat?: number; lng?: number };
-
-type Prediction = google.maps.places.AutocompletePrediction;
 
 type AddressInputProps = {
   value: string;
@@ -25,14 +27,14 @@ type AddressInputProps = {
   onChange: (v: AddressValue) => void;
 };
 
-const COUNTRIES = ["vn"];
+const COUNTRIES = ["VN"];
 const DEBOUNCE_MS = 250;
 
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
   if (typeof ref === "function") {
     (ref as (val: T | null) => void)(value);
-  } else {
+  } else if ("current" in (ref as React.MutableRefObject<T | null>)) {
     (ref as React.MutableRefObject<T | null>).current = value;
   }
 }
@@ -41,62 +43,25 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
   ({ value, placeholder, disabled, inputClassName, inputRef, onChange }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
-    const placesServiceContainerRef = useRef<HTMLDivElement | null>(null);
 
-    const autocompleteServiceRef =
-      useRef<google.maps.places.AutocompleteService | null>(null);
-    const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
-    const sessionTokenRef =
-      useRef<google.maps.places.AutocompleteSessionToken | null>(null);
-
-    const [ready, setReady] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [suggestions, setSuggestions] = useState<Prediction[]>([]);
+    const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
     const [open, setOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(-1);
+    const [error, setError] = useState<string | null>(null);
 
     const debounceRef = useRef<number | null>(null);
-
-    const ensureSessionToken = useCallback(() => {
-      if (!sessionTokenRef.current && window.google?.maps?.places) {
-        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
-      }
-      return sessionTokenRef.current;
-    }, []);
+    const sessionTokenRef = useRef<string | null>(null);
+    const requestCounterRef = useRef(0);
 
     useEffect(() => {
       setExternalRef(inputRef as any, internalInputRef.current);
     }, [inputRef]);
 
-    useEffect(() => {
-      if (typeof window === "undefined") return;
-      let cancelled = false;
-
-      loadGoogleMapsPlaces()
-        .then((google) => {
-          if (cancelled) return;
-          autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
-          const host = document.createElement("div");
-          placesServiceContainerRef.current = host;
-          placesServiceRef.current = new google.maps.places.PlacesService(host);
-          sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
-          setReady(true);
-          setError(null);
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          setError(err instanceof Error ? err.message : String(err));
-          setReady(false);
-        });
-
-      return () => {
-        cancelled = true;
-        if (placesServiceContainerRef.current?.parentNode) {
-          placesServiceContainerRef.current.parentNode.removeChild(
-            placesServiceContainerRef.current
-          );
-        }
-      };
+    const ensureSessionToken = useCallback(() => {
+      if (!sessionTokenRef.current) {
+        sessionTokenRef.current = createSessionToken();
+      }
+      return sessionTokenRef.current;
     }, []);
 
     const clearSuggestions = useCallback(() => {
@@ -106,10 +71,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     }, []);
 
     const fetchPredictions = useCallback(
-      (query: string) => {
-        if (!ready || !autocompleteServiceRef.current || !window.google?.maps?.places) {
-          return;
-        }
+      async (query: string) => {
         const trimmed = query.trim();
         if (!trimmed) {
           clearSuggestions();
@@ -119,35 +81,37 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
         setError(null);
         const token = ensureSessionToken();
-        autocompleteServiceRef.current.getPlacePredictions(
-          {
-            input: trimmed,
-            language: "vi",
-            sessionToken: token ?? undefined,
-            componentRestrictions: { country: COUNTRIES },
-          },
-          (predictions, status) => {
-            if (!window.google?.maps?.places) {
-              return;
-            }
-            const okStatus = window.google.maps.places.PlacesServiceStatus.OK;
-            if (status === okStatus && predictions && predictions.length > 0) {
-              setSuggestions(predictions);
-              setOpen(true);
-              setActiveIndex(-1);
-            } else {
-              clearSuggestions();
-              if (
-                status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS &&
-                status !== window.google.maps.places.PlacesServiceStatus.OK
-              ) {
-                setError(`Không thể gợi ý địa chỉ (${status}).`);
-              }
-            }
+        const requestId = ++requestCounterRef.current;
+        try {
+          const predictions = await fetchAutocompleteSuggestions(
+            trimmed,
+            token,
+            "vi",
+            COUNTRIES
+          );
+          if (requestCounterRef.current !== requestId) {
+            return;
           }
-        );
+          if (predictions.length > 0) {
+            setSuggestions(predictions);
+            setOpen(true);
+            setActiveIndex(-1);
+          } else {
+            clearSuggestions();
+          }
+        } catch (err) {
+          if (requestCounterRef.current !== requestId) {
+            return;
+          }
+          clearSuggestions();
+          if (err instanceof PlacesApiError) {
+            setError(`Không thể gợi ý địa chỉ (${err.message}).`);
+          } else {
+            setError("Không thể gợi ý địa chỉ.");
+          }
+        }
       },
-      [clearSuggestions, ensureSessionToken, ready]
+      [clearSuggestions, ensureSessionToken]
     );
 
     const scheduleFetch = useCallback(
@@ -155,12 +119,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         if (debounceRef.current) {
           window.clearTimeout(debounceRef.current);
         }
-        if (!ready) return;
         debounceRef.current = window.setTimeout(() => {
-          fetchPredictions(query);
+          void fetchPredictions(query);
         }, DEBOUNCE_MS);
       },
-      [fetchPredictions, ready]
+      [fetchPredictions]
     );
 
     useEffect(() => {
@@ -197,57 +160,47 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       (event: React.ChangeEvent<HTMLInputElement>) => {
         const next = event.target.value;
         onChange({ text: next });
-        if (!ready) return;
         scheduleFetch(next);
       },
-      [onChange, ready, scheduleFetch]
+      [onChange, scheduleFetch]
     );
 
     const resolvePlaceDetails = useCallback(
-      (prediction: Prediction) => {
-        if (!placesServiceRef.current || !window.google?.maps?.places) {
-          onChange({ text: prediction.description });
-          return;
-        }
-
-        const token = ensureSessionToken();
-        placesServiceRef.current.getDetails(
-          {
-            placeId: prediction.place_id,
-            sessionToken: token ?? undefined,
-            fields: ["geometry", "formatted_address", "name"],
-          },
-          (place, status) => {
-            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
-              onChange({ text: prediction.description });
-              return;
-            }
-            const location = place.geometry?.location;
-            if (location) {
-              onChange({
-                text: place.formatted_address ?? prediction.description,
-                lat: location.lat(),
-                lng: location.lng(),
-              });
-            } else {
-              onChange({ text: place.formatted_address ?? prediction.description });
-            }
-            sessionTokenRef.current = null;
+      async (suggestion: PlaceSuggestion) => {
+        const token = sessionTokenRef.current ?? undefined;
+        try {
+          const details = await fetchPlaceDetails(
+            suggestion.placeId,
+            "vi",
+            COUNTRIES[0],
+            token
+          );
+          if (!details) {
+            onChange({ text: suggestion.description });
+            return;
           }
-        );
+          onChange({
+            text: details.formattedAddress ?? suggestion.description,
+            lat: details.lat,
+            lng: details.lng,
+          });
+        } catch (err) {
+          if (err instanceof PlacesApiError) {
+            setError(`Không thể lấy chi tiết địa chỉ (${err.message}).`);
+          }
+          onChange({ text: suggestion.description });
+        } finally {
+          sessionTokenRef.current = null;
+        }
       },
-      [ensureSessionToken, onChange]
+      [onChange]
     );
 
-    const selectPrediction = useCallback(
-      (prediction: Prediction) => {
+    const selectSuggestion = useCallback(
+      (suggestion: PlaceSuggestion) => {
         clearSuggestions();
-        const description = prediction.description;
-        onChange({ text: description });
-        if (internalInputRef.current) {
-          internalInputRef.current.value = description;
-        }
-        resolvePlaceDetails(prediction);
+        onChange({ text: suggestion.description });
+        void resolvePlaceDetails(suggestion);
       },
       [clearSuggestions, onChange, resolvePlaceDetails]
     );
@@ -258,22 +211,20 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
         if (event.key === "ArrowDown") {
           event.preventDefault();
-          const next = (activeIndex + 1) % suggestions.length;
-          setActiveIndex(next);
+          setActiveIndex((prev) => (prev + 1) % suggestions.length);
         } else if (event.key === "ArrowUp") {
           event.preventDefault();
-          const next = (activeIndex - 1 + suggestions.length) % suggestions.length;
-          setActiveIndex(next);
+          setActiveIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
         } else if (event.key === "Enter") {
           if (activeIndex >= 0 && activeIndex < suggestions.length) {
             event.preventDefault();
-            selectPrediction(suggestions[activeIndex]);
+            selectSuggestion(suggestions[activeIndex]);
           }
         } else if (event.key === "Escape") {
           clearSuggestions();
         }
       },
-      [activeIndex, clearSuggestions, open, selectPrediction, suggestions]
+      [activeIndex, clearSuggestions, open, selectSuggestion, suggestions]
     );
 
     const handleFocus = useCallback(
@@ -309,12 +260,10 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             role="listbox"
             className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg"
           >
-            {suggestions.map((prediction, index) => {
+            {suggestions.map((suggestion, index) => {
               const active = index === activeIndex;
-              const { main_text: mainText, secondary_text: secondaryText } =
-                prediction.structured_formatting;
               return (
-                <li key={prediction.place_id} role="option" aria-selected={active}>
+                <li key={suggestion.placeId} role="option" aria-selected={active}>
                   <button
                     type="button"
                     className={`w-full px-3 py-2 text-left text-sm transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
@@ -322,14 +271,14 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                     }`}
                     onMouseDown={(event) => {
                       event.preventDefault();
-                      selectPrediction(prediction);
+                      selectSuggestion(suggestion);
                     }}
                     onMouseEnter={() => setActiveIndex(index)}
                     id={`suggestion-${index}`}
                   >
-                    <div className="font-medium text-gray-900">{mainText}</div>
-                    {secondaryText && (
-                      <div className="text-xs text-gray-500">{secondaryText}</div>
+                    <div className="font-medium text-gray-900">{suggestion.mainText}</div>
+                    {suggestion.secondaryText && (
+                      <div className="text-xs text-gray-500">{suggestion.secondaryText}</div>
                     )}
                   </button>
                 </li>
