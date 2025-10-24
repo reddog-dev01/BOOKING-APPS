@@ -59,6 +59,7 @@ model VehicleType {
 
   PricePolicies PricePolicy[]
   Bookings      Booking[]
+  Quotes        Quote[]
 }
 
 model Route {
@@ -75,6 +76,7 @@ model Route {
   // 1-n
   PricePolicies PricePolicy[]
   Bookings      Booking[]
+  Quotes        Quote[]
 
   @@index([tripType, isActive])
 }
@@ -127,8 +129,38 @@ model Airport {
   updatedAt DateTime @updatedAt
 
   Bookings Booking[]
+  Quotes   Quote[]
 
   @@index([isActive])
+}
+
+model Quote {
+  id            String   @id @default(cuid())
+  tripType      TripType
+  routeId       String?
+  airportId     String?
+  vehicleTypeId Int
+  basePriceVnd  Int
+  distanceKm    Float    @default(0)
+  timeMinutes   Int      @default(0)
+  vatPct        Int      @default(0)
+  vatAmountVnd  Int      @default(0)
+  totalVnd      Int      @default(0)
+  currency      String   @default("VND")
+  expiresAt     DateTime
+  meta          Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  VehicleType VehicleType @relation(fields: [vehicleTypeId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  Route       Route?      @relation(fields: [routeId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  Airport     Airport?    @relation(fields: [airportId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  Bookings    Booking[]
+
+  @@index([vehicleTypeId])
+  @@index([expiresAt])
+  @@index([routeId])
+  @@index([airportId])
 }
 
 model Booking {
@@ -180,6 +212,10 @@ model Booking {
 
   customerName String?
   phone        String?
+  customerNote String?
+
+  quoteId String?
+  Quote   Quote?   @relation(fields: [quoteId], references: [id], onUpdate: Cascade, onDelete: SetNull)
 
   status    BookingStatus @default(PENDING)
   createdAt DateTime      @default(now())
@@ -190,6 +226,7 @@ model Booking {
   @@index([status, startAt])
   @@index([routeId, vehicleTypeId])
   @@index([airportId])
+  @@index([quoteId])
 }
 
 model SiteSetting {

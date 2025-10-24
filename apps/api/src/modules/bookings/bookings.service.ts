@@ -1,113 +1,117 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../infra/prisma/prisma.service';
-import { GoogleMapsService } from '../../infra/maps/maps.service';
-import { PricingService } from '../pricing/pricing.service';
-import { CreateBookingDto, TripTypeDto } from './dto/create-booking.dto';
-import { BookingStatus, TripType } from '@prisma/client';
+import { CreateBookingDto } from './dto/create-booking.dto';
+import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
 
 @Injectable()
 export class BookingsService {
-  constructor(
-    private prisma: PrismaService,
-    private maps: GoogleMapsService,
-    private pricing: PricingService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  private async resolveRefs(dto: CreateBookingDto) {
-    let routeId: string | null = null; let airportId: string | null = null;
-    if (dto.tripType === TripTypeDto.ROAD) {
-      if (!dto.routeCode) throw new BadRequestException('routeCode required for ROAD');
-      const r = await this.prisma.route.findUnique({ where: { code: dto.routeCode } });
-      if (!r || !r.isActive) throw new NotFoundException('Route not found');
-      routeId = r.id;
-    } else {
-      if (!dto.airportCode) throw new BadRequestException('airportCode required for AIRPORT');
-      const a = await this.prisma.airport.findUnique({ where: { code: dto.airportCode } });
-      if (!a || !a.isActive) throw new NotFoundException('Airport not found');
-      airportId = a.id;
-    }
-    const v = await this.prisma.vehicleType.findUnique({ where: { id: dto.vehicleTypeId } });
-    if (!v || !v.isActive) throw new NotFoundException('Vehicle type not available');
-    return { routeId, airportId, vehicle: v };
-  }
-
-  async create(dto: CreateBookingDto) {
-    // Chuẩn hoá alias từ FE
-    const fromText = dto.fromText ?? dto.fromLabel ?? '';
-    const toText   = dto.toText   ?? dto.toLabel   ?? '';
-    if (!fromText?.trim() || !toText?.trim()) throw new BadRequestException('from/to required');
-
-    // Khoảng cách
-    let distanceKm = dto.distanceKm;
-    if ((!distanceKm || distanceKm <= 0) && dto.fromLat && dto.fromLng && dto.toLat && dto.toLng) {
-      const d = await this.maps.directions({ lat: dto.fromLat, lng: dto.fromLng }, { lat: dto.toLat, lng: dto.toLng });
-      distanceKm = Math.max(0, Math.round(d.km * 10) / 10);
+  async create(dto: CreateBookingDto): Promise<CreateBookingResponseDto> {
+    const quote = await this.prisma.quote.findUnique({ where: { id: dto.quoteId } });
+    if (!quote) {
+      this.throwError(HttpStatus.NOT_FOUND, 'QUOTE_NOT_FOUND', 'Quote not found', {
+        quoteId: dto.quoteId,
+      });
     }
 
-    // Quote ở server (không tin giá FE)
-    const quote = await this.pricing.quote({
-      tripType: dto.tripType as any,
-      vehicleTypeId: dto.vehicleTypeId,
-      fromText, toText,
-      fromLat: dto.fromLat, fromLng: dto.fromLng, toLat: dto.toLat, toLng: dto.toLng,
-      distanceKm,
-      roundTrip: !!dto.roundTrip,
-      // Ưu tiên withVat -> defaultVAT; fallback dto.vatPct nếu có
-      withVat: dto.withVat,
-      vatPct: dto.vatPct,
-      couponCode: dto.couponCode,
-      stops: dto.stops,
-      direction: (dto as any).direction,
-      waitHours: dto.waitHours,
-      startAt: dto.startAt,
-    } as any);
+    if (quote.expiresAt.getTime() <= Date.now()) {
+      this.throwError(HttpStatus.BAD_REQUEST, 'QUOTE_EXPIRED', 'Quote has expired', {
+        quoteId: dto.quoteId,
+      });
+    }
 
-    const { routeId, airportId } = await this.resolveRefs(dto);
+    const meta = (quote.meta ?? {}) as Prisma.JsonObject;
+    const requestMeta = (meta.request as Record<string, unknown> | undefined) ?? {};
 
-    const waitMinutes = Math.max(0, Math.round(((dto.waitHours ?? 0) * 60)));
+    const fromText = dto.fromText ?? this.asString(requestMeta.fromText);
+    const toText = dto.toText ?? this.asString(requestMeta.toText);
+    if (!fromText || !toText) {
+      this.throwError(HttpStatus.BAD_REQUEST, 'LOCATION_REQUIRED', 'fromText and toText are required');
+    }
 
-    const created = await this.prisma.booking.create({
+    const fromLat = dto.fromLat ?? this.asNumber(requestMeta.fromLat);
+    const fromLng = dto.fromLng ?? this.asNumber(requestMeta.fromLng);
+    const toLat = dto.toLat ?? this.asNumber(requestMeta.toLat);
+    const toLng = dto.toLng ?? this.asNumber(requestMeta.toLng);
+    const stops = dto.stops ?? this.asStringArray(requestMeta.stops);
+
+    const startAtIso = this.asString(requestMeta.startAt);
+    const startAt = startAtIso ? new Date(startAtIso) : new Date();
+    if (Number.isNaN(startAt.getTime())) {
+      this.throwError(HttpStatus.BAD_REQUEST, 'INVALID_START_AT', 'startAt must be a valid ISO8601 string');
+    }
+
+    const waitHours = this.asNumber(requestMeta.waitHours);
+    const waitMinutes = waitHours ? Math.max(0, Math.round(waitHours * 60)) : 0;
+
+    const booking = await this.prisma.booking.create({
       data: {
-        tripType: dto.tripType === TripTypeDto.AIRPORT ? TripType.AIRPORT : TripType.ROAD,
-        routeId: routeId || undefined,
-        airportId: airportId || undefined,
-        vehicleTypeId: dto.vehicleTypeId,
-
-        // DB chỉ có fromText/toText
-        fromText, toText,
-        fromLat: dto.fromLat, fromLng: dto.fromLng,
-        toLat: dto.toLat, toLng: dto.toLng,
-        distanceKm: distanceKm ?? 0,
-        isRoundTrip: !!dto.roundTrip,
+        quoteId: quote.id,
+        tripType: quote.tripType,
+        routeId: quote.routeId ?? null,
+        airportId: quote.airportId ?? null,
+        vehicleTypeId: quote.vehicleTypeId,
+        fromText,
+        toText,
+        fromLat: fromLat ?? null,
+        fromLng: fromLng ?? null,
+        toLat: toLat ?? null,
+        toLng: toLng ?? null,
+        distanceKm: dto.distanceKm ?? quote.distanceKm,
+        isRoundTrip: this.asBoolean(requestMeta.roundTrip) ?? false,
         waitMinutes,
-
-        // Thuế: lấy theo quote (ưu tiên) hoặc suy ra
-        vatPct: (quote as any).vatPct ?? (dto.withVat ? (quote as any).defaultVatPct ?? 10 : (dto.vatPct ?? 0)),
-        couponCode: dto.couponCode,
-
-        priceDistanceVnd: (quote as any).priceDistanceVnd ?? 0,
-        priceWaitingVnd: (quote as any).priceWaitingVnd ?? 0,
-        subtotalVnd: (quote as any).subtotalVnd ?? 0,
-        discountVnd: (quote as any).discountVnd ?? 0,
-        vatVnd: (quote as any).vatVnd ?? 0,
-        totalVnd: (quote as any).totalVnd ?? 0,
-
-        stopsJson: dto.stops ? JSON.stringify(dto.stops) as any : undefined,
-
+        priceDistanceVnd: quote.basePriceVnd,
+        priceWaitingVnd: 0,
+        subtotalVnd: quote.basePriceVnd,
+        discountVnd: 0,
+        vatPct: quote.vatPct,
+        vatVnd: quote.vatAmountVnd,
+        totalVnd: quote.totalVnd,
+        couponCode: dto.couponCode ?? this.asString(requestMeta.couponCode) ?? null,
+        stopsJson: stops ? (stops as unknown as Prisma.InputJsonValue) : undefined,
         customerName: dto.customerName,
-        phone: dto.phone,
-        status: BookingStatus.PENDING,
-        startAt: dto.startAt ? new Date(dto.startAt) : new Date(),
+        phone: dto.customerPhone,
+        customerNote: dto.customerNote ?? null,
+        startAt,
       },
-      select: { id: true, status: true, totalVnd: true },
+      select: { id: true, status: true },
     });
 
-    return { id: created.id, status: 'pending', totalVnd: created.totalVnd };
+    return {
+      bookingId: booking.id,
+      status: booking.status,
+    };
   }
 
-  async get(id: string) {
-    const b = await this.prisma.booking.findUnique({ where: { id } });
-    if (!b) throw new NotFoundException('Not found');
-    return b;
+  private asString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+  }
+
+  private asNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private asStringArray(value: unknown): string[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    const items = value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+    return items.length > 0 ? items : undefined;
+  }
+
+  private asBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+  }
+
+  private throwError(
+    status: HttpStatus,
+    code: string,
+    message: string,
+    details: Record<string, unknown> = {},
+  ): never {
+    throw new HttpException({ error: code, message, details }, status);
   }
 }
