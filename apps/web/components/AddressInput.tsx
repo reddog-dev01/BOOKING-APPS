@@ -9,11 +9,36 @@ import React, {
   KeyboardEvent,
   FocusEvent,
 } from "react";
-import { loadGoogleMapsPlaces } from "../lib/googleMapsLoader";
 
 type AddressValue = { text: string; lat?: number; lng?: number };
 
-type Prediction = google.maps.places.AutocompletePrediction;
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+const PLACES_API_BASE_URL = "https://places.googleapis.com/v1";
+
+type Suggestion = {
+  placeId: string;
+  mainText: string;
+  secondaryText?: string;
+  fullText: string;
+};
+
+type AutocompleteResponse = {
+  suggestions?: Array<{
+    placePrediction?: {
+      placeId?: string;
+      text?: { text?: string };
+      structuredFormat?: {
+        mainText?: { text?: string };
+        secondaryText?: { text?: string };
+      };
+    };
+  }>;
+};
+
+type PlaceDetailsResponse = {
+  formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
+};
 
 type AddressInputProps = {
   value: string;
@@ -24,8 +49,126 @@ type AddressInputProps = {
   onChange: (v: AddressValue) => void;
 };
 
-const COUNTRIES = ["vn"];
 const DEBOUNCE_MS = 250;
+
+async function readErrorMessage(response: Response, fallback: string) {
+  const raw = await response.text();
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(raw) as {
+      error?: { message?: string };
+      message?: string;
+    };
+    return parsed.error?.message ?? parsed.message ?? fallback;
+  } catch {
+    return raw;
+  }
+}
+
+function generateSessionToken() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2);
+}
+
+async function fetchAutocompleteSuggestions(
+  input: string,
+  sessionToken: string,
+  signal: AbortSignal
+): Promise<Suggestion[]> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    throw new Error("Chưa cấu hình NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.");
+  }
+
+  const response = await fetch(`${PLACES_API_BASE_URL}/places:autocomplete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+      "X-Goog-FieldMask": "placePrediction.placeId,placePrediction.text,placePrediction.structuredFormat",
+    },
+    body: JSON.stringify({
+      input,
+      languageCode: "vi",
+      regionCode: "VN",
+      sessionToken,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const message = await readErrorMessage(
+      response,
+      "Không thể tải gợi ý địa chỉ. Vui lòng thử lại sau."
+    );
+    throw new Error(message);
+  }
+
+  const data = (await response.json()) as AutocompleteResponse;
+  const suggestions = (data.suggestions ?? []).flatMap((item) => {
+    const prediction = item.placePrediction;
+    if (!prediction?.placeId) {
+      return [] as Suggestion[];
+    }
+    const mainText =
+      prediction.structuredFormat?.mainText?.text ??
+      prediction.text?.text ??
+      "";
+    const secondaryText = prediction.structuredFormat?.secondaryText?.text;
+    const fullText =
+      prediction.text?.text ??
+      [mainText, secondaryText].filter(Boolean).join(", ");
+    return [
+      {
+        placeId: prediction.placeId,
+        mainText,
+        secondaryText,
+        fullText,
+      },
+    ];
+  });
+
+  return suggestions;
+}
+
+async function fetchPlaceDetails(
+  placeId: string,
+  sessionToken: string | null,
+  signal: AbortSignal
+): Promise<PlaceDetailsResponse> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    throw new Error("Chưa cấu hình NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.");
+  }
+
+  const params = new URLSearchParams({ languageCode: "vi" });
+  if (sessionToken) {
+    params.set("sessionToken", sessionToken);
+  }
+
+  const response = await fetch(
+    `${PLACES_API_BASE_URL}/places/${encodeURIComponent(placeId)}?${params.toString()}`,
+    {
+      headers: {
+        "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+        "X-Goog-FieldMask": "formattedAddress,location",
+      },
+      signal,
+    }
+  );
+
+  if (!response.ok) {
+    const message = await readErrorMessage(
+      response,
+      "Không thể lấy thông tin địa điểm. Vui lòng thử lại sau."
+    );
+    throw new Error(message);
+  }
+
+  return (await response.json()) as PlaceDetailsResponse;
+}
 
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
@@ -40,25 +183,21 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
   ({ value, placeholder, disabled, inputClassName, inputRef, onChange }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
-    const placesServiceContainerRef = useRef<HTMLDivElement | null>(null);
+    const sessionTokenRef = useRef<string | null>(null);
+    const autocompleteControllerRef = useRef<AbortController | null>(null);
+    const placeDetailsControllerRef = useRef<AbortController | null>(null);
 
-    const autocompleteServiceRef =
-      useRef<google.maps.places.AutocompleteService | null>(null);
-    const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
-    const sessionTokenRef =
-      useRef<google.maps.places.AutocompleteSessionToken | null>(null);
-
-    const [ready, setReady] = useState(false);
+    const [ready, setReady] = useState(() => Boolean(GOOGLE_MAPS_API_KEY));
     const [error, setError] = useState<string | null>(null);
-    const [suggestions, setSuggestions] = useState<Prediction[]>([]);
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [open, setOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(-1);
 
     const debounceRef = useRef<number | null>(null);
 
     const ensureSessionToken = useCallback(() => {
-      if (!sessionTokenRef.current && window.google?.maps?.places) {
-        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+      if (!sessionTokenRef.current) {
+        sessionTokenRef.current = generateSessionToken();
       }
       return sessionTokenRef.current;
     }, []);
@@ -68,34 +207,13 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     }, [inputRef]);
 
     useEffect(() => {
-      if (typeof window === "undefined") return;
-      let cancelled = false;
-
-      loadGoogleMapsPlaces()
-        .then((google) => {
-          if (cancelled) return;
-          autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
-          const host = document.createElement("div");
-          placesServiceContainerRef.current = host;
-          placesServiceRef.current = new google.maps.places.PlacesService(host);
-          sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
-          setReady(true);
-          setError(null);
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          setError(err instanceof Error ? err.message : String(err));
-          setReady(false);
-        });
-
-      return () => {
-        cancelled = true;
-        if (placesServiceContainerRef.current?.parentNode) {
-          placesServiceContainerRef.current.parentNode.removeChild(
-            placesServiceContainerRef.current
-          );
-        }
-      };
+      if (!GOOGLE_MAPS_API_KEY) {
+        setError("Chưa cấu hình NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.");
+        setReady(false);
+        return;
+      }
+      setReady(true);
+      setError(null);
     }, []);
 
     const clearSuggestions = useCallback(() => {
@@ -106,7 +224,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const fetchPredictions = useCallback(
       (query: string) => {
-        if (!ready || !autocompleteServiceRef.current || !window.google?.maps?.places) {
+        if (!ready) {
           return;
         }
         const trimmed = query.trim();
@@ -118,33 +236,28 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
         setError(null);
         const token = ensureSessionToken();
-        autocompleteServiceRef.current.getPlacePredictions(
-          {
-            input: trimmed,
-            language: "vi",
-            sessionToken: token ?? undefined,
-            componentRestrictions: { country: COUNTRIES },
-          },
-          (predictions, status) => {
-            if (!window.google?.maps?.places) {
-              return;
-            }
-            const okStatus = window.google.maps.places.PlacesServiceStatus.OK;
-            if (status === okStatus && predictions && predictions.length > 0) {
-              setSuggestions(predictions);
+        autocompleteControllerRef.current?.abort();
+        const controller = new AbortController();
+        autocompleteControllerRef.current = controller;
+
+        fetchAutocompleteSuggestions(trimmed, token, controller.signal)
+          .then((results) => {
+            setSuggestions(results);
+            if (results.length > 0) {
               setOpen(true);
               setActiveIndex(-1);
             } else {
               clearSuggestions();
-              if (
-                status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS &&
-                status !== window.google.maps.places.PlacesServiceStatus.OK
-              ) {
-                setError(`Không thể gợi ý địa chỉ (${status}).`);
-              }
+              sessionTokenRef.current = null;
             }
-          }
-        );
+          })
+          .catch((err) => {
+            if (err instanceof DOMException && err.name === "AbortError") {
+              return;
+            }
+            clearSuggestions();
+            setError(err instanceof Error ? err.message : String(err));
+          });
       },
       [clearSuggestions, ensureSessionToken, ready]
     );
@@ -203,50 +316,43 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     );
 
     const resolvePlaceDetails = useCallback(
-      (prediction: Prediction) => {
-        if (!placesServiceRef.current || !window.google?.maps?.places) {
-          onChange({ text: prediction.description });
-          return;
-        }
+      (suggestion: Suggestion) => {
+        const token = sessionTokenRef.current;
+        placeDetailsControllerRef.current?.abort();
+        const controller = new AbortController();
+        placeDetailsControllerRef.current = controller;
 
-        const token = ensureSessionToken();
-        placesServiceRef.current.getDetails(
-          {
-            placeId: prediction.place_id,
-            sessionToken: token ?? undefined,
-            fields: ["geometry", "formatted_address", "name"],
-          },
-          (place, status) => {
-            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
-              onChange({ text: prediction.description });
+        fetchPlaceDetails(suggestion.placeId, token ?? null, controller.signal)
+          .then((details) => {
+            sessionTokenRef.current = null;
+            const latitude = details.location?.latitude;
+            const longitude = details.location?.longitude;
+            onChange({
+              text: details.formattedAddress ?? suggestion.fullText,
+              lat: latitude,
+              lng: longitude,
+            });
+          })
+          .catch((err) => {
+            if (err instanceof DOMException && err.name === "AbortError") {
               return;
             }
-            const location = place.geometry?.location;
-            if (location) {
-              onChange({
-                text: place.formatted_address ?? prediction.description,
-                lat: location.lat(),
-                lng: location.lng(),
-              });
-            } else {
-              onChange({ text: place.formatted_address ?? prediction.description });
-            }
-            sessionTokenRef.current = null;
-          }
-        );
+            setError(err instanceof Error ? err.message : String(err));
+            onChange({ text: suggestion.fullText });
+          });
       },
-      [ensureSessionToken, onChange]
+      [onChange]
     );
 
     const selectPrediction = useCallback(
-      (prediction: Prediction) => {
+      (suggestion: Suggestion) => {
         clearSuggestions();
-        const description = prediction.description;
+        const description = suggestion.fullText;
         onChange({ text: description });
         if (internalInputRef.current) {
           internalInputRef.current.value = description;
         }
-        resolvePlaceDetails(prediction);
+        resolvePlaceDetails(suggestion);
       },
       [clearSuggestions, onChange, resolvePlaceDetails]
     );
@@ -286,6 +392,13 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
 
+    useEffect(() => {
+      return () => {
+        autocompleteControllerRef.current?.abort();
+        placeDetailsControllerRef.current?.abort();
+      };
+    }, []);
+
     return (
       <div ref={containerRef} className="relative">
         <input
@@ -308,12 +421,10 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             role="listbox"
             className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg"
           >
-            {suggestions.map((prediction, index) => {
+            {suggestions.map((suggestion, index) => {
               const active = index === activeIndex;
-              const { main_text: mainText, secondary_text: secondaryText } =
-                prediction.structured_formatting;
               return (
-                <li key={prediction.place_id} role="option" aria-selected={active}>
+                <li key={suggestion.placeId} role="option" aria-selected={active}>
                   <button
                     type="button"
                     className={`w-full px-3 py-2 text-left text-sm transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
@@ -321,14 +432,14 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                     }`}
                     onMouseDown={(event) => {
                       event.preventDefault();
-                      selectPrediction(prediction);
+                      selectPrediction(suggestion);
                     }}
                     onMouseEnter={() => setActiveIndex(index)}
                     id={`suggestion-${index}`}
                   >
-                    <div className="font-medium text-gray-900">{mainText}</div>
-                    {secondaryText && (
-                      <div className="text-xs text-gray-500">{secondaryText}</div>
+                    <div className="font-medium text-gray-900">{suggestion.mainText}</div>
+                    {suggestion.secondaryText && (
+                      <div className="text-xs text-gray-500">{suggestion.secondaryText}</div>
                     )}
                   </button>
                 </li>
