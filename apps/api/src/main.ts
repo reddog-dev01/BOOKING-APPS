@@ -5,6 +5,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import compress from '@fastify/compress';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import type { FastifyInstance } from 'fastify';
 
 import { AppModule } from './app.module';
 import { PrismaService } from './infra/prisma/prisma.service';
@@ -85,7 +86,7 @@ async function bootstrap() {
     allowList: new Set(parseCsv(process.env.RL_ALLOWLIST, [])),
   });
 
-  const fastify = app.getHttpAdapter().getInstance();
+  const fastify = app.getHttpAdapter().getInstance<FastifyInstance>();
   fastify.addHook('onRequest', async (request, reply) => {
     const result = rateLimiter.consume(request);
     if (!result.allowed) {
@@ -116,7 +117,7 @@ async function bootstrap() {
       return;
     }
     isShuttingDown = true;
-    app.log.warn({ signal }, 'received shutdown signal');
+    fastify.log.warn({ signal }, 'received shutdown signal');
     await prismaService.$disconnect();
     await app.close();
     process.exit(0);
@@ -125,7 +126,7 @@ async function bootstrap() {
   process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
 
   await app.listen(port, '0.0.0.0');
-  app.log.info({ port }, 'API server is listening');
+  fastify.log.info({ port }, 'API server is listening');
 }
 
 bootstrap().catch((error) => {

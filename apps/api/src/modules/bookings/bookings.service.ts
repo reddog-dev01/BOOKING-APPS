@@ -49,7 +49,6 @@ export class BookingsService {
 
     const booking = await this.prisma.booking.create({
       data: {
-        quoteId: quote.id,
         tripType: quote.tripType,
         routeId: quote.routeId ?? null,
         airportId: quote.airportId ?? null,
@@ -76,13 +75,14 @@ export class BookingsService {
         phone: dto.customerPhone,
         customerNote: dto.customerNote ?? null,
         startAt,
+        quote: { connect: { id: quote.id } },
       },
-      select: { id: true, status: true },
+      select: { id: true },
     });
 
     return {
       bookingId: booking.id,
-      status: booking.status,
+      status: 'PENDING',
     };
   }
 
