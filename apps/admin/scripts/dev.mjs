@@ -71,7 +71,7 @@ const getEnvPort = () => {
   return undefined;
 };
 
-const isPortAvailable = (port) =>
+const checkHostAvailability = (port, host) =>
   new Promise((resolvePromise, rejectPromise) => {
     const server = createServer();
 
@@ -80,6 +80,13 @@ const isPortAvailable = (port) =>
         resolvePromise(false);
         return;
       }
+
+      if (error.code === 'EADDRNOTAVAIL' || error.code === 'EINVAL') {
+        // Host binding not supported in the current environment.
+        resolvePromise('unsupported');
+        return;
+      }
+
       rejectPromise(error);
     });
 
@@ -87,8 +94,26 @@ const isPortAvailable = (port) =>
       server.close(() => resolvePromise(true));
     });
 
-    server.listen({ port, host: '0.0.0.0' });
+    server.listen({ port, host });
   });
+
+const isPortAvailable = async (port) => {
+  const hostsToTest = ['::', '0.0.0.0'];
+
+  for (const host of hostsToTest) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await checkHostAvailability(port, host);
+    if (result === false) {
+      return false;
+    }
+
+    if (result === true) {
+      continue;
+    }
+  }
+
+  return true;
+};
 
 const findAvailablePort = async (startingPort) => {
   let candidate = startingPort;
