@@ -6,7 +6,7 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/db/package.json packages/db/
@@ -30,6 +30,9 @@ RUN pnpm prisma:generate \
     sh -c 'pkg="$(basename "$1")"; src="node_modules/.pnpm/${pkg}/node_modules/.prisma"; \
       dest="apps/api/.output/node_modules/.pnpm/${pkg}/node_modules"; \
       if [ -d "${src}" ]; then mkdir -p "${dest}"; cp -a "${src}" "${dest}"; fi' sh {} \;
+
+RUN test -f node_modules/.prisma/client/default.js \
+  && test -f apps/api/.output/node_modules/.prisma/client/default.js
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
