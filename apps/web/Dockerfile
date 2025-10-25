@@ -1,17 +1,22 @@
 # syntax=docker/dockerfile:1.7
 
-# ---- build stage ----
-FROM node:20-alpine AS build
-WORKDIR /app
+# ---- deps stage ----
+FROM node:20-alpine AS deps
+WORKDIR /work
 
-RUN corepack enable
+RUN corepack enable \
+  && corepack prepare pnpm@10.17.1 --activate
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-COPY apps/api/package.json apps/api/
-COPY apps/web/package.json apps/web/
-COPY packages/db/package.json packages/db/
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/db/package.json packages/db/package.json
 
 RUN pnpm install --frozen-lockfile
+
+# ---- build stage ----
+FROM deps AS build
+WORKDIR /work
 
 COPY . .
 
@@ -33,9 +38,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build /app/apps/web/public ./apps/web/public
+COPY --from=build /work/apps/web/.next/standalone ./
+COPY --from=build /work/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /work/apps/web/public ./apps/web/public
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s \
+  CMD wget -qO- http://127.0.0.1:${PORT} || exit 1
 
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
