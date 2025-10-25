@@ -26,6 +26,14 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    components. Use a *separate* browser-restricted key for the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` value in
    `apps/web/.env.local`.
 
+   | Purpose                               | Variable                          | Key string                                                      |
+   | ------------------------------------- | --------------------------------- | --------------------------------------------------------------- |
+   | Server-to-server Google Places calls  | `PLACES_API_KEY`                  | `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo`                       |
+   | Browser Google Maps JavaScript SDK    | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ`                       |
+
+   The `docker-compose.yml` file now injects these keys by default so rebuilding the containers automatically wires the
+   correct credentials even if the host environment is empty.
+
    After modifying any of the `.env` files, restart the affected services so Docker picks up the new variables:
 
    ```bash
@@ -61,6 +69,10 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
      --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,https://<your-domain>/*" \
      --api-target="service=maps-backend.googleapis.com" \
      --api-target="service=places.googleapis.com"
+
+   # (Optional) Verify the restrictions on existing key strings
+   gcloud beta services api-keys lookup --key-string="$PLACES_KEY"
+   gcloud beta services api-keys lookup --key-string="$MAPS_JS_KEY"
 
    # Persist the server key for backend requests (NestJS + Next.js server components)
    {
