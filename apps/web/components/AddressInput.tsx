@@ -68,10 +68,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     useEffect(() => {
       const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
       if (!apiKey) {
-        setError(
-          "Thiếu NEXT_PUBLIC_GOOGLE_MAPS_API_KEY. Thiết lập API key Google Maps/Places để kích hoạt gợi ý."
-        );
         setReady(false);
+        setError(null);
         return;
       }
       setReady(true);
@@ -86,7 +84,16 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const fetchPredictions = useCallback(
       async (query: string) => {
-        if (!ready) return;
+        if (!ready) {
+          clearSuggestions();
+          const trimmedQuery = query.trim();
+          if (trimmedQuery) {
+            setError(
+              "Thiếu NEXT_PUBLIC_GOOGLE_MAPS_API_KEY. Thiết lập API key Google Maps/Places để kích hoạt gợi ý."
+            );
+          }
+          return;
+        }
         const trimmed = query.trim();
         latestQueryRef.current = trimmed;
         if (!trimmed) {
@@ -177,10 +184,20 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       (event: React.ChangeEvent<HTMLInputElement>) => {
         const next = event.target.value;
         onChange({ text: next });
-        if (!ready) return;
+        if (!ready) {
+          const trimmed = next.trim();
+          clearSuggestions();
+          setError(
+            trimmed
+              ? "Thiếu NEXT_PUBLIC_GOOGLE_MAPS_API_KEY. Thiết lập API key Google Maps/Places để kích hoạt gợi ý."
+              : null,
+          );
+          return;
+        }
+        setError(null);
         scheduleFetch(next);
       },
-      [onChange, ready, scheduleFetch],
+      [clearSuggestions, onChange, ready, scheduleFetch],
     );
 
     const resolvePlaceDetails = useCallback(
