@@ -26,21 +26,9 @@ function createScriptSrc(apiKey: string) {
 }
 
 function findExistingScript() {
-  const fromLoader = document.querySelector<HTMLScriptElement>(
-    "script[data-google-maps]"
-  );
-  if (fromLoader) {
-    return fromLoader;
-  }
-
-  const candidates = Array.from(
-    document.querySelectorAll<HTMLScriptElement>(
-      'script[src*="maps.googleapis.com/maps/api/js"]'
-    )
-  );
-
   return (
-    candidates.find((script) => script.src.includes("libraries=places")) ?? null
+    document.querySelector<HTMLScriptElement>("script[data-google-maps]") ??
+    null
   );
 }
 
@@ -186,7 +174,7 @@ export function loadGoogleMapsPlaces(): Promise<typeof google> {
           return;
         }
 
-        startFallback(0);
+        startFallback(2500);
       });
     };
 
@@ -218,7 +206,7 @@ export function loadGoogleMapsPlaces(): Promise<typeof google> {
     scriptEl.dataset.googleMaps = "true";
 
     document.head.appendChild(scriptEl);
-    startFallback(1500);
+    startFallback(3000);
   });
 
   window.__googleMapsLoadPromise__ = loadPromise;

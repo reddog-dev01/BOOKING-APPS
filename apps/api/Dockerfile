@@ -16,7 +16,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 RUN pnpm --filter api build
-RUN pnpm --filter api deploy --prod --dest /app/apps/api/.output
+RUN pnpm --filter api deploy /app/apps/api/.output --prod --legacy
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
