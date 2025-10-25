@@ -1,3 +1,7 @@
+import "server-only";
+
+import type { PlaceDetails, PlacePrediction } from "../googlePlacesTypes";
+
 const NEW_PLACES_BASE_URL = "https://places.googleapis.com/v1";
 const LEGACY_PLACES_BASE_URL = "https://maps.googleapis.com/maps/api/place";
 const FIELD_MASK_AUTOCOMPLETE = [
@@ -12,7 +16,14 @@ const FIELD_MASK_DETAILS = [
   "location",
 ].join(",");
 
-class PlacesApiError extends Error {
+export class MissingApiKeyError extends Error {
+  constructor() {
+    super("Thiếu GOOGLE_MAPS_API_KEY. Thiết lập API key Google Maps/Places cho server.");
+    this.name = "MissingApiKeyError";
+  }
+}
+
+export class PlacesApiError extends Error {
   readonly status: number;
   readonly details?: unknown;
 
@@ -24,33 +35,49 @@ class PlacesApiError extends Error {
   }
 }
 
-export type RestPrediction = {
-  placeId: string;
-  description: string;
-  mainText: string;
-  secondaryText?: string;
+type RequestContext = {
+  apiKey: string;
+  referer?: string;
 };
 
-export type RestPlaceDetails = {
-  formattedAddress?: string;
-  name?: string;
-  lat?: number;
-  lng?: number;
+type AutocompleteOptions = {
+  sessionToken?: string;
+  country?: string;
+  languageCode?: string;
+  referer?: string;
+};
+
+type DetailsOptions = {
+  sessionToken?: string;
+  languageCode?: string;
+  referer?: string;
 };
 
 function getApiKey(): string {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY ?? process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    throw new Error("Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY");
+    throw new MissingApiKeyError();
   }
   return apiKey;
 }
 
-async function buildError(res: Response, fallback: string) {
-  const body = await res
-    .json()
-    .catch(() => null);
+function resolveReferer(candidate?: string): string | undefined {
+  const fallback =
+    process.env.GOOGLE_MAPS_REFERER ?? process.env.NEXT_PUBLIC_GOOGLE_MAPS_REFERER;
+  const resolved = candidate?.trim() || fallback?.trim();
+  return resolved && resolved.length > 0 ? resolved : undefined;
+}
 
+function withReferer(headers: Record<string, string>, referer?: string) {
+  if (referer) {
+    return { ...headers, Referer: referer } satisfies Record<string, string>;
+  }
+  return headers;
+}
+
+async function buildError(res: Response, fallback: string): Promise<never> {
+  const body = await res.json().catch(() => null);
   const message = body?.error?.message ? (body.error.message as string) : fallback;
   throw new PlacesApiError(message, res.status, body);
 }
@@ -66,7 +93,6 @@ function shouldFallbackToLegacy(error: unknown): boolean {
       return true;
     }
 
-    // Legacy API key restrictions may surface as PERMISSION_DENIED.
     if (typeof error.details === "object" && error.details !== null) {
       const status = (error.details as { error?: { status?: string } })?.error?.status;
       if (status === "PERMISSION_DENIED" || status === "FAILED_PRECONDITION") {
@@ -78,7 +104,15 @@ function shouldFallbackToLegacy(error: unknown): boolean {
   return false;
 }
 
+function getContext(options: { referer?: string }): RequestContext {
+  return {
+    apiKey: getApiKey(),
+    referer: resolveReferer(options.referer),
+  };
+}
+
 async function callNewAutocomplete(
+  context: RequestContext,
   input: string,
   sessionToken: string | undefined,
   country: string,
@@ -86,11 +120,15 @@ async function callNewAutocomplete(
 ) {
   const res = await fetch(`${NEW_PLACES_BASE_URL}/places:autocomplete`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": getApiKey(),
-      "X-Goog-FieldMask": FIELD_MASK_AUTOCOMPLETE,
-    },
+    cache: "no-store",
+    headers: withReferer(
+      {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": context.apiKey,
+        "X-Goog-FieldMask": FIELD_MASK_AUTOCOMPLETE,
+      },
+      context.referer,
+    ),
     body: JSON.stringify({
       input,
       languageCode,
@@ -101,10 +139,7 @@ async function callNewAutocomplete(
   });
 
   if (!res.ok) {
-    await buildError(
-      res,
-      `Google Places autocomplete failed (HTTP ${res.status}).`,
-    );
+    await buildError(res, `Google Places autocomplete failed (HTTP ${res.status}).`);
   }
 
   const data = (await res.json()) as {
@@ -133,12 +168,13 @@ async function callNewAutocomplete(
         description,
         mainText,
         secondaryText,
-      } as RestPrediction;
+      } satisfies PlacePrediction;
     })
-    .filter((value): value is RestPrediction => Boolean(value));
+    .filter((value): value is PlacePrediction => Boolean(value));
 }
 
 async function callLegacyAutocomplete(
+  context: RequestContext,
   input: string,
   sessionToken: string | undefined,
   country: string,
@@ -146,7 +182,7 @@ async function callLegacyAutocomplete(
 ) {
   const params = new URLSearchParams({
     input,
-    key: getApiKey(),
+    key: context.apiKey,
     language: languageCode,
   });
   if (sessionToken) {
@@ -156,7 +192,10 @@ async function callLegacyAutocomplete(
     params.append("components", `country:${country}`);
   }
 
-  const res = await fetch(`${LEGACY_PLACES_BASE_URL}/autocomplete/json?${params.toString()}`);
+  const res = await fetch(`${LEGACY_PLACES_BASE_URL}/autocomplete/json?${params.toString()}`, {
+    cache: "no-store",
+    headers: withReferer({}, context.referer),
+  });
 
   if (!res.ok) {
     await buildError(
@@ -195,12 +234,13 @@ async function callLegacyAutocomplete(
         description,
         mainText: prediction.structured_formatting?.main_text ?? description,
         secondaryText: prediction.structured_formatting?.secondary_text,
-      } as RestPrediction;
+      } satisfies PlacePrediction;
     })
-    .filter((value): value is RestPrediction => Boolean(value));
+    .filter((value): value is PlacePrediction => Boolean(value));
 }
 
 async function callNewDetails(
+  context: RequestContext,
   placeId: string,
   sessionToken: string | undefined,
   languageCode: string,
@@ -213,17 +253,18 @@ async function callNewDetails(
 
   const res = await fetch(`${NEW_PLACES_BASE_URL}/places/${encoded}?${searchParams}`, {
     method: "GET",
-    headers: {
-      "X-Goog-Api-Key": getApiKey(),
-      "X-Goog-FieldMask": FIELD_MASK_DETAILS,
-    },
+    cache: "no-store",
+    headers: withReferer(
+      {
+        "X-Goog-Api-Key": context.apiKey,
+        "X-Goog-FieldMask": FIELD_MASK_DETAILS,
+      },
+      context.referer,
+    ),
   });
 
   if (!res.ok) {
-    await buildError(
-      res,
-      `Google Places details failed (HTTP ${res.status}).`,
-    );
+    await buildError(res, `Google Places details failed (HTTP ${res.status}).`);
   }
 
   const data = (await res.json()) as {
@@ -237,17 +278,18 @@ async function callNewDetails(
     name: data.displayName?.text,
     lat: data.location?.latitude,
     lng: data.location?.longitude,
-  } satisfies RestPlaceDetails;
+  } satisfies PlaceDetails;
 }
 
 async function callLegacyDetails(
+  context: RequestContext,
   placeId: string,
   sessionToken: string | undefined,
   languageCode: string,
 ) {
   const params = new URLSearchParams({
     place_id: placeId,
-    key: getApiKey(),
+    key: context.apiKey,
     language: languageCode,
     fields: "formatted_address,name,geometry/location",
   });
@@ -255,7 +297,10 @@ async function callLegacyDetails(
     params.set("sessiontoken", sessionToken);
   }
 
-  const res = await fetch(`${LEGACY_PLACES_BASE_URL}/details/json?${params.toString()}`);
+  const res = await fetch(`${LEGACY_PLACES_BASE_URL}/details/json?${params.toString()}`, {
+    cache: "no-store",
+    headers: withReferer({}, context.referer),
+  });
 
   if (!res.ok) {
     await buildError(
@@ -287,25 +332,25 @@ async function callLegacyDetails(
     name: data.result?.name,
     lat: data.result?.geometry?.location?.lat,
     lng: data.result?.geometry?.location?.lng,
-  } satisfies RestPlaceDetails;
+  } satisfies PlaceDetails;
 }
 
 export async function fetchAutocomplete(
   input: string,
-  sessionToken?: string,
-  country = "VN",
-  languageCode = "vi"
-): Promise<RestPrediction[]> {
+  { sessionToken, country = "VN", languageCode = "vi", referer }: AutocompleteOptions = {},
+): Promise<PlacePrediction[]> {
   const trimmed = input.trim();
   if (!trimmed) {
     return [];
   }
 
+  const context = getContext({ referer });
+
   try {
-    return await callNewAutocomplete(trimmed, sessionToken, country, languageCode);
+    return await callNewAutocomplete(context, trimmed, sessionToken, country, languageCode);
   } catch (error) {
     if (shouldFallbackToLegacy(error)) {
-      return callLegacyAutocomplete(trimmed, sessionToken, country, languageCode);
+      return callLegacyAutocomplete(context, trimmed, sessionToken, country, languageCode);
     }
     throw error;
   }
@@ -313,14 +358,15 @@ export async function fetchAutocomplete(
 
 export async function fetchPlaceDetails(
   placeId: string,
-  sessionToken?: string,
-  languageCode = "vi"
-): Promise<RestPlaceDetails> {
+  { sessionToken, languageCode = "vi", referer }: DetailsOptions = {},
+): Promise<PlaceDetails> {
+  const context = getContext({ referer });
+
   try {
-    return await callNewDetails(placeId, sessionToken, languageCode);
+    return await callNewDetails(context, placeId, sessionToken, languageCode);
   } catch (error) {
     if (shouldFallbackToLegacy(error)) {
-      return callLegacyDetails(placeId, sessionToken, languageCode);
+      return callLegacyDetails(context, placeId, sessionToken, languageCode);
     }
     throw error;
   }

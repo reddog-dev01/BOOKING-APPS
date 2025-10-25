@@ -8,11 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  fetchAutocomplete as fetchRestAutocomplete,
-  fetchPlaceDetails as fetchRestPlaceDetails,
-  type RestPrediction,
-} from "../lib/googlePlacesRest";
+import type { PlacePrediction } from "../lib/googlePlacesTypes";
 
 type AddressValue = { text: string; lat?: number; lng?: number };
 
@@ -28,6 +24,8 @@ type AddressInputProps = {
 const DEBOUNCE_MS = 250;
 const COUNTRY_CODE = "VN";
 const LANGUAGE_CODE = "vi";
+const MISSING_KEY_MESSAGE =
+  "Thiếu Google Maps API key. Thiết lập GOOGLE_MAPS_API_KEY (server) để kích hoạt gợi ý.";
 
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
@@ -45,11 +43,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const restSessionTokenRef = useRef<string | null>(null);
     const latestQueryRef = useRef<string>("");
 
-    const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [suggestions, setSuggestions] = useState<RestPrediction[]>([]);
+    const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
     const [open, setOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(-1);
+    const [apiUnavailableMessage, setApiUnavailableMessage] = useState<string | null>(null);
 
     const debounceRef = useRef<number | null>(null);
 
@@ -65,17 +63,6 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       setExternalRef(inputRef as any, internalInputRef.current);
     }, [inputRef]);
 
-    useEffect(() => {
-      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        setReady(false);
-        setError(null);
-        return;
-      }
-      setReady(true);
-      setError(null);
-    }, []);
-
     const clearSuggestions = useCallback(() => {
       setSuggestions([]);
       setOpen(false);
@@ -84,16 +71,6 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const fetchPredictions = useCallback(
       async (query: string) => {
-        if (!ready) {
-          clearSuggestions();
-          const trimmedQuery = query.trim();
-          if (trimmedQuery) {
-            setError(
-              "Thiếu NEXT_PUBLIC_GOOGLE_MAPS_API_KEY. Thiết lập API key Google Maps/Places để kích hoạt gợi ý."
-            );
-          }
-          return;
-        }
         const trimmed = query.trim();
         latestQueryRef.current = trimmed;
         if (!trimmed) {
@@ -102,22 +79,57 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           return;
         }
 
+        if (apiUnavailableMessage) {
+          clearSuggestions();
+          setError(apiUnavailableMessage);
+          return;
+        }
+
         setError(null);
 
         try {
           const token = ensureRestSessionToken();
-          const predictions = await fetchRestAutocomplete(
-            trimmed,
-            token ?? undefined,
-            COUNTRY_CODE,
-            LANGUAGE_CODE,
-          );
+          const response = await fetch("/api/places/autocomplete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input: trimmed,
+              sessionToken: token ?? undefined,
+              country: COUNTRY_CODE,
+              languageCode: LANGUAGE_CODE,
+            }),
+          });
+
+          const payload = (await response.json().catch(() => null)) as
+            | { predictions: PlacePrediction[] }
+            | { error?: { message?: string } }
+            | null;
+
+          if (!response.ok) {
+            const rawMessage = (payload as { error?: { message?: string } } | null)?.error?.message;
+            const fallbackMessage =
+              response.status === 503
+                ? MISSING_KEY_MESSAGE
+                : "Không thể gợi ý địa chỉ từ Google.";
+            const message = rawMessage && rawMessage.length > 0 ? rawMessage : fallbackMessage;
+
+            if (response.status === 503) {
+              setApiUnavailableMessage(message);
+              clearSuggestions();
+              setError(message);
+              return;
+            }
+
+            throw new Error(message);
+          }
+
+          const predictions = (payload as { predictions: PlacePrediction[] } | null)?.predictions;
 
           if (latestQueryRef.current !== trimmed) {
             return;
           }
 
-          if (predictions.length === 0) {
+          if (!predictions || predictions.length === 0) {
             clearSuggestions();
             return;
           }
@@ -132,7 +144,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           setError(message);
         }
       },
-      [clearSuggestions, ensureRestSessionToken, ready],
+      [apiUnavailableMessage, clearSuggestions, ensureRestSessionToken],
     );
 
     const scheduleFetch = useCallback(
@@ -140,14 +152,25 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         if (debounceRef.current) {
           window.clearTimeout(debounceRef.current);
         }
-        if (!ready) return;
+
+        if (apiUnavailableMessage) {
+          const trimmed = query.trim();
+          clearSuggestions();
+          if (trimmed) {
+            setError(apiUnavailableMessage);
+          } else {
+            setError(null);
+          }
+          return;
+        }
+
         debounceRef.current = window.setTimeout(() => {
           fetchPredictions(query).catch((err) => {
             console.error("Google Places prediction error", err);
           });
         }, DEBOUNCE_MS);
       },
-      [fetchPredictions, ready],
+      [apiUnavailableMessage, clearSuggestions, fetchPredictions],
     );
 
     useEffect(() => {
@@ -184,35 +207,78 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       (event: React.ChangeEvent<HTMLInputElement>) => {
         const next = event.target.value;
         onChange({ text: next });
-        if (!ready) {
-          const trimmed = next.trim();
+
+        const trimmed = next.trim();
+        if (!trimmed) {
           clearSuggestions();
-          setError(
-            trimmed
-              ? "Thiếu NEXT_PUBLIC_GOOGLE_MAPS_API_KEY. Thiết lập API key Google Maps/Places để kích hoạt gợi ý."
-              : null,
-          );
+          setError(null);
           return;
         }
+
+        if (apiUnavailableMessage) {
+          clearSuggestions();
+          setError(apiUnavailableMessage);
+          return;
+        }
+
         setError(null);
         scheduleFetch(next);
       },
-      [clearSuggestions, onChange, ready, scheduleFetch],
+      [apiUnavailableMessage, clearSuggestions, onChange, scheduleFetch],
     );
 
     const resolvePlaceDetails = useCallback(
-      async (prediction: RestPrediction) => {
+      async (prediction: PlacePrediction) => {
         const token = ensureRestSessionToken();
         try {
-          const details = await fetchRestPlaceDetails(
-            prediction.placeId,
-            token ?? undefined,
-            LANGUAGE_CODE,
-          );
+          const response = await fetch("/api/places/details", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              placeId: prediction.placeId,
+              sessionToken: token ?? undefined,
+              languageCode: LANGUAGE_CODE,
+            }),
+          });
+
+          const payload = (await response.json().catch(() => null)) as
+            | { details?: {
+                formattedAddress?: string;
+                name?: string;
+                lat?: number;
+                lng?: number;
+              } }
+            | { error?: { message?: string } }
+            | null;
+
+          if (!response.ok) {
+            const rawMessage = (payload as { error?: { message?: string } } | null)?.error?.message;
+            const fallbackMessage =
+              response.status === 503
+                ? MISSING_KEY_MESSAGE
+                : "Không thể lấy chi tiết địa điểm.";
+            const message = rawMessage && rawMessage.length > 0 ? rawMessage : fallbackMessage;
+
+            if (response.status === 503) {
+              setApiUnavailableMessage(message);
+              setError(message);
+              return;
+            }
+
+            throw new Error(message);
+          }
+
+          const details = (payload as { details?: {
+            formattedAddress?: string;
+            name?: string;
+            lat?: number;
+            lng?: number;
+          } } | null)?.details;
+
           onChange({
-            text: details.formattedAddress ?? prediction.description ?? prediction.mainText,
-            lat: details.lat,
-            lng: details.lng,
+            text: details?.formattedAddress ?? prediction.description ?? prediction.mainText,
+            lat: details?.lat,
+            lng: details?.lng,
           });
         } catch (err) {
           setError(
@@ -229,7 +295,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     );
 
     const selectPrediction = useCallback(
-      (prediction: RestPrediction) => {
+      (prediction: PlacePrediction) => {
         clearSuggestions();
         const description = prediction.description ?? prediction.mainText;
         onChange({ text: description });

@@ -40,9 +40,12 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
      --api-target="service=maps-backend.googleapis.com" \
      --api-target="service=places.googleapis.com"
 
-   # Persist the key into both API and web env files
-   echo "GOOGLE_MAPS_API_KEY=$KEY_STRING" >> apps/api/.env
-   echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$KEY_STRING" >> apps/web/.env.local
+  # Persist the key into both API and web env files
+  echo "GOOGLE_MAPS_API_KEY=$KEY_STRING" >> apps/api/.env
+  {
+    echo "GOOGLE_MAPS_API_KEY=$KEY_STRING"
+    echo "GOOGLE_MAPS_REFERER=http://localhost:3000/"
+  } >> apps/web/.env.local
    ```
 
    Replace `<your-domain>` with the production hostname. Regenerate the key if you need to rotate secrets.
