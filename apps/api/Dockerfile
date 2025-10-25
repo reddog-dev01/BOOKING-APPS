@@ -1,13 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
-# ---- build stage ----
-FROM node:20-alpine AS build
+# ---- dependency stage ----
+FROM node:20-alpine AS deps
 WORKDIR /app
 
 RUN corepack enable
-
-ARG DATABASE_URL="postgresql://booking:secret@localhost:5432/booking?schema=public"
-ENV DATABASE_URL=$DATABASE_URL
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/api/package.json apps/api/
@@ -15,6 +12,12 @@ COPY apps/web/package.json apps/web/
 COPY packages/db/package.json packages/db/
 
 RUN pnpm install --frozen-lockfile
+
+# ---- build stage ----
+FROM deps AS build
+
+ARG DATABASE_URL="postgresql://booking:secret@localhost:5432/booking?schema=public"
+ENV DATABASE_URL=$DATABASE_URL
 
 COPY . .
 
