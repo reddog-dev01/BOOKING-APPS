@@ -22,7 +22,11 @@ RUN pnpm prisma:generate \
   && pnpm --filter api build \
   && pnpm --filter api deploy /app/apps/api/.output --prod --legacy \
   && mkdir -p apps/api/.output/node_modules \
-  && cp -R node_modules/.prisma apps/api/.output/node_modules/
+  && cp -a node_modules/.prisma apps/api/.output/node_modules/ \
+  && find node_modules/.pnpm -maxdepth 1 -type d -name '@prisma+client@*' -exec \
+    sh -c 'pkg="$(basename "$1")"; src="node_modules/.pnpm/${pkg}/node_modules/.prisma"; \
+      dest="apps/api/.output/node_modules/.pnpm/${pkg}/node_modules"; \
+      if [ -d "${src}" ]; then mkdir -p "${dest}"; cp -a "${src}" "${dest}"; fi' sh {} \;
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
