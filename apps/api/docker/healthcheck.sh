@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-URL="http://127.0.0.1:${PORT:-3001}/healthz"
+URL="http://127.0.0.1:${PORT:-3006}/healthz"
 
 if command -v curl >/dev/null 2>&1; then
   curl -fsS "$URL" >/dev/null

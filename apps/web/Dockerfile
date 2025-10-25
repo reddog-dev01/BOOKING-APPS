@@ -21,7 +21,7 @@ WORKDIR /work
 COPY . .
 
 ARG NEXT_PUBLIC_API_BASE
-ARG INTERNAL_API_BASE=http://api:3001
+ARG INTERNAL_API_BASE=http://api:3006
 ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ARG NEXT_PUBLIC_QUOTE_PATH=/pricing/quote
 ARG NEXT_PUBLIC_BOOKINGS_PATH=/bookings
@@ -35,7 +35,7 @@ RUN pnpm --filter web build
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
-ARG INTERNAL_API_BASE=http://api:3001
+ARG INTERNAL_API_BASE=http://api:3006
 WORKDIR /app
 
 ENV NODE_ENV=production

@@ -1,4 +1,4 @@
-const FALLBACK = "http://localhost:3001";
+const FALLBACK = "http://localhost:3006";
 
 export function getApiBaseUrl(): string {
   const raw =

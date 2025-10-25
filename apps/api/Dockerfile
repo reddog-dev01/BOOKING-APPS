@@ -75,7 +75,7 @@ RUN chmod +x /usr/local/bin/api-healthcheck
 RUN corepack enable pnpm
 
 ENV NODE_ENV=production
-ENV PORT=3001
+ENV PORT=3006
 
 COPY --from=build /app/apps/api/.output/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./dist
@@ -89,5 +89,5 @@ USER app
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
   CMD ["/bin/sh", "/usr/local/bin/api-healthcheck"]
 
-EXPOSE 3001
+EXPOSE 3006
 CMD ["node", "dist/main.js"]
