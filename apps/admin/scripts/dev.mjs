@@ -11,7 +11,7 @@ const DEFAULT_PORT = Number.parseInt(
   10,
 );
 
-const PORT_ENV_PRIORITY = ['PORT', 'ADMIN_PORT', 'ADMIN_DEV_PORT'];
+const PORT_ENV_PRIORITY = ['ADMIN_DEV_PORT', 'ADMIN_PORT', 'PORT'];
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
