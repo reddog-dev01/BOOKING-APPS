@@ -76,9 +76,20 @@ function withReferer(headers: Record<string, string>, referer?: string) {
 
   return {
     ...headers,
-    Referer: referer,
     "X-Goog-Referer": referer,
   } satisfies Record<string, string>;
+}
+
+function withReferrerOption(init: RequestInit, referer?: string): RequestInit {
+  if (!referer) {
+    return init;
+  }
+
+  return {
+    ...init,
+    referrer: referer,
+    referrerPolicy: "no-referrer-when-downgrade",
+  } satisfies RequestInit;
 }
 
 async function buildError(res: Response, fallback: string): Promise<never> {
@@ -123,25 +134,31 @@ async function callNewAutocomplete(
   country: string,
   languageCode: string,
 ) {
-  const res = await fetch(`${NEW_PLACES_BASE_URL}/places:autocomplete`, {
-    method: "POST",
-    cache: "no-store",
-    headers: withReferer(
+  const res = await fetch(
+    `${NEW_PLACES_BASE_URL}/places:autocomplete?key=${encodeURIComponent(context.apiKey)}`,
+    withReferrerOption(
       {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": context.apiKey,
-        "X-Goog-FieldMask": FIELD_MASK_AUTOCOMPLETE,
+        method: "POST",
+        cache: "no-store",
+        headers: withReferer(
+          {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": context.apiKey,
+            "X-Goog-FieldMask": FIELD_MASK_AUTOCOMPLETE,
+          },
+          context.referer,
+        ),
+        body: JSON.stringify({
+          input,
+          languageCode,
+          regionCode: country,
+          components: { countries: [country] },
+          sessionToken,
+        }),
       },
       context.referer,
     ),
-    body: JSON.stringify({
-      input,
-      languageCode,
-      regionCode: country,
-      components: { countries: [country] },
-      sessionToken,
-    }),
-  });
+  );
 
   if (!res.ok) {
     await buildError(res, `Google Places autocomplete failed (HTTP ${res.status}).`);
@@ -197,10 +214,16 @@ async function callLegacyAutocomplete(
     params.append("components", `country:${country}`);
   }
 
-  const res = await fetch(`${LEGACY_PLACES_BASE_URL}/autocomplete/json?${params.toString()}`, {
-    cache: "no-store",
-    headers: withReferer({}, context.referer),
-  });
+  const res = await fetch(
+    `${LEGACY_PLACES_BASE_URL}/autocomplete/json?${params.toString()}`,
+    withReferrerOption(
+      {
+        cache: "no-store",
+        headers: withReferer({}, context.referer),
+      },
+      context.referer,
+    ),
+  );
 
   if (!res.ok) {
     await buildError(
@@ -256,17 +279,23 @@ async function callNewDetails(
     searchParams.set("sessionToken", sessionToken);
   }
 
-  const res = await fetch(`${NEW_PLACES_BASE_URL}/places/${encoded}?${searchParams}`, {
-    method: "GET",
-    cache: "no-store",
-    headers: withReferer(
+  const res = await fetch(
+    `${NEW_PLACES_BASE_URL}/places/${encoded}?${searchParams}&key=${encodeURIComponent(context.apiKey)}`,
+    withReferrerOption(
       {
-        "X-Goog-Api-Key": context.apiKey,
-        "X-Goog-FieldMask": FIELD_MASK_DETAILS,
+        method: "GET",
+        cache: "no-store",
+        headers: withReferer(
+          {
+            "X-Goog-Api-Key": context.apiKey,
+            "X-Goog-FieldMask": FIELD_MASK_DETAILS,
+          },
+          context.referer,
+        ),
       },
       context.referer,
     ),
-  });
+  );
 
   if (!res.ok) {
     await buildError(res, `Google Places details failed (HTTP ${res.status}).`);
@@ -302,10 +331,16 @@ async function callLegacyDetails(
     params.set("sessiontoken", sessionToken);
   }
 
-  const res = await fetch(`${LEGACY_PLACES_BASE_URL}/details/json?${params.toString()}`, {
-    cache: "no-store",
-    headers: withReferer({}, context.referer),
-  });
+  const res = await fetch(
+    `${LEGACY_PLACES_BASE_URL}/details/json?${params.toString()}`,
+    withReferrerOption(
+      {
+        cache: "no-store",
+        headers: withReferer({}, context.referer),
+      },
+      context.referer,
+    ),
+  );
 
   if (!res.ok) {
     await buildError(
