@@ -24,8 +24,10 @@ services:
     container_name: booking-api
     env_file:
       - ./apps/api/.env
+    environment:
+      PORT: ${API_CONTAINER_PORT:-3001}
     ports:
-      - "3001:3001"
+      - "3006:3001"
     depends_on:
       db:
         condition: service_healthy
@@ -59,7 +61,7 @@ services:
       NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
       PORT: 3000
     ports:
-      - "3000:3000"
+      - "3005:3000"
     depends_on:
       api:
         condition: service_healthy

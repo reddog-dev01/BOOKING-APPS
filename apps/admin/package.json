@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "build": "next build --turbopack",
-    "start": "next start",
+    "start": "next start -p 3007",
     "lint": "eslint"
   },
   "dependencies": {

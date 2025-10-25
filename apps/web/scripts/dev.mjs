@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const forwardedArgs = process.argv.slice(2);
 
 const DEFAULT_PORT = Number.parseInt(
-  process.env.WEB_DEV_DEFAULT_PORT ?? '3000',
+  process.env.WEB_DEV_DEFAULT_PORT ?? '3005',
   10,
 );
 
@@ -135,7 +135,7 @@ const run = async () => {
     return;
   }
 
-  const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3000;
+  const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3005;
   const availablePort = await findAvailablePort(initialPort);
   spawnDevServer(availablePort, 'auto-detected');
 };

@@ -37,7 +37,7 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    # Restrict usage to HTTPS/HTTP referrers and the required APIs
    gcloud services api-keys update "$KEY_NAME" \
      --project=inbound-object-476110-d5 \
-     --allowed-referrers="http://localhost:3000/*,http://127.0.0.1:3000/*,https://<your-domain>/*" \
+    --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,https://<your-domain>/*" \
      --api-target="service=maps-backend.googleapis.com" \
      --api-target="service=places.googleapis.com"
 
@@ -48,7 +48,7 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    } >> apps/api/.env
    {
      echo "PLACES_API_KEY=$KEY_STRING"
-     echo "GOOGLE_MAPS_REFERER=http://localhost:3000/"
+    echo "GOOGLE_MAPS_REFERER=http://localhost:3005/"
    } >> apps/web/.env
 
    # Persist the browser key (HTTP referrer restricted) for the frontend bundle
@@ -71,13 +71,13 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    docker compose up -d db api web
    ```
 
-   The API is exposed on `http://127.0.0.1:3001` and the web frontend on `http://127.0.0.1:3000` by default.
+  The API is exposed on `http://127.0.0.1:3006` and the web frontend on `http://127.0.0.1:3005` by default.
 
 4. **Verify health checks**
 
    ```bash
-   curl -i http://127.0.0.1:3001/healthz
-   curl -I http://127.0.0.1:3000
+  curl -i http://127.0.0.1:3006/healthz
+  curl -I http://127.0.0.1:3005
    ```
 
 5. **(Optional) Run Caddy for HTTPS/reverse proxy**
