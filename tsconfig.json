@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "types": ["node"],
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "target": "ES2022"
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}
