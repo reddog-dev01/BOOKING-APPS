@@ -1,19 +1,25 @@
-// apps/web/components/AddressInput.tsx
 "use client";
 
 import React, {
-  useRef,
-  useEffect,
-  useCallback,
-  useState,
-  KeyboardEvent,
   FocusEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 import { loadGoogleMapsPlaces } from "../lib/googleMapsLoader";
 
 type AddressValue = { text: string; lat?: number; lng?: number };
 
-type Prediction = google.maps.places.AutocompletePrediction;
+type Prediction = {
+  description: string;
+  place_id: string;
+  structured_formatting: {
+    main_text: string;
+    secondary_text?: string;
+  };
+};
 
 type AddressInputProps = {
   value: string;
@@ -26,6 +32,15 @@ type AddressInputProps = {
 
 const COUNTRIES = ["vn"];
 const DEBOUNCE_MS = 250;
+const STATUS_ERROR_MESSAGES: Partial<Record<string, string>> = {
+  REQUEST_DENIED:
+    "Google Maps từ chối yêu cầu. Kiểm tra API key, hạn mức Billing và quyền Places API.",
+  OVER_QUERY_LIMIT:
+    "Quá giới hạn truy vấn Google Maps. Vui lòng thử lại sau ít phút.",
+  INVALID_REQUEST: "Tham số tìm kiếm chưa hợp lệ. Vui lòng nhập lại địa chỉ.",
+  UNKNOWN_ERROR:
+    "Google Maps gặp sự cố tạm thời. Thử tìm lại sau giây lát.",
+};
 
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
@@ -36,17 +51,20 @@ function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   }
 }
 
+function getGoogle() {
+  if (typeof window === "undefined") return undefined;
+  return (window as typeof window & { google?: any }).google;
+}
+
 const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
   ({ value, placeholder, disabled, inputClassName, inputRef, onChange }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
     const placesServiceContainerRef = useRef<HTMLDivElement | null>(null);
 
-    const autocompleteServiceRef =
-      useRef<google.maps.places.AutocompleteService | null>(null);
-    const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
-    const sessionTokenRef =
-      useRef<google.maps.places.AutocompleteSessionToken | null>(null);
+    const autocompleteServiceRef = useRef<any>(null);
+    const placesServiceRef = useRef<any>(null);
+    const sessionTokenRef = useRef<any>(null);
 
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -57,8 +75,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const debounceRef = useRef<number | null>(null);
 
     const ensureSessionToken = useCallback(() => {
-      if (!sessionTokenRef.current && window.google?.maps?.places) {
-        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+      const google = getGoogle();
+      if (!sessionTokenRef.current && google?.maps?.places) {
+        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
       }
       return sessionTokenRef.current;
     }, []);
@@ -106,7 +125,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const fetchPredictions = useCallback(
       (query: string) => {
-        if (!ready || !autocompleteServiceRef.current || !window.google?.maps?.places) {
+        const google = getGoogle();
+        if (!ready || !autocompleteServiceRef.current || !google?.maps?.places) {
           return;
         }
         const trimmed = query.trim();
@@ -125,28 +145,35 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             sessionToken: token ?? undefined,
             componentRestrictions: { country: COUNTRIES },
           },
-          (predictions, status) => {
-            if (!window.google?.maps?.places) {
+          (predictions: any[] | null, status: any) => {
+            const googleLocal = getGoogle();
+            if (!googleLocal?.maps?.places) {
               return;
             }
-            const okStatus = window.google.maps.places.PlacesServiceStatus.OK;
+            const okStatus = googleLocal.maps.places.PlacesServiceStatus.OK;
             if (status === okStatus && predictions && predictions.length > 0) {
-              setSuggestions(predictions);
+              setSuggestions(predictions as Prediction[]);
               setOpen(true);
               setActiveIndex(-1);
             } else {
               clearSuggestions();
-              if (
-                status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS &&
-                status !== window.google.maps.places.PlacesServiceStatus.OK
-              ) {
-                setError(`Không thể gợi ý địa chỉ (${status}).`);
+              const zeroResults =
+                googleLocal.maps.places.PlacesServiceStatus.ZERO_RESULTS;
+              if (status === zeroResults) {
+                setError(null);
+                return;
               }
+
+              const statusKey = typeof status === "string" ? status : String(status);
+              const customMessage = STATUS_ERROR_MESSAGES[statusKey];
+              setError(
+                customMessage ?? `Không thể gợi ý địa chỉ (mã lỗi: ${statusKey}).`
+              );
             }
           }
         );
       },
-      [clearSuggestions, ensureSessionToken, ready]
+      [clearSuggestions, ensureSessionToken, ready, setError]
     );
 
     const scheduleFetch = useCallback(
@@ -204,7 +231,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const resolvePlaceDetails = useCallback(
       (prediction: Prediction) => {
-        if (!placesServiceRef.current || !window.google?.maps?.places) {
+        const google = getGoogle();
+        if (!placesServiceRef.current || !google?.maps?.places) {
           onChange({ text: prediction.description });
           return;
         }
@@ -216,8 +244,20 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             sessionToken: token ?? undefined,
             fields: ["geometry", "formatted_address", "name"],
           },
-          (place, status) => {
-            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
+          (place: any, status: any) => {
+            const googleLocal = getGoogle();
+            if (googleLocal?.maps?.places && status !== googleLocal.maps.places.PlacesServiceStatus.OK) {
+              const statusKey = typeof status === "string" ? status : String(status);
+              const customMessage = STATUS_ERROR_MESSAGES[statusKey];
+              if (customMessage) {
+                setError(customMessage);
+              } else {
+                setError(`Không thể lấy chi tiết địa điểm (mã lỗi: ${statusKey}).`);
+              }
+              onChange({ text: prediction.description });
+              return;
+            }
+            if (!place) {
               onChange({ text: prediction.description });
               return;
             }
@@ -231,11 +271,12 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             } else {
               onChange({ text: place.formatted_address ?? prediction.description });
             }
+            setError(null);
             sessionTokenRef.current = null;
           }
         );
       },
-      [ensureSessionToken, onChange]
+      [ensureSessionToken, onChange, setError]
     );
 
     const selectPrediction = useCallback(
