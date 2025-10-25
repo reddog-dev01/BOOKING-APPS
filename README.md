@@ -65,7 +65,6 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    # Persist the server key for backend requests (NestJS + Next.js server components)
    {
      echo "PLACES_API_KEY=$PLACES_KEY"
-     echo "GOOGLE_MAPS_API_KEY=$PLACES_KEY"
    } >> apps/api/.env
    {
      echo "PLACES_API_KEY=$PLACES_KEY"

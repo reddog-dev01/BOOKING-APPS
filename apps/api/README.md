@@ -32,7 +32,6 @@ RL_MAX=120
 RL_WINDOW=1 minute
 RL_ALLOWLIST=
 PLACES_API_KEY=<IP-restricted Google Places key>
-GOOGLE_MAPS_API_KEY=<optional server-side Maps key>
 ```
 
 > ℹ️ When the API runs inside Docker, set the `DATABASE_URL` host to `db` instead of `localhost`. Use the IP-restricted
