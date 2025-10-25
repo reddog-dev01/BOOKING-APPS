@@ -1,19 +1,29 @@
-// apps/web/components/AddressInput.tsx
 "use client";
 
 import React, {
-  useRef,
-  useEffect,
-  useCallback,
-  useState,
-  KeyboardEvent,
   FocusEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 import { loadGoogleMapsPlaces } from "../lib/googleMapsLoader";
+import {
+  fetchAutocomplete as fetchRestAutocomplete,
+  fetchPlaceDetails as fetchRestPlaceDetails,
+} from "../lib/googlePlacesRest";
 
 type AddressValue = { text: string; lat?: number; lng?: number };
 
-type Prediction = google.maps.places.AutocompletePrediction;
+type Prediction = {
+  description: string;
+  place_id: string;
+  structured_formatting: {
+    main_text: string;
+    secondary_text?: string;
+  };
+};
 
 type AddressInputProps = {
   value: string;
@@ -26,6 +36,18 @@ type AddressInputProps = {
 
 const COUNTRIES = ["vn"];
 const DEBOUNCE_MS = 250;
+const COUNTRY_CODE = "VN";
+const LANGUAGE_CODE = "vi";
+type LoaderMode = "sdk" | "rest";
+const STATUS_ERROR_MESSAGES: Partial<Record<string, string>> = {
+  REQUEST_DENIED:
+    "Google Maps từ chối yêu cầu. Kiểm tra API key, hạn mức Billing và quyền Places API.",
+  OVER_QUERY_LIMIT:
+    "Quá giới hạn truy vấn Google Maps. Vui lòng thử lại sau ít phút.",
+  INVALID_REQUEST: "Tham số tìm kiếm chưa hợp lệ. Vui lòng nhập lại địa chỉ.",
+  UNKNOWN_ERROR:
+    "Google Maps gặp sự cố tạm thời. Thử tìm lại sau giây lát.",
+};
 
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
@@ -36,18 +58,24 @@ function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   }
 }
 
+function getGoogle() {
+  if (typeof window === "undefined") return undefined;
+  return (window as typeof window & { google?: any }).google;
+}
+
 const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
   ({ value, placeholder, disabled, inputClassName, inputRef, onChange }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
     const placesServiceContainerRef = useRef<HTMLDivElement | null>(null);
 
-    const autocompleteServiceRef =
-      useRef<google.maps.places.AutocompleteService | null>(null);
-    const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
-    const sessionTokenRef =
-      useRef<google.maps.places.AutocompleteSessionToken | null>(null);
+    const autocompleteServiceRef = useRef<any>(null);
+    const placesServiceRef = useRef<any>(null);
+    const sessionTokenRef = useRef<any>(null);
+    const restSessionTokenRef = useRef<string | null>(null);
+    const latestQueryRef = useRef<string>("");
 
+    const [mode, setMode] = useState<LoaderMode>("sdk");
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<Prediction[]>([]);
@@ -56,11 +84,22 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const debounceRef = useRef<number | null>(null);
 
-    const ensureSessionToken = useCallback(() => {
-      if (!sessionTokenRef.current && window.google?.maps?.places) {
-        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+    const ensureSdkSessionToken = useCallback(() => {
+      const google = getGoogle();
+      if (!google?.maps?.places) return null;
+      if (!sessionTokenRef.current) {
+        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
       }
       return sessionTokenRef.current;
+    }, []);
+
+    const ensureRestSessionToken = useCallback(() => {
+      if (!restSessionTokenRef.current) {
+        restSessionTokenRef.current =
+          globalThis.crypto?.randomUUID?.() ??
+          `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+      return restSessionTokenRef.current;
     }, []);
 
     useEffect(() => {
@@ -74,18 +113,43 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       loadGoogleMapsPlaces()
         .then((google) => {
           if (cancelled) return;
+          if (!google?.maps?.places?.AutocompleteService) {
+            console.warn(
+              "Google Maps Places SDK loaded but missing AutocompleteService. Falling back to REST API."
+            );
+            setMode("rest");
+            setReady(true);
+            setError(null);
+            return;
+          }
+
           autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
           const host = document.createElement("div");
           placesServiceContainerRef.current = host;
           placesServiceRef.current = new google.maps.places.PlacesService(host);
           sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+          restSessionTokenRef.current = null;
+          setMode("sdk");
           setReady(true);
           setError(null);
         })
         .catch((err) => {
           if (cancelled) return;
-          setError(err instanceof Error ? err.message : String(err));
-          setReady(false);
+          console.warn("Falling back to Google Places REST API", err);
+          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+          if (!apiKey) {
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Không thể khởi tạo Google Maps." 
+            );
+            setReady(false);
+            return;
+          }
+          setMode("rest");
+          restSessionTokenRef.current = null;
+          setReady(true);
+          setError(null);
         });
 
       return () => {
@@ -105,11 +169,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     }, []);
 
     const fetchPredictions = useCallback(
-      (query: string) => {
-        if (!ready || !autocompleteServiceRef.current || !window.google?.maps?.places) {
-          return;
-        }
+      async (query: string) => {
         const trimmed = query.trim();
+        latestQueryRef.current = trimmed;
         if (!trimmed) {
           clearSuggestions();
           setError(null);
@@ -117,36 +179,95 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         }
 
         setError(null);
-        const token = ensureSessionToken();
-        autocompleteServiceRef.current.getPlacePredictions(
-          {
-            input: trimmed,
-            language: "vi",
-            sessionToken: token ?? undefined,
-            componentRestrictions: { country: COUNTRIES },
-          },
-          (predictions, status) => {
-            if (!window.google?.maps?.places) {
-              return;
-            }
-            const okStatus = window.google.maps.places.PlacesServiceStatus.OK;
-            if (status === okStatus && predictions && predictions.length > 0) {
-              setSuggestions(predictions);
-              setOpen(true);
-              setActiveIndex(-1);
-            } else {
-              clearSuggestions();
-              if (
-                status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS &&
-                status !== window.google.maps.places.PlacesServiceStatus.OK
-              ) {
-                setError(`Không thể gợi ý địa chỉ (${status}).`);
+
+        if (mode === "sdk") {
+          const google = getGoogle();
+          if (!ready || !autocompleteServiceRef.current || !google?.maps?.places) {
+            return;
+          }
+          const token = ensureSdkSessionToken();
+          autocompleteServiceRef.current.getPlacePredictions(
+            {
+              input: trimmed,
+              language: LANGUAGE_CODE,
+              sessionToken: token ?? undefined,
+              componentRestrictions: { country: COUNTRIES },
+            },
+            (predictions: any[] | null, status: any) => {
+              const googleLocal = getGoogle();
+              if (!googleLocal?.maps?.places) {
+                return;
+              }
+              const okStatus = googleLocal.maps.places.PlacesServiceStatus.OK;
+              if (status === okStatus && predictions && predictions.length > 0) {
+                setSuggestions(predictions as Prediction[]);
+                setOpen(true);
+                setActiveIndex(-1);
+              } else {
+                clearSuggestions();
+                const zeroResults =
+                  googleLocal.maps.places.PlacesServiceStatus.ZERO_RESULTS;
+                if (status === zeroResults) {
+                  setError(null);
+                  return;
+                }
+
+                const statusKey = typeof status === "string" ? status : String(status);
+                const customMessage = STATUS_ERROR_MESSAGES[statusKey];
+                setError(
+                  customMessage ?? `Không thể gợi ý địa chỉ (mã lỗi: ${statusKey}).`
+                );
               }
             }
+          );
+          return;
+        }
+
+        try {
+          const token = ensureRestSessionToken();
+          const predictions = await fetchRestAutocomplete(
+            trimmed,
+            token ?? undefined,
+            COUNTRY_CODE,
+            LANGUAGE_CODE
+          );
+
+          if (latestQueryRef.current !== trimmed) {
+            return;
           }
-        );
+
+          if (predictions.length === 0) {
+            clearSuggestions();
+            return;
+          }
+
+          const normalized: Prediction[] = predictions.map((p) => ({
+            description: p.description || p.mainText,
+            place_id: p.placeId,
+            structured_formatting: {
+              main_text: p.mainText,
+              secondary_text: p.secondaryText,
+            },
+          }));
+          setSuggestions(normalized);
+          setOpen(true);
+          setActiveIndex(-1);
+        } catch (err) {
+          clearSuggestions();
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Không thể gợi ý địa chỉ từ Google.";
+          setError(message);
+        }
       },
-      [clearSuggestions, ensureSessionToken, ready]
+      [
+        clearSuggestions,
+        ensureRestSessionToken,
+        ensureSdkSessionToken,
+        mode,
+        ready,
+      ]
     );
 
     const scheduleFetch = useCallback(
@@ -156,7 +277,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         }
         if (!ready) return;
         debounceRef.current = window.setTimeout(() => {
-          fetchPredictions(query);
+          fetchPredictions(query).catch((err) => {
+            console.error("Google Places prediction error", err);
+          });
         }, DEBOUNCE_MS);
       },
       [fetchPredictions, ready]
@@ -204,38 +327,81 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const resolvePlaceDetails = useCallback(
       (prediction: Prediction) => {
-        if (!placesServiceRef.current || !window.google?.maps?.places) {
-          onChange({ text: prediction.description });
+        if (mode === "sdk") {
+          const google = getGoogle();
+          if (!placesServiceRef.current || !google?.maps?.places) {
+            onChange({ text: prediction.description });
+            return;
+          }
+
+          const token = ensureSdkSessionToken();
+          placesServiceRef.current.getDetails(
+            {
+              placeId: prediction.place_id,
+              sessionToken: token ?? undefined,
+              fields: ["geometry", "formatted_address", "name"],
+            },
+            (place: any, status: any) => {
+              const googleLocal = getGoogle();
+              if (googleLocal?.maps?.places && status !== googleLocal.maps.places.PlacesServiceStatus.OK) {
+                const statusKey = typeof status === "string" ? status : String(status);
+                const customMessage = STATUS_ERROR_MESSAGES[statusKey];
+                if (customMessage) {
+                  setError(customMessage);
+                } else {
+                  setError(`Không thể lấy chi tiết địa điểm (mã lỗi: ${statusKey}).`);
+                }
+                onChange({ text: prediction.description });
+                return;
+              }
+              if (!place) {
+                onChange({ text: prediction.description });
+                return;
+              }
+              const location = place.geometry?.location;
+              if (location) {
+                onChange({
+                  text: place.formatted_address ?? prediction.description,
+                  lat: location.lat(),
+                  lng: location.lng(),
+                });
+              } else {
+                onChange({ text: place.formatted_address ?? prediction.description });
+              }
+              setError(null);
+              sessionTokenRef.current = null;
+            }
+          );
           return;
         }
 
-        const token = ensureSessionToken();
-        placesServiceRef.current.getDetails(
-          {
-            placeId: prediction.place_id,
-            sessionToken: token ?? undefined,
-            fields: ["geometry", "formatted_address", "name"],
-          },
-          (place, status) => {
-            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
-              onChange({ text: prediction.description });
-              return;
-            }
-            const location = place.geometry?.location;
-            if (location) {
-              onChange({
-                text: place.formatted_address ?? prediction.description,
-                lat: location.lat(),
-                lng: location.lng(),
-              });
-            } else {
-              onChange({ text: place.formatted_address ?? prediction.description });
-            }
-            sessionTokenRef.current = null;
-          }
-        );
+        const token = ensureRestSessionToken();
+        fetchRestPlaceDetails(
+          prediction.place_id,
+          token ?? undefined,
+          LANGUAGE_CODE
+        )
+          .then((details) => {
+            const text =
+              details.formattedAddress ?? details.name ?? prediction.description;
+            onChange({
+              text,
+              lat: details.lat,
+              lng: details.lng,
+            });
+            setError(null);
+            restSessionTokenRef.current = null;
+          })
+          .catch((err) => {
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Không thể lấy chi tiết địa điểm."
+            );
+            onChange({ text: prediction.description });
+          });
       },
-      [ensureSessionToken, onChange]
+      [ensureRestSessionToken, ensureSdkSessionToken, mode, onChange, setError]
     );
 
     const selectPrediction = useCallback(
