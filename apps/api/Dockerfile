@@ -67,6 +67,8 @@ WORKDIR /app
 
 RUN addgroup -S app && adduser -S app -G app
 
+RUN apk add --no-cache curl
+
 RUN corepack enable pnpm
 
 ENV NODE_ENV=production
@@ -80,5 +82,9 @@ COPY apps/api/package.json ./package.json
 COPY apps/api/nest-cli.json ./nest-cli.json
 
 USER app
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null || exit 1
+
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
