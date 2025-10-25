@@ -25,9 +25,9 @@ services:
     env_file:
       - ./apps/api/.env
     environment:
-      PORT: ${API_CONTAINER_PORT:-3001}
+      PORT: ${API_CONTAINER_PORT:-3006}
     ports:
-      - "3006:3001"
+      - "3006:3006"
     depends_on:
       db:
         condition: service_healthy
@@ -43,8 +43,8 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3001}
-        INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3001}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3006}
+        INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3006}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
         NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
         NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
@@ -53,8 +53,8 @@ services:
       - ./apps/web/.env
       - ./apps/web/.env.local
     environment:
-      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3001}
-      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3001}
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3006}
+      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3006}
       PLACES_API_KEY: "${PLACES_API_KEY:-AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo}"
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
       NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
