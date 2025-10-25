@@ -30,11 +30,15 @@ WORKDIR /app
 
 RUN addgroup -S app && adduser -S app -G app
 
+RUN corepack enable pnpm
+
 ENV NODE_ENV=production
 ENV PORT=3001
 
 COPY --from=build /app/apps/api/.output/ ./
 COPY --from=build /app/apps/api/dist ./dist
+COPY --from=build /app/packages/db/prisma ./packages/db/prisma
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 
 USER app
 EXPOSE 3001
