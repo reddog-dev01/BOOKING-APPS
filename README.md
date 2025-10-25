@@ -22,6 +22,31 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
 
    Update the copied files with your actual secrets (API keys, database URL, etc.).
 
+   To fetch and restrict the Google Maps key from the `inbound-object-476110-d5` project, run:
+
+   ```bash
+   KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
+
+   # Retrieve the key string
+   KEY_STRING=$(gcloud beta services api-keys get-key-string "$KEY_NAME" \
+     --project=inbound-object-476110-d5 \
+     --format="value(keyString)")
+   echo "$KEY_STRING"
+
+   # Restrict usage to HTTPS/HTTP referrers and the required APIs
+   gcloud services api-keys update "$KEY_NAME" \
+     --project=inbound-object-476110-d5 \
+     --allowed-referrers="http://localhost:3000/*,http://127.0.0.1:3000/*,https://<your-domain>/*" \
+     --api-target="service=maps-backend.googleapis.com" \
+     --api-target="service=places.googleapis.com"
+
+   # Persist the key into both API and web env files
+   echo "GOOGLE_MAPS_API_KEY=$KEY_STRING" >> apps/api/.env
+   echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$KEY_STRING" >> apps/web/.env.local
+   ```
+
+   Replace `<your-domain>` with the production hostname. Regenerate the key if you need to rotate secrets.
+
 2. **Build the containers**
 
    ```bash

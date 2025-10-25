@@ -50,7 +50,7 @@ COPY apps/web/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s \
-  CMD wget -qO- http://127.0.0.1:${PORT} || exit 1
+  CMD wget -qO- http://127.0.0.1:${PORT}/healthz >/dev/null || exit 1
 
 EXPOSE 3000
 ENTRYPOINT ["./docker-entrypoint.sh"]
