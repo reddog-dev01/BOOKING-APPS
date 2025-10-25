@@ -6,6 +6,9 @@ WORKDIR /app
 
 RUN corepack enable
 
+ARG DATABASE_URL="postgresql://booking:secret@localhost:5432/booking?schema=public"
+ENV DATABASE_URL=$DATABASE_URL
+
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
@@ -15,8 +18,11 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN pnpm --filter api build
-RUN pnpm --filter api deploy --prod --dest /app/apps/api/.output
+RUN pnpm prisma:generate \
+  && pnpm --filter api build \
+  && pnpm --filter api deploy /app/apps/api/.output --prod --legacy \
+  && mkdir -p apps/api/.output/node_modules \
+  && cp -R node_modules/.prisma apps/api/.output/node_modules/
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
