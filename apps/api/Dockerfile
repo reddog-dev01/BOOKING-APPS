@@ -26,10 +26,10 @@ RUN pnpm prisma:generate \
   && pnpm --filter api deploy /app/apps/api/.output --prod --legacy \
   && mkdir -p apps/api/.output/node_modules \
   && cp -a node_modules/.prisma apps/api/.output/node_modules/ \
-  && find node_modules/.pnpm -maxdepth 1 -type d -name '@prisma+client@*' -exec \
-    sh -c 'pkg="$(basename "$1")"; src="node_modules/.pnpm/${pkg}/node_modules/.prisma"; \
-      dest="apps/api/.output/node_modules/.pnpm/${pkg}/node_modules"; \
-      if [ -d "${src}" ]; then mkdir -p "${dest}"; cp -a "${src}" "${dest}"; fi' sh {} \;
+  && if [ -d apps/api/.output/node_modules/.pnpm ]; then \
+    find apps/api/.output/node_modules/.pnpm -maxdepth 1 -type d -name '@prisma+client@*' -exec \
+      sh -c 'pkg_dir="$1/node_modules"; rm -rf "${pkg_dir}/.prisma"; mkdir -p "${pkg_dir}"; cp -a apps/api/.output/node_modules/.prisma "${pkg_dir}/"' sh {} \; \
+  ; fi
 
 RUN test -f node_modules/.prisma/client/default.js \
   && test -f apps/api/.output/node_modules/.prisma/client/default.js
