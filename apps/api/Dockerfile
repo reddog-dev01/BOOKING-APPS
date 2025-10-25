@@ -83,8 +83,8 @@ COPY apps/api/nest-cli.json ./nest-cli.json
 
 USER app
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+  CMD-SHELL curl -fsS "http://127.0.0.1:${PORT:-3001}/healthz" >/dev/null || exit 1
 
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
