@@ -16,7 +16,11 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 RUN pnpm --filter api build
+<<<<<<< HEAD
 RUN pnpm --filter api deploy /app/apps/api/.output --prod --legacy
+=======
+RUN pnpm --filter api --prod deploy --legacy /app/apps/api/.output
+>>>>>>> 1a2c7054 (chore(api): adjust Dockerfile for pnpm deploy legacy output)
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
