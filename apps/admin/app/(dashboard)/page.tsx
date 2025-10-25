@@ -362,7 +362,7 @@ export default function DashboardPage() {
               </li>
               <li>
                 Thiết lập biến môi trường <code className="rounded bg-slate-100 px-1 py-0.5">DATABASE_URL</code> cho PostgreSQL và
-                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">GOOGLE_MAPS_API_KEY</code> để bật gợi ý địa điểm.
+                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">PLACES_API_KEY</code> để bật gợi ý địa điểm.
               </li>
               <li>
                 Booking form sẽ gửi dữ liệu toạ độ (lat/lng) dựa trên lựa chọn địa điểm. Khoảng cách được tính bằng Haversine trong API.

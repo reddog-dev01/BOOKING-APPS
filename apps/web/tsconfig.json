@@ -14,7 +14,7 @@
     "incremental": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "types": ["node", "google.maps"],          // ⬅️ thêm dòng này
+    "types": ["node"],
     "typeRoots": [
       "./types",
       "./node_modules/@types",
