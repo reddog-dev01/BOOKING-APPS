@@ -107,13 +107,15 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
           if (!response.ok) {
             const rawMessage = (payload as { error?: { message?: string } } | null)?.error?.message;
-            const fallbackMessage =
-              response.status === 503
-                ? MISSING_KEY_MESSAGE
-                : "Không thể gợi ý địa chỉ từ Google.";
+            const fallbackMessage = (() => {
+              if (response.status === 503) return MISSING_KEY_MESSAGE;
+              if (response.status === 403)
+                return "Google Places đang từ chối yêu cầu. Kiểm tra Billing và hạn chế API key.";
+              return "Không thể gợi ý địa chỉ từ Google.";
+            })();
             const message = rawMessage && rawMessage.length > 0 ? rawMessage : fallbackMessage;
 
-            if (response.status === 503) {
+            if (response.status === 503 || response.status === 403) {
               setApiUnavailableMessage(message);
               clearSuggestions();
               setError(message);

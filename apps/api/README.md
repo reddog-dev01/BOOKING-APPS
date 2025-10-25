@@ -38,6 +38,9 @@ PLACES_API_KEY=<IP-restricted Google Places key>
 > Places key (e.g. `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo`) for `PLACES_API_KEY`. Frontend bundles must rely on the
 > separate referrer-restricted key exposed via `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
 
+> ⚠️ Google Places endpoints will reject requests until the Cloud project has Billing enabled. If you see a 403 response with
+> `This API method requires billing to be enabled`, link the project to a billing account in the Google Cloud Console.
+
 > ♻️  If you change any values in `apps/api/.env` while using Docker Compose, run `docker compose up -d --force-recreate api`
 > to refresh the container's environment.
 

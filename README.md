@@ -46,6 +46,9 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    PLACES_KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
    MAPS_JS_KEY_NAME="projects/339756545616/locations/global/keys/17f0c1a4-8a08-4a3b-84da-7f3055d6d9f8"
 
+   # Ensure the gcloud beta component is available
+   gcloud components install beta --quiet
+
    # Retrieve the key strings
    PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
      --project=inbound-object-476110-d5 \
@@ -57,14 +60,16 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    echo "Server key: $PLACES_KEY"
    echo "Browser key: $MAPS_JS_KEY"
 
+   ALLOWED_IPS="<replace-with-your-public-ip>/32"
+
    # Apply IP allow-list restrictions to the server key (used for PLACES_API_KEY)
-   gcloud services api-keys update "$PLACES_KEY_NAME" \
+   gcloud beta services api-keys update "$PLACES_KEY_NAME" \
      --project=inbound-object-476110-d5 \
-     --allowed-ips="116.96.47.82" \
+     --allowed-ips="$ALLOWED_IPS" \
      --api-target="service=places.googleapis.com"
 
    # Apply HTTP referrer restrictions to the browser key (used for NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)
-   gcloud services api-keys update "$MAPS_JS_KEY_NAME" \
+   gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
      --project=inbound-object-476110-d5 \
      --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,https://<your-domain>/*" \
      --api-target="service=maps-backend.googleapis.com" \
@@ -75,21 +80,38 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    gcloud beta services api-keys lookup --key-string="$MAPS_JS_KEY"
 
    # Persist the server key for backend requests (NestJS + Next.js server components)
-   {
-     echo "PLACES_API_KEY=$PLACES_KEY"
-   } >> apps/api/.env
-   {
-     echo "PLACES_API_KEY=$PLACES_KEY"
-     echo "GOOGLE_MAPS_REFERER=http://localhost:3005/"
-   } >> apps/web/.env
+   cat <<EOF > apps/api/.env
+   PORT=3006
+   CORS_ORIGINS=http://localhost:3005,http://127.0.0.1:3005,http://localhost:3007,http://127.0.0.1:3007
+   RL_MAX=120
+   RL_WINDOW=1 minute
+   RL_ALLOWLIST=
+   PLACES_API_KEY=$PLACES_KEY
+   DATABASE_URL=postgresql://booking:secret@db:5432/booking?schema=public
+   EOF
+
+   cat <<EOF > apps/web/.env
+   PLACES_API_KEY=$PLACES_KEY
+   GOOGLE_MAPS_REFERER=http://localhost:3005/
+   EOF
 
    # Persist the browser key (HTTP referrer restricted) for the frontend bundle
-   {
-     echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY"
-   } >> apps/web/.env.local
+   cat <<EOF > apps/web/.env.local
+   PLACES_API_KEY=$PLACES_KEY
+   GOOGLE_MAPS_REFERER=http://localhost:3005/
+   NEXT_PUBLIC_API_BASE=http://127.0.0.1:3006
+   INTERNAL_API_BASE=http://127.0.0.1:3006
+   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY
+   NEXT_PUBLIC_QUOTE_PATH=/pricing/quote
+   NEXT_PUBLIC_BOOKINGS_PATH=/bookings
+   EOF
    ```
 
    Replace `<your-domain>` with the production hostname. Regenerate the key if you need to rotate secrets.
+
+   > 💡 Google Places APIs require billing to be enabled on the Cloud project that owns the keys. If you see `This API method
+   > requires billing to be enabled`, visit the [Google Cloud Billing page](https://console.cloud.google.com/billing) and link the
+   > project before retrying. Also review your IP/referrer allow-lists if requests still return HTTP 403.
 
 2. **Build the containers**
 
