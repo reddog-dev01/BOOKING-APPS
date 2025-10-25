@@ -21,18 +21,45 @@ ENV DATABASE_URL=$DATABASE_URL
 
 COPY . .
 
-RUN pnpm prisma:generate \
-  && pnpm --filter api build \
-  && pnpm --filter api deploy /app/apps/api/.output --prod --legacy \
-  && mkdir -p apps/api/.output/node_modules \
-  && cp -a node_modules/.prisma apps/api/.output/node_modules/ \
-  && if [ -d apps/api/.output/node_modules/.pnpm ]; then \
-    find apps/api/.output/node_modules/.pnpm -maxdepth 1 -type d -name '@prisma+client@*' -exec \
-      sh -c 'pkg_dir="$1/node_modules"; rm -rf "${pkg_dir}/.prisma"; mkdir -p "${pkg_dir}"; cp -a apps/api/.output/node_modules/.prisma "${pkg_dir}/"' sh {} \; \
-  ; fi
+RUN <<'SHELL'
+set -euo pipefail
 
-RUN test -f node_modules/.prisma/client/default.js \
-  && test -f apps/api/.output/node_modules/.prisma/client/default.js
+pnpm prisma:generate
+pnpm --filter api build
+pnpm --filter api deploy /app/apps/api/.output --prod --legacy
+
+install -d apps/api/.output/node_modules
+
+PRISMA_SRC=""
+for search_root in apps/api/node_modules node_modules; do
+  if [ -d "$search_root" ]; then
+    found="$(find "$search_root" -maxdepth 5 -type d -name '.prisma' | head -n 1)"
+    if [ -n "$found" ]; then
+      PRISMA_SRC="$found"
+      break
+    fi
+  fi
+done
+
+if [ -z "$PRISMA_SRC" ]; then
+  echo 'Prisma engines were not generated; ensure `pnpm prisma:generate` succeeds.' >&2
+  exit 1
+fi
+
+cp -a "$PRISMA_SRC" apps/api/.output/node_modules/
+
+if [ -d apps/api/.output/node_modules/.pnpm ]; then
+  find apps/api/.output/node_modules/.pnpm -maxdepth 1 -type d -name '@prisma+client@*' |
+    while IFS= read -r pkg; do
+      pkg_dir="$pkg/node_modules"
+      rm -rf "${pkg_dir}/.prisma"
+      mkdir -p "$pkg_dir"
+      cp -a apps/api/.output/node_modules/.prisma "$pkg_dir/"
+    done
+fi
+
+test -f apps/api/.output/node_modules/.prisma/client/default.js
+SHELL
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
@@ -45,10 +72,12 @@ RUN corepack enable pnpm
 ENV NODE_ENV=production
 ENV PORT=3001
 
-COPY --from=build /app/apps/api/.output/ ./
+COPY --from=build /app/apps/api/.output/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./dist
 COPY --from=build /app/packages/db/prisma ./packages/db/prisma
-COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=build /app/prisma.config.ts ./prisma.config.ts
+COPY apps/api/package.json ./package.json
+COPY apps/api/nest-cli.json ./nest-cli.json
 
 USER app
 EXPOSE 3001
