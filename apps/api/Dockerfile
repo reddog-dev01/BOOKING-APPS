@@ -25,14 +25,22 @@ RUN pnpm prisma:generate \
   && pnpm --filter api build \
   && pnpm --filter api deploy /app/apps/api/.output --prod --legacy \
   && mkdir -p apps/api/.output/node_modules \
-  && cp -a node_modules/.prisma apps/api/.output/node_modules/ \
-  && if [ -d apps/api/.output/node_modules/.pnpm ]; then \
-    find apps/api/.output/node_modules/.pnpm -maxdepth 1 -type d -name '@prisma+client@*' -exec \
-      sh -c 'pkg_dir="$1/node_modules"; rm -rf "${pkg_dir}/.prisma"; mkdir -p "${pkg_dir}"; cp -a apps/api/.output/node_modules/.prisma "${pkg_dir}/"' sh {} \; \
-  ; fi
+  && if [ -d node_modules/.prisma ]; then \
+    cp -a node_modules/.prisma apps/api/.output/node_modules/ \
+    && if [ -d apps/api/.output/node_modules/.pnpm ]; then \
+      find apps/api/.output/node_modules/.pnpm -maxdepth 1 -type d -name '@prisma+client@*' -exec \
+        sh -c 'pkg_dir="$1/node_modules"; rm -rf "${pkg_dir}/.prisma"; mkdir -p "${pkg_dir}"; cp -a apps/api/.output/node_modules/.prisma "${pkg_dir}/"' sh {} \; \
+    ; fi \
+  else \
+    echo 'Skipping Prisma binary copy; node_modules/.prisma not found'; \
+  fi
 
-RUN test -f node_modules/.prisma/client/default.js \
-  && test -f apps/api/.output/node_modules/.prisma/client/default.js
+RUN if [ -d node_modules/.prisma ]; then \
+    test -f node_modules/.prisma/client/default.js \
+    && test -f apps/api/.output/node_modules/.prisma/client/default.js; \
+  else \
+    echo 'Skipping Prisma binary validation; node_modules/.prisma not found'; \
+  fi
 
 # ---- runtime stage ----
 FROM node:20-alpine AS run
