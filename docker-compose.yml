@@ -36,9 +36,12 @@ services:
           set -euo pipefail;
           URL="http://127.0.0.1:${PORT:-3001}/healthz";
           if command -v curl >/dev/null 2>&1; then
-            curl -fsS "$URL" >/dev/null;
+            curl -fsS "$${URL}" >/dev/null;
+          elif command -v wget >/dev/null 2>&1; then
+            wget -qO- "$${URL}" >/dev/null;
           else
-            wget -qO- "$URL" >/dev/null;
+            echo "no http client available" >&2;
+            exit 1;
           fi
       interval: 10s
       timeout: 3s

@@ -67,7 +67,7 @@ WORKDIR /app
 
 RUN addgroup -S app && adduser -S app -G app
 
-RUN apk add --no-cache curl ca-certificates
+RUN apk add --no-cache curl wget ca-certificates
 
 RUN corepack enable pnpm
 
@@ -84,7 +84,7 @@ COPY apps/api/nest-cli.json ./nest-cli.json
 USER app
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
-  CMD-SHELL "set -euo pipefail; URL=\"http://127.0.0.1:${PORT:-3001}/healthz\"; if command -v curl >/dev/null 2>&1; then curl -fsS \"$URL\" >/dev/null; else wget -qO- \"$URL\" >/dev/null; fi"
+  CMD ["sh", "-ec", "URL=\"http://127.0.0.1:${PORT:-3001}/healthz\"; if command -v curl >/dev/null 2>&1; then curl -fsS \"$URL\" >/dev/null; elif command -v wget >/dev/null 2>&1; then wget -qO- \"$URL\" >/dev/null; else echo 'no http client available' >&2; exit 1; fi"]
 
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
