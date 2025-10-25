@@ -74,6 +74,8 @@ ENV PORT=3001
 
 COPY --from=build /app/apps/api/.output/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./dist
+COPY --from=build /app/packages/db/prisma ./packages/db/prisma
+COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 COPY apps/api/package.json ./package.json
 COPY apps/api/nest-cli.json ./nest-cli.json
 
