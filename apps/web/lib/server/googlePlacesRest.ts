@@ -70,10 +70,15 @@ function resolveReferer(candidate?: string): string | undefined {
 }
 
 function withReferer(headers: Record<string, string>, referer?: string) {
-  if (referer) {
-    return { ...headers, Referer: referer } satisfies Record<string, string>;
+  if (!referer) {
+    return headers;
   }
-  return headers;
+
+  return {
+    ...headers,
+    Referer: referer,
+    "X-Goog-Referer": referer,
+  } satisfies Record<string, string>;
 }
 
 async function buildError(res: Response, fallback: string): Promise<never> {
@@ -170,7 +175,7 @@ async function callNewAutocomplete(
         secondaryText,
       } satisfies PlacePrediction;
     })
-    .filter((value): value is PlacePrediction => Boolean(value));
+    .filter(Boolean) as PlacePrediction[];
 }
 
 async function callLegacyAutocomplete(
@@ -236,7 +241,7 @@ async function callLegacyAutocomplete(
         secondaryText: prediction.structured_formatting?.secondary_text,
       } satisfies PlacePrediction;
     })
-    .filter((value): value is PlacePrediction => Boolean(value));
+    .filter(Boolean) as PlacePrediction[];
 }
 
 async function callNewDetails(
