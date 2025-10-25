@@ -42,6 +42,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3001}
+        INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3001}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ}
         NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
         NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
@@ -50,6 +51,7 @@ services:
       - ./apps/web/.env.local
     environment:
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3001}
+      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3001}
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ}
       NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
       NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
