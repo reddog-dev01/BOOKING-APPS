@@ -1,4 +1,3 @@
-
 import type {
   QuoteRequestDto,
   QuoteResponse,
@@ -11,15 +10,35 @@ type FetchOpts = {
   timeoutMs?: number;
 };
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001").replace(
-  /\/$/,
-  ""
-);
+const normalizeBase = (value: string | undefined, fallback?: string) => {
+  const candidate = value?.trim();
+  const base = candidate && candidate.length > 0 ? candidate : fallback;
+  return base ? base.replace(/\/$/, "") : undefined;
+};
+
+const getServerBase = () => {
+  const internalBase =
+    process.env.INTERNAL_API_BASE ?? process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001";
+  return normalizeBase(internalBase, "http://localhost:3001")!;
+};
+
+const getClientBase = () => {
+  const publicBase = normalizeBase(process.env.NEXT_PUBLIC_API_BASE);
+  if (publicBase) return publicBase;
+
+  if (typeof window !== "undefined") {
+    return window.location.origin.replace(/\/$/, "");
+  }
+
+  return "http://localhost:3001";
+};
+
+const API_BASE = typeof window === "undefined" ? getServerBase() : getClientBase();
 
 // Simple fetch with timeout
 async function fetchJson<T>(
   input: RequestInfo,
-  init: RequestInit & { timeoutMs?: number } = {}
+  init: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), init.timeoutMs ?? 15000);
@@ -46,7 +65,7 @@ async function fetchJson<T>(
 /** Tính giá */
 export async function fetchQuote(
   dto: QuoteRequestDto,
-  opts: FetchOpts = {}
+  opts: FetchOpts = {},
 ): Promise<QuoteResponse> {
   return fetchJson<QuoteResponse>(`${API_BASE}/pricing/quote`, {
     method: "POST",
@@ -59,7 +78,7 @@ export async function fetchQuote(
 /** Tạo booking */
 export async function createBooking(
   dto: CreateBookingRequestDto,
-  opts: FetchOpts = {}
+  opts: FetchOpts = {},
 ): Promise<CreateBookingResponse> {
   return fetchJson<CreateBookingResponse>(`${API_BASE}/bookings`, {
     method: "POST",
