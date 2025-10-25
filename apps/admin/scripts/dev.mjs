@@ -94,11 +94,11 @@ const checkHostAvailability = (port, host) =>
       server.close(() => resolvePromise(true));
     });
 
-    server.listen({ port, host });
+    server.listen({ port, host, exclusive: true });
   });
 
 const isPortAvailable = async (port) => {
-  const hostsToTest = ['::', '0.0.0.0'];
+  const hostsToTest = ['::', '0.0.0.0', '::1', '127.0.0.1'];
 
   for (const host of hostsToTest) {
     // eslint-disable-next-line no-await-in-loop
