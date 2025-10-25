@@ -21,39 +21,60 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    cp apps/web/.env.local.example apps/web/.env.local
    ```
 
-   Update the copied files with your actual secrets (API keys, database URL, etc.).
+   Update the copied files with your actual secrets (API keys, database URL, etc.). The API and web containers both consume
+   `apps/api/.env`, so the **server-side** Google Places key defined there is shared between NestJS and Next.js server
+   components. Use a *separate* browser-restricted key for the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` value in
+   `apps/web/.env.local`.
 
-   To fetch and restrict the Google Maps key from the `inbound-object-476110-d5` project, run:
+   After modifying any of the `.env` files, restart the affected services so Docker picks up the new variables:
 
    ```bash
-   KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
+   docker compose up -d --force-recreate api web
+   ```
 
-   # Retrieve the key string
-   KEY_STRING=$(gcloud beta services api-keys get-key-string "$KEY_NAME" \
+   To fetch the dedicated keys from the `inbound-object-476110-d5` project and apply the correct restrictions, run:
+
+   ```bash
+   PLACES_KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
+   MAPS_JS_KEY_NAME="projects/339756545616/locations/global/keys/17f0c1a4-8a08-4a3b-84da-7f3055d6d9f8"
+
+   # Retrieve the key strings
+   PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
      --project=inbound-object-476110-d5 \
      --format="value(keyString)")
-   echo "$KEY_STRING"
-
-   # Restrict usage to HTTPS/HTTP referrers and the required APIs
-   gcloud services api-keys update "$KEY_NAME" \
+   MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
      --project=inbound-object-476110-d5 \
-     --allowed-referrers="http://localhost:3000/*,http://127.0.0.1:3000/*,https://<your-domain>/*" \
+     --format="value(keyString)")
+
+   echo "Server key: $PLACES_KEY"
+   echo "Browser key: $MAPS_JS_KEY"
+
+   # Apply IP allow-list restrictions to the server key (used for PLACES_API_KEY)
+   gcloud services api-keys update "$PLACES_KEY_NAME" \
+     --project=inbound-object-476110-d5 \
+     --allowed-ips="116.96.47.82" \
+     --api-target="service=places.googleapis.com"
+
+   # Apply HTTP referrer restrictions to the browser key (used for NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)
+   gcloud services api-keys update "$MAPS_JS_KEY_NAME" \
+     --project=inbound-object-476110-d5 \
+     --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,https://<your-domain>/*" \
      --api-target="service=maps-backend.googleapis.com" \
      --api-target="service=places.googleapis.com"
 
-   # Persist the server key for backend requests (IP-restricted)
+   # Persist the server key for backend requests (NestJS + Next.js server components)
    {
-     echo "PLACES_API_KEY=$KEY_STRING"
-     echo "GOOGLE_MAPS_API_KEY=$KEY_STRING"
+     echo "PLACES_API_KEY=$PLACES_KEY"
+     echo "GOOGLE_MAPS_API_KEY=$PLACES_KEY"
    } >> apps/api/.env
    {
-     echo "PLACES_API_KEY=$KEY_STRING"
-     echo "GOOGLE_MAPS_REFERER=http://localhost:3000/"
+     echo "PLACES_API_KEY=$PLACES_KEY"
+     echo "GOOGLE_MAPS_REFERER=http://localhost:3005/"
    } >> apps/web/.env
 
    # Persist the browser key (HTTP referrer restricted) for the frontend bundle
    {
-     echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$KEY_STRING"
+     echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY"
    } >> apps/web/.env.local
    ```
 
@@ -71,13 +92,13 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    docker compose up -d db api web
    ```
 
-   The API is exposed on `http://127.0.0.1:3001` and the web frontend on `http://127.0.0.1:3000` by default.
+  The API is exposed on `http://127.0.0.1:3006` and the web frontend on `http://127.0.0.1:3005` by default.
 
 4. **Verify health checks**
 
    ```bash
-   curl -i http://127.0.0.1:3001/healthz
-   curl -I http://127.0.0.1:3000
+   curl -i http://127.0.0.1:3006/healthz
+   curl -I http://127.0.0.1:3005
    ```
 
 5. **(Optional) Run Caddy for HTTPS/reverse proxy**

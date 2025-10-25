@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 const forwardedArgs = process.argv.slice(2);
 
 const DEFAULT_PORT = Number.parseInt(
-  process.env.ADMIN_DEV_DEFAULT_PORT ?? '3007',
+  process.env.WEB_DEV_DEFAULT_PORT ?? '3005',
   10,
 );
 
-const PORT_ENV_PRIORITY = ['ADMIN_DEV_PORT', 'ADMIN_PORT', 'PORT'];
+const PORT_ENV_PRIORITY = ['WEB_DEV_PORT', 'WEB_PORT', 'PORT'];
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -27,7 +27,7 @@ const candidateBins = [
 const nextBin = candidateBins.find((binPath) => existsSync(binPath));
 
 if (!nextBin) {
-  console.error('Unable to locate the Next.js binary for the admin app.');
+  console.error('Unable to locate the Next.js binary for the web app.');
   process.exit(1);
 }
 
@@ -71,7 +71,7 @@ const getEnvPort = () => {
   return undefined;
 };
 
-const checkHostAvailability = (port, host) =>
+const isPortAvailable = (port) =>
   new Promise((resolvePromise, rejectPromise) => {
     const server = createServer();
 
@@ -80,13 +80,6 @@ const checkHostAvailability = (port, host) =>
         resolvePromise(false);
         return;
       }
-
-      if (error.code === 'EADDRNOTAVAIL' || error.code === 'EINVAL') {
-        // Host binding not supported in the current environment.
-        resolvePromise('unsupported');
-        return;
-      }
-
       rejectPromise(error);
     });
 
@@ -94,26 +87,8 @@ const checkHostAvailability = (port, host) =>
       server.close(() => resolvePromise(true));
     });
 
-    server.listen({ port, host, exclusive: true });
+    server.listen({ port, host: '0.0.0.0' });
   });
-
-const isPortAvailable = async (port) => {
-  const hostsToTest = ['::', '0.0.0.0', '::1', '127.0.0.1'];
-
-  for (const host of hostsToTest) {
-    // eslint-disable-next-line no-await-in-loop
-    const result = await checkHostAvailability(port, host);
-    if (result === false) {
-      return false;
-    }
-
-    if (result === true) {
-      continue;
-    }
-  }
-
-  return true;
-};
 
 const findAvailablePort = async (startingPort) => {
   let candidate = startingPort;
@@ -131,33 +106,6 @@ const findAvailablePort = async (startingPort) => {
     `Unable to find a free port starting from ${startingPort}. Tried ${maxAttempts} sequential ports.`,
   );
   process.exit(1);
-};
-
-const spawnDevServer = (port, origin) => {
-  if (origin === 'auto-detected') {
-    console.log(
-      `Selected port ${port} for the admin dev server (original preference: ${DEFAULT_PORT}).`,
-    );
-  } else {
-    console.log(`Using port ${port} from ${origin}.`);
-  }
-
-  const child = spawn(
-    nextBin,
-    ['dev', '--turbopack', '--port', String(port), ...forwardedArgs],
-    {
-      stdio: 'inherit',
-      env: { ...process.env, PORT: String(port) },
-    },
-  );
-
-  child.on('exit', (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-    } else {
-      process.exit(code ?? 0);
-    }
-  });
 };
 
 const run = async () => {
@@ -187,9 +135,36 @@ const run = async () => {
     return;
   }
 
-  const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3007;
+  const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3005;
   const availablePort = await findAvailablePort(initialPort);
   spawnDevServer(availablePort, 'auto-detected');
+};
+
+const spawnDevServer = (port, origin) => {
+  if (origin === 'auto-detected') {
+    console.log(
+      `Selected port ${port} for the web dev server (original preference: ${DEFAULT_PORT}).`,
+    );
+  } else {
+    console.log(`Using port ${port} from ${origin}.`);
+  }
+
+  const child = spawn(
+    nextBin,
+    ['dev', '--port', String(port), ...forwardedArgs],
+    {
+      stdio: 'inherit',
+      env: { ...process.env, PORT: String(port) },
+    },
+  );
+
+  child.on('exit', (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+    } else {
+      process.exit(code ?? 0);
+    }
+  });
 };
 
 run().catch((error) => {
