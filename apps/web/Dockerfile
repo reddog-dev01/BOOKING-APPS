@@ -45,9 +45,12 @@ ENV INTERNAL_API_BASE=${INTERNAL_API_BASE}
 COPY --from=build /work/apps/web/.next/standalone ./
 COPY --from=build /work/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /work/apps/web/public ./apps/web/public
+COPY apps/web/docker-entrypoint.sh ./docker-entrypoint.sh
+
+RUN chmod +x ./docker-entrypoint.sh
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s \
   CMD wget -qO- http://127.0.0.1:${PORT} || exit 1
 
 EXPOSE 3000
-CMD ["node", "apps/web/server.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
