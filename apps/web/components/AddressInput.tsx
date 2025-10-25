@@ -32,6 +32,15 @@ type AddressInputProps = {
 
 const COUNTRIES = ["vn"];
 const DEBOUNCE_MS = 250;
+const STATUS_ERROR_MESSAGES: Partial<Record<string, string>> = {
+  REQUEST_DENIED:
+    "Google Maps từ chối yêu cầu. Kiểm tra API key, hạn mức Billing và quyền Places API.",
+  OVER_QUERY_LIMIT:
+    "Quá giới hạn truy vấn Google Maps. Vui lòng thử lại sau ít phút.",
+  INVALID_REQUEST: "Tham số tìm kiếm chưa hợp lệ. Vui lòng nhập lại địa chỉ.",
+  UNKNOWN_ERROR:
+    "Google Maps gặp sự cố tạm thời. Thử tìm lại sau giây lát.",
+};
 
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
@@ -148,17 +157,23 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
               setActiveIndex(-1);
             } else {
               clearSuggestions();
-              if (
-                status !== googleLocal.maps.places.PlacesServiceStatus.ZERO_RESULTS &&
-                status !== googleLocal.maps.places.PlacesServiceStatus.OK
-              ) {
-                setError(`Không thể gợi ý địa chỉ (${status}).`);
+              const zeroResults =
+                googleLocal.maps.places.PlacesServiceStatus.ZERO_RESULTS;
+              if (status === zeroResults) {
+                setError(null);
+                return;
               }
+
+              const statusKey = typeof status === "string" ? status : String(status);
+              const customMessage = STATUS_ERROR_MESSAGES[statusKey];
+              setError(
+                customMessage ?? `Không thể gợi ý địa chỉ (mã lỗi: ${statusKey}).`
+              );
             }
           }
         );
       },
-      [clearSuggestions, ensureSessionToken, ready]
+      [clearSuggestions, ensureSessionToken, ready, setError]
     );
 
     const scheduleFetch = useCallback(
@@ -232,6 +247,13 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           (place: any, status: any) => {
             const googleLocal = getGoogle();
             if (googleLocal?.maps?.places && status !== googleLocal.maps.places.PlacesServiceStatus.OK) {
+              const statusKey = typeof status === "string" ? status : String(status);
+              const customMessage = STATUS_ERROR_MESSAGES[statusKey];
+              if (customMessage) {
+                setError(customMessage);
+              } else {
+                setError(`Không thể lấy chi tiết địa điểm (mã lỗi: ${statusKey}).`);
+              }
               onChange({ text: prediction.description });
               return;
             }
@@ -249,11 +271,12 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             } else {
               onChange({ text: place.formatted_address ?? prediction.description });
             }
+            setError(null);
             sessionTokenRef.current = null;
           }
         );
       },
-      [ensureSessionToken, onChange]
+      [ensureSessionToken, onChange, setError]
     );
 
     const selectPrediction = useCallback(
