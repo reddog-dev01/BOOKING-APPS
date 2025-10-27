@@ -115,7 +115,25 @@ const isPortAvailable = async (port) => {
   return true;
 };
 
-const findAvailablePort = async (startingPort) => {
+const RESERVED_PORT_ENV_KEYS = ['WEB_DEV_PORT', 'WEB_PORT', 'API_DEV_PORT', 'API_PORT'];
+const RESERVED_PORT_DEFAULTS = [3005, 3006];
+
+const collectReservedPorts = () => {
+  const reserved = new Set(RESERVED_PORT_DEFAULTS);
+
+  for (const key of RESERVED_PORT_ENV_KEYS) {
+    const value = process.env[key];
+    if (!value?.trim()) {
+      continue;
+    }
+
+    reserved.add(parsePortValue(value.trim(), `environment variable ${key}`));
+  }
+
+  return reserved;
+};
+
+const findAvailablePort = async (startingPort, excludedPorts = new Set()) => {
   let candidate = startingPort;
   const maxAttempts = 20;
 
@@ -125,6 +143,10 @@ const findAvailablePort = async (startingPort) => {
         `Unable to find a free port: candidate ${candidate} is outside the valid TCP port range.`,
       );
       process.exit(1);
+    }
+    if (excludedPorts.has(candidate)) {
+      candidate += 1;
+      continue;
     }
     // eslint-disable-next-line no-await-in-loop
     if (await isPortAvailable(candidate)) {
@@ -192,13 +214,13 @@ const run = async () => {
     );
 
     const fallbackStart = envPort >= 65535 ? 1 : envPort + 1;
-    const fallbackPort = await findAvailablePort(fallbackStart);
+    const fallbackPort = await findAvailablePort(fallbackStart, collectReservedPorts());
     spawnDevServer(fallbackPort, 'auto-detected', envPort);
     return;
   }
 
   const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3007;
-  const availablePort = await findAvailablePort(initialPort);
+  const availablePort = await findAvailablePort(initialPort, collectReservedPorts());
   spawnDevServer(availablePort, 'auto-detected', initialPort);
 };
 
