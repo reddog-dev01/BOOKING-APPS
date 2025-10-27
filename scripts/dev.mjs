@@ -4,15 +4,23 @@ const webPort = process.env.WEB_DEV_PORT ?? process.env.WEB_PORT ?? '3005';
 const adminPort = process.env.ADMIN_DEV_PORT ?? process.env.ADMIN_PORT ?? '3007';
 const apiPort = process.env.API_DEV_PORT ?? process.env.API_PORT ?? '3006';
 
+const sharedEnv = {
+  ...process.env,
+  WEB_DEV_PORT: webPort,
+  WEB_PORT: webPort,
+  ADMIN_DEV_PORT: adminPort,
+  ADMIN_PORT: adminPort,
+  API_DEV_PORT: apiPort,
+  API_PORT: apiPort,
+};
+
 const commands = [
   {
     command: 'pnpm --filter admin dev',
     name: 'admin',
     prefixColor: 'magenta',
     env: {
-      ...process.env,
-      ADMIN_DEV_PORT: adminPort,
-      ADMIN_PORT: adminPort,
+      ...sharedEnv,
       PORT: adminPort,
     },
   },
@@ -21,9 +29,7 @@ const commands = [
     name: 'web',
     prefixColor: 'green',
     env: {
-      ...process.env,
-      WEB_DEV_PORT: webPort,
-      WEB_PORT: webPort,
+      ...sharedEnv,
       PORT: webPort,
     },
   },
@@ -32,7 +38,7 @@ const commands = [
     name: 'api',
     prefixColor: 'cyan',
     env: {
-      ...process.env,
+      ...sharedEnv,
       PORT: apiPort,
     },
   },
