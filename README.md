@@ -26,10 +26,20 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    components. Use a *separate* browser-restricted key for the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` value in
    `apps/web/.env.local`.
 
-   | Purpose                               | Variable                          | Key string                                                      |
-   | ------------------------------------- | --------------------------------- | --------------------------------------------------------------- |
-   | Server-to-server Google Places calls  | `PLACES_API_KEY`                  | `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo`                       |
-   | Browser Google Maps JavaScript SDK    | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ`                       |
+   | Purpose                              | Variable                          | Key string                       |
+   | ------------------------------------ | --------------------------------- | -------------------------------- |
+   | Server-to-server Google Places calls | `PLACES_API_KEY`                  | `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo` |
+   | Browser Google Maps JavaScript SDK   | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ` |
+
+   **Where these variables are consumed**
+
+   - `apps/web/lib/server/googlePlacesRest.ts` injects `PLACES_API_KEY` as the `X-Goog-Api-Key` header for the Places REST
+     calls that power `/api/places/autocomplete` and `/api/places/details`.
+   - `apps/web/Dockerfile` exposes `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` to the browser bundle so client components can load the
+     Maps JavaScript SDK.
+   - `apps/api/src/infra/maps/map.util.ts` reuses the same server key for NestJS flows that talk directly to Google.
+
+   If those files resolve the wrong key, double-check the `.env` files above or the Docker Compose overrides.
 
    The `docker-compose.yml` file now injects these keys by default so rebuilding the containers automatically wires the
    correct credentials even if the host environment is empty.
@@ -112,6 +122,44 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    > 💡 Google Places APIs require billing to be enabled on the Cloud project that owns the keys. If you see `This API method
    > requires billing to be enabled`, visit the [Google Cloud Billing page](https://console.cloud.google.com/billing) and link the
    > project before retrying. Also review your IP/referrer allow-lists if requests still return HTTP 403.
+
+   ### Verify the keys and troubleshoot 403s
+
+   1. **Check restrictions in Google Cloud Console**
+
+      - Server key (`PLACES_API_KEY`): Application restriction = `IP addresses`; add your outbound public IPs (for Docker
+        Compose this is the host machine). API restriction = `Places API`.
+      - Browser key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`): Application restriction = `Websites`; add development origins such as
+        `http://localhost:3005/*` and production domains. API restriction = `Maps JavaScript API` + `Places API`.
+
+   2. **Ensure billing is active**
+
+      ```bash
+      gcloud beta billing projects describe inbound-object-476110-d5 \
+        --project=inbound-object-476110-d5 \
+        --format='value(billingAccountName)'
+      ```
+
+      The command must return a billing account ID. If it is blank, enable billing from the Cloud Console before retrying API
+      calls.
+
+   3. **Smoke test the Places proxy**
+
+      ```bash
+      # Terminal 1 – start the web app so the Next.js route handlers run
+      pnpm --filter web dev
+
+      # Terminal 2 – exercise the autocomplete proxy
+      curl -i http://localhost:3000/api/places/autocomplete \
+        -H 'content-type: application/json' \
+        -d '{"input":"ho chi"}'
+      ```
+
+      A healthy configuration returns HTTP 200 with JSON predictions. HTTP 403 indicates either billing is still disabled or the
+      key restrictions do not match the incoming IP/referrer shown in the server logs.
+
+   4. **Inspect server logs** – Next.js logs the `places.autocomplete_failed` entries with the exact HTTP status from Google.
+      Use them to match failing requests to the corresponding key restriction.
 
 2. **Build the containers**
 
