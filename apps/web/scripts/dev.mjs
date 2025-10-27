@@ -95,6 +95,12 @@ const findAvailablePort = async (startingPort) => {
   const maxAttempts = 20;
 
   for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
+    if (candidate < 1 || candidate > 65535) {
+      console.error(
+        `Unable to find a free port: candidate ${candidate} is outside the valid TCP port range.`,
+      );
+      process.exit(1);
+    }
     // eslint-disable-next-line no-await-in-loop
     if (await isPortAvailable(candidate)) {
       return candidate;
@@ -124,26 +130,30 @@ const run = async () => {
 
   const envPort = getEnvPort();
   if (envPort) {
-    if (!(await isPortAvailable(envPort))) {
-      console.error(
-        `Port ${envPort} specified via environment variable is already in use. Please choose a different port.`,
-      );
-      process.exit(1);
+    if (await isPortAvailable(envPort)) {
+      spawnDevServer(envPort, 'environment variable');
+      return;
     }
 
-    spawnDevServer(envPort, 'environment variable');
+    console.warn(
+      `Port ${envPort} specified via environment variable is already in use. Falling back to an auto-detected port.`,
+    );
+
+    const fallbackStart = envPort >= 65535 ? 1 : envPort + 1;
+    const fallbackPort = await findAvailablePort(fallbackStart);
+    spawnDevServer(fallbackPort, 'auto-detected', envPort);
     return;
   }
 
   const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3005;
   const availablePort = await findAvailablePort(initialPort);
-  spawnDevServer(availablePort, 'auto-detected');
+  spawnDevServer(availablePort, 'auto-detected', initialPort);
 };
 
-const spawnDevServer = (port, origin) => {
+const spawnDevServer = (port, origin, preferredPort = DEFAULT_PORT) => {
   if (origin === 'auto-detected') {
     console.log(
-      `Selected port ${port} for the web dev server (original preference: ${DEFAULT_PORT}).`,
+      `Selected port ${port} for the web dev server (original preference: ${preferredPort}).`,
     );
   } else {
     console.log(`Using port ${port} from ${origin}.`);
