@@ -46,7 +46,7 @@ function parseWindowMs(input: string | undefined, defaultMs: number): number {
 }
 
 async function bootstrap() {
-  const port = Number(process.env.PORT ?? 3001);
+  const port = Number(process.env.PORT ?? 3006);
   const adapter = new FastifyAdapter({
     logger: {
       level: process.env.LOG_LEVEL ?? 'info',
@@ -61,10 +61,10 @@ async function bootstrap() {
   const defaultOrigins = [
     `http://localhost:${port}`,
     `http://127.0.0.1:${port}`,
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:3002',
-    'http://127.0.0.1:3002',
+    'http://localhost:3005',
+    'http://127.0.0.1:3005',
+    'http://localhost:3007',
+    'http://127.0.0.1:3007',
   ];
 
   const allowedOrigins = new Set(

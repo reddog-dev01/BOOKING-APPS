@@ -18,8 +18,8 @@ const normalizeBase = (value: string | undefined, fallback?: string) => {
 
 const getServerBase = () => {
   const internalBase =
-    process.env.INTERNAL_API_BASE ?? process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001";
-  return normalizeBase(internalBase, "http://localhost:3001")!;
+    process.env.INTERNAL_API_BASE ?? process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3006";
+  return normalizeBase(internalBase, "http://localhost:3006")!;
 };
 
 const getClientBase = () => {
@@ -30,7 +30,7 @@ const getClientBase = () => {
     return window.location.origin.replace(/\/$/, "");
   }
 
-  return "http://localhost:3001";
+  return "http://localhost:3006";
 };
 
 const API_BASE = typeof window === "undefined" ? getServerBase() : getClientBase();

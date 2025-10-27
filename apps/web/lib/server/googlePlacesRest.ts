@@ -153,9 +153,32 @@ export async function fetchAutocomplete(
       status: response.status,
       body: errorBody,
     });
-    const message =
-      (errorBody as { error?: { message?: string } } | null)?.error?.message ??
-      `Places Autocomplete failed (HTTP ${response.status}).`;
+
+    const errorPayload = (errorBody as { error?: { message?: string } } | null)?.error;
+    const originalMessage = errorPayload?.message;
+    let message =
+      originalMessage && originalMessage.length > 0
+        ? originalMessage
+        : `Places Autocomplete failed (HTTP ${response.status}).`;
+
+    if (response.status === 403 && originalMessage) {
+      const normalized = originalMessage.toLowerCase();
+
+      if (normalized.includes("billing") && normalized.includes("enable")) {
+        message =
+          [
+            "Google Places yêu cầu bật Billing cho dự án chứa API key.",
+            "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
+          ].join(" ");
+      } else if (normalized.includes("referer") || normalized.includes("ip")) {
+        message =
+          [
+            "Google Places key đang bị hạn chế (IP hoặc HTTP referrer) và từ chối yêu cầu.",
+            "Kiểm tra lại hạn mức trong Google Cloud Console.",
+          ].join(" ");
+      }
+    }
+
     throw new PlacesApiError(message, response.status, errorBody ?? undefined);
   }
 

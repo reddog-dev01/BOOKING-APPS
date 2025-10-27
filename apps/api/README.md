@@ -25,15 +25,24 @@ This service powers the pricing and booking flows for the Booking platform. It e
 Copy the project level `.env` (or create one) that contains at least:
 
 ```env
-PORT=3001
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3002
+PORT=3006
+CORS_ORIGINS=http://localhost:3005,http://127.0.0.1:3005,http://localhost:3007,http://127.0.0.1:3007
 DATABASE_URL=postgresql://booking:secret@localhost:5432/booking?schema=public
 RL_MAX=120
 RL_WINDOW=1 minute
 RL_ALLOWLIST=
+PLACES_API_KEY=<IP-restricted Google Places key>
 ```
 
-> ℹ️ When the API runs inside Docker, set the `DATABASE_URL` host to `db` instead of `localhost`.
+> ℹ️ When the API runs inside Docker, set the `DATABASE_URL` host to `db` instead of `localhost`. Use the IP-restricted
+> Places key (e.g. `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo`) for `PLACES_API_KEY`. Frontend bundles must rely on the
+> separate referrer-restricted key exposed via `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+
+> ⚠️ Google Places endpoints will reject requests until the Cloud project has Billing enabled. If you see a 403 response with
+> `This API method requires billing to be enabled`, link the project to a billing account in the Google Cloud Console.
+
+> ♻️  If you change any values in `apps/api/.env` while using Docker Compose, run `docker compose up -d --force-recreate api`
+> to refresh the container's environment.
 
 ## Local development
 
@@ -54,7 +63,7 @@ RL_ALLOWLIST=
    ```bash
    pnpm -w prisma db seed
    ```
-5. Launch the API on port 3001:
+5. Launch the API on port 3006:
    ```bash
    pnpm --filter api dev
    ```
@@ -62,7 +71,7 @@ RL_ALLOWLIST=
 The Fastify logger prints JSON lines to STDOUT. When the API starts successfully you should see a message similar to:
 
 ```json
-{"level":"info","time":"2025-10-24T11:00:00.000Z","port":3001,"msg":"API server is listening"}
+{"level":"info","time":"2025-10-24T11:00:00.000Z","port":3006,"msg":"API server is listening"}
 ```
 
 If the API cannot reach Postgres you will receive a single log entry like:
@@ -82,13 +91,13 @@ now=$(date -Iseconds)
 # Create an airport quote (aliases: /pricing/quote or /price/quote)
 curl -i -H 'content-type: application/json' \
   -d '{"tripType":"AIRPORT","vehicleTypeId":1,"startAt":"'"$now"'","roundTrip":false,"withVat":true,"vatPct":10,"fromText":"Noi Bai","toText":"Old Quarter","fromLat":21.214,"fromLng":105.806,"toLat":21.033,"toLng":105.851,"airportCode":"HAN","direction":"IN"}' \
-  http://localhost:3001/pricing/quote
+  http://localhost:3006/pricing/quote
 
 # Use the returned quote id to create a booking
 QUOTE_ID="<replace-with-quote-id>"
 curl -i -H 'content-type: application/json' \
   -d '{"quoteId":"'"$QUOTE_ID"'","customerName":"A","customerPhone":"+84900000000","fromText":"Noi Bai","toText":"Old Quarter"}' \
-  http://localhost:3001/bookings
+  http://localhost:3006/bookings
 ```
 
 Validation errors return HTTP 400 responses with the standard NestJS validation payload that lists the failing fields.

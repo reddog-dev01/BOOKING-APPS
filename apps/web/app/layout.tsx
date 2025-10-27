@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     name: "Đặt xe sân bay",
     telephone: "0969xxxxxx",
     areaServed: "Hà Nội, Nội Bài",
-    url: "http://localhost:3000",
+    url: "http://localhost:3005",
   };
 
   return (
