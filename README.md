@@ -61,25 +61,32 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    docker compose up -d --force-recreate api web
    ```
 
+   Export the project and key resource names up-front so every command has the context it needs. The `gcloud beta billing
+   projects describe` command in particular fails with `could not parse resource []` when `PROJECT_ID` is unset, so double
+   check these values before continuing.
+
+   ```bash
+   export PROJECT_ID="inbound-object-476110-d5"
+   export PLACES_KEY_NAME="projects/339756545616/locations/global/keys/649d7705-6472-4b48-8605-09230a504b41"
+   export MAPS_JS_KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
+   ```
+
    To fetch the dedicated keys from the `inbound-object-476110-d5` project and apply the correct restrictions, run:
 
    ```bash
-   PLACES_KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
-   MAPS_JS_KEY_NAME="projects/339756545616/locations/global/keys/17f0c1a4-8a08-4a3b-84da-7f3055d6d9f8"
-
    # Ensure the gcloud beta component is available
    gcloud components install beta --quiet
 
    # Retrieve the key strings
    PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
-     --project=inbound-object-476110-d5 \
+     --project="$PROJECT_ID" \
      --format="value(keyString)")
    MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
-     --project=inbound-object-476110-d5 \
+     --project="$PROJECT_ID" \
      --format="value(keyString)")
 
-   echo "Server key: $PLACES_KEY"
-   echo "Browser key: $MAPS_JS_KEY"
+   echo "Server key (PLACES_API_KEY): $PLACES_KEY"
+   echo "Browser key (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY): $MAPS_JS_KEY"
 
    ALLOWED_IPS="<replace-with-your-public-ip>/32"
 
@@ -143,6 +150,23 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
       - Browser key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`): Application restriction = `Websites`; add development origins such as
         `http://localhost:3005/*` and production domains. API restriction = `Maps JavaScript API` + `Places API`.
 
+      If you run the web app on a different origin (for example `http://localhost:3000` or HTTPS), update the allow-list to
+      match the exact scheme, host, and port or Google will respond with `403 PERMISSION_DENIED`.
+
+      ```bash
+      # Inspect the current browser key restrictions and confirm the allowedReferrers list
+      gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
+        --project="$PROJECT_ID" \
+        --format='get(restrictions.browserKeyRestrictions.allowedReferrers)'
+
+      # Add or replace referrers to match your dev server, e.g. localhost:3000 over HTTP and HTTPS
+      gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
+        --project="$PROJECT_ID" \
+        --allowed-referrers="http://localhost:3000/*,https://localhost:3000/*" \
+        --api-target="service=maps-backend.googleapis.com" \
+        --api-target="service=places.googleapis.com"
+      ```
+
    2. **Ensure billing is active**
 
       ```bash
@@ -171,6 +195,23 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
 
    4. **Inspect server logs** – Next.js logs the `places.autocomplete_failed` entries with the exact HTTP status from Google.
       Use them to match failing requests to the corresponding key restriction.
+
+   5. **Confirm environment wiring (optional)** – If you need to prove that a Docker container or `.env` file carries the same
+      key string that Cloud Console shows, compare their SHA-256 hashes without printing the raw key:
+
+      ```bash
+      export MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
+        --project="$PROJECT_ID" \
+        --format='value(keyString)')
+
+      # Hash from Google Cloud
+      printf '%s' "$MAPS_JS_KEY" | sha256sum
+
+      # Hash from the running web container
+      docker compose exec web sh -lc 'printf "%s" "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"' | sha256sum
+      ```
+
+      Matching hashes confirm the value is wired correctly without leaking the secret.
 
 2. **Build the containers**
 
