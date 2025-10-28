@@ -11,6 +11,8 @@ const AUTOCOMPLETE_FIELD_MASK = [
 const DETAILS_FIELD_MASK = ["id", "formattedAddress", "displayName", "location"].join(",");
 const DEFAULT_LANGUAGE = "vi";
 const DEFAULT_REGION = "VN";
+const BILLING_CIRCUIT_TIMEOUT_MS = 10 * 60 * 1000;
+const GENERIC_CIRCUIT_TIMEOUT_MS = 60 * 1000;
 
 export class MissingApiKeyError extends Error {
   constructor() {
@@ -64,6 +66,15 @@ type DetailsApiResponse = {
   location?: { latitude?: number; longitude?: number };
 };
 
+type CachedFailure = {
+  until: number;
+  status: number;
+  message: string;
+  details?: unknown;
+};
+
+let cachedFailure: CachedFailure | null = null;
+
 const logJson = (level: "warn" | "error", message: string, extra?: Record<string, unknown>) => {
   // eslint-disable-next-line no-console
   console[level](
@@ -106,6 +117,44 @@ const applyRefererOptions = (init: RequestInit, referer?: string): RequestInit =
   } satisfies RequestInit;
 };
 
+const clonePlacesError = (entry: CachedFailure): PlacesApiError =>
+  new PlacesApiError(entry.message, entry.status, entry.details);
+
+const resolveCachedFailure = (): PlacesApiError | null => {
+  if (!cachedFailure) return null;
+  if (Date.now() < cachedFailure.until) {
+    return clonePlacesError(cachedFailure);
+  }
+
+  cachedFailure = null;
+  return null;
+};
+
+const rememberFailure = (
+  status: number,
+  message: string,
+  details: unknown,
+  ttl: number,
+) => {
+  cachedFailure = {
+    status,
+    message,
+    details,
+    until: Date.now() + ttl,
+  } satisfies CachedFailure;
+};
+
+const clearFailure = () => {
+  cachedFailure = null;
+};
+
+export const resetPlacesCircuitBreakerForTests = () => {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("resetPlacesCircuitBreakerForTests is only available in tests");
+  }
+  clearFailure();
+};
+
 export async function fetchAutocomplete(
   request: AutocompleteRequest,
   referer?: string,
@@ -113,6 +162,11 @@ export async function fetchAutocomplete(
   const trimmed = request.input.trim();
   if (!trimmed) {
     return [];
+  }
+
+  const cachedError = resolveCachedFailure();
+  if (cachedError) {
+    throw cachedError;
   }
 
   const apiKey = resolvePlacesKey();
@@ -161,6 +215,9 @@ export async function fetchAutocomplete(
         ? originalMessage
         : `Places Autocomplete failed (HTTP ${response.status}).`;
 
+    let circuitTtl: number | null = null;
+    let circuitStatus = Math.max(response.status, 400);
+
     if (response.status === 403 && originalMessage) {
       const normalized = originalMessage.toLowerCase();
 
@@ -170,19 +227,28 @@ export async function fetchAutocomplete(
             "Google Places yêu cầu bật Billing cho dự án chứa API key.",
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
+        circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
+        circuitStatus = 503;
       } else if (normalized.includes("referer") || normalized.includes("ip")) {
         message =
           [
             "Google Places key đang bị hạn chế (IP hoặc HTTP referrer) và từ chối yêu cầu.",
             "Kiểm tra lại hạn mức trong Google Cloud Console.",
           ].join(" ");
+        circuitTtl = GENERIC_CIRCUIT_TIMEOUT_MS;
       }
+    }
+
+    if (response.status === 403 && circuitTtl) {
+      rememberFailure(circuitStatus, message, errorBody ?? undefined, circuitTtl);
+      throw new PlacesApiError(message, circuitStatus, errorBody ?? undefined);
     }
 
     throw new PlacesApiError(message, response.status, errorBody ?? undefined);
   }
 
   const data = (await response.json()) as AutocompleteApiResponse;
+  clearFailure();
   return (data.suggestions ?? [])
     .map((suggestion) => {
       const prediction = suggestion.placePrediction;
@@ -206,6 +272,11 @@ export async function fetchPlaceDetails(
   request: DetailsRequest,
   referer?: string,
 ): Promise<PlaceDetails> {
+  const cachedError = resolveCachedFailure();
+  if (cachedError) {
+    throw cachedError;
+  }
+
   const apiKey = resolvePlacesKey();
   const headers: Record<string, string> = {
     "X-Goog-Api-Key": apiKey,
@@ -243,13 +314,47 @@ export async function fetchPlaceDetails(
       status: response.status,
       body: errorBody,
     });
-    const message =
-      (errorBody as { error?: { message?: string } } | null)?.error?.message ??
-      `Places Details failed (HTTP ${response.status}).`;
+    const errorPayload = (errorBody as { error?: { message?: string } } | null)?.error;
+    const originalMessage = errorPayload?.message;
+    let message =
+      originalMessage && originalMessage.length > 0
+        ? originalMessage
+        : `Places Details failed (HTTP ${response.status}).`;
+
+    let circuitTtl: number | null = null;
+    let circuitStatus = Math.max(response.status, 400);
+
+    if (response.status === 403 && originalMessage) {
+      const normalized = originalMessage.toLowerCase();
+
+      if (normalized.includes("billing") && normalized.includes("enable")) {
+        message =
+          [
+            "Google Places yêu cầu bật Billing cho dự án chứa API key.",
+            "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
+          ].join(" ");
+        circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
+        circuitStatus = 503;
+      } else if (normalized.includes("referer") || normalized.includes("ip")) {
+        message =
+          [
+            "Google Places key đang bị hạn chế (IP hoặc HTTP referrer) và từ chối yêu cầu.",
+            "Kiểm tra lại hạn mức trong Google Cloud Console.",
+          ].join(" ");
+        circuitTtl = GENERIC_CIRCUIT_TIMEOUT_MS;
+      }
+    }
+
+    if (response.status === 403 && circuitTtl) {
+      rememberFailure(circuitStatus, message, errorBody ?? undefined, circuitTtl);
+      throw new PlacesApiError(message, circuitStatus, errorBody ?? undefined);
+    }
+
     throw new PlacesApiError(message, response.status, errorBody ?? undefined);
   }
 
   const data = (await response.json()) as DetailsApiResponse;
+  clearFailure();
   return {
     formattedAddress: data.formattedAddress,
     name: data.displayName?.text,

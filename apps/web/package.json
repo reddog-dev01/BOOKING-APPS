@@ -7,7 +7,8 @@
     "dev": "node ./scripts/dev.mjs",
     "build": "next build",
     "start": "next start -p 3005",
-    "lint": "eslint . --ext .ts,.tsx || true"
+    "lint": "eslint . --ext .ts,.tsx || true",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -27,11 +28,14 @@
     "@types/node": "^24.6.1",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
+    "@types/jest": "^29.5.14",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.36.0",
     "eslint-config-next": "^15.5.4",
+    "jest": "^29.7.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "ts-jest": "^29.3.4",
     "typescript": "^5.9.3"
   }
 }
