@@ -9,6 +9,17 @@ This repository contains the services for the booking platform:
 
 The repository uses pnpm workspaces and TypeScript across all packages.
 
+## Install dependencies
+
+```bash
+pnpm install
+```
+
+> [!NOTE]
+> pnpm v10 blocks packages with postinstall/build scripts until they are explicitly whitelisted. The workspace `.npmrc` now
+> allows the build steps required by Prisma, NestJS, Sharp, and related tooling so `pnpm install` and the Docker builds can run
+> `prisma generate` and other necessary setup automatically.
+
 ## Production-style Docker quickstart
 
 The project ships with a multi-service `docker-compose.yml` and dedicated Dockerfiles for the API and web applications. This setup mirrors production expectations: each service is built via multi-stage Dockerfiles, runs as a non-root user, and is orchestrated together with Postgres and Caddy.
