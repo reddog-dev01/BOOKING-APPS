@@ -13,6 +13,11 @@ const DEFAULT_LANGUAGE = "vi";
 const DEFAULT_REGION = "VN";
 const BILLING_CIRCUIT_TIMEOUT_MS = 10 * 60 * 1000;
 const GENERIC_CIRCUIT_TIMEOUT_MS = 60 * 1000;
+const FALLBACK_KEY_ENV_KEYS = [
+  "GOOGLE_PLACES_API_KEY",
+  "GOOGLE_MAPS_API_KEY",
+  "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY",
+] as const;
 
 export class MissingApiKeyError extends Error {
   constructor() {
@@ -74,6 +79,8 @@ type CachedFailure = {
 };
 
 let cachedFailure: CachedFailure | null = null;
+let cachedApiKey: string | null = null;
+let cachedApiKeySource: string | null = null;
 
 const logJson = (level: "warn" | "error", message: string, extra?: Record<string, unknown>) => {
   // eslint-disable-next-line no-console
@@ -101,11 +108,33 @@ const resolveReferer = (value?: string | null): string | undefined => {
 };
 
 const resolvePlacesKey = (): string => {
-  const key = process.env.PLACES_API_KEY?.trim();
-  if (!key) {
-    throw new MissingApiKeyError();
+  if (cachedApiKey) {
+    return cachedApiKey;
   }
-  return key;
+
+  const primary = process.env.PLACES_API_KEY?.trim();
+  if (primary) {
+    cachedApiKey = primary;
+    cachedApiKeySource = "PLACES_API_KEY";
+    return cachedApiKey;
+  }
+
+  for (const fallbackKey of FALLBACK_KEY_ENV_KEYS) {
+    const candidate = process.env[fallbackKey]?.trim();
+    if (!candidate) {
+      continue;
+    }
+
+    if (cachedApiKeySource !== fallbackKey) {
+      logJson("warn", "places.fallback_env_used", { fallbackKey });
+    }
+
+    cachedApiKey = candidate;
+    cachedApiKeySource = fallbackKey;
+    return cachedApiKey;
+  }
+
+  throw new MissingApiKeyError();
 };
 
 const applyRefererOptions = (init: RequestInit, referer?: string): RequestInit => {
