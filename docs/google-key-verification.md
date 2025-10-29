@@ -10,11 +10,11 @@ returns `503` because a service picked up the wrong environment variable.
 - **Server-side Google Places traffic** → `PLACES_API_KEY`
 - **Browser Google Maps JavaScript SDK** → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
 
-Both keys must be generated from your Google Cloud project with billing
-enabled. The repository no longer ships demo key strings—committed `.env`
-templates intentionally leave the values blank. Always paste your real keys
-(with the proper IP / referrer restrictions) into the `.env` files and secrets
-store before starting any service.
+Both keys are generated from the billing-enabled Google Cloud project and are
+already populated inside the committed `.env` templates so Docker builds and
+local runners share the same credentials out of the box. Keep the keys
+restricted to the approved origins/IPs (see the screenshot in the ticket) and
+update the files if Google rotates the strings.
 
 > [!TIP]
 > The Next.js Places proxy still falls back to reading `PLACES_API_KEY` from

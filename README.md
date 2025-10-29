@@ -47,10 +47,13 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
   containers) resolves the same key strings end-to-end.
 
   > [!IMPORTANT]
-  > The repository no longer commits demo Google API keys. Supply your real,
-  > billing-enabled Places and Maps JavaScript keys in the `.env` files before
-  > starting any process. Keys that remain blank will surface 403 errors from
-  > Google once traffic flows through the Places proxy.
+  > Billing-enabled Places (`PLACES_API_KEY`) and Maps JavaScript
+  > (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) keys are now pre-populated in the
+  > committed `.env` templates for local development. Keep the Google Cloud
+  > console restrictions in sync with the configured dev origins (e.g.
+  > `http://localhost:3005/*`, `http://127.0.0.1:3005/*`, `http://localhost:3007/*`).
+  > Update the values if the credentials rotate so Docker and local runners pick
+  > up the new strings immediately.
 
    **Where these variables are consumed**
 
