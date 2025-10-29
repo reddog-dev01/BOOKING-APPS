@@ -31,29 +31,10 @@ const FALLBACK_KEY_FILE_PATHS = [
   "apps/admin/.env.local",
 ] as const;
 
-const KNOWN_PLACEHOLDER_KEYS = new Set([
-  "AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo",
-  "AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ",
-]);
-
 export class MissingApiKeyError extends Error {
   constructor(message = "Thiếu PLACES_API_KEY. Thiết lập API key Google Places cho server.") {
     super(message);
     this.name = "MissingApiKeyError";
-  }
-}
-
-export class PlaceholderApiKeyError extends MissingApiKeyError {
-  constructor(source?: string | null) {
-    super(
-      [
-        "PLACES_API_KEY đang sử dụng key mẫu không hợp lệ và bị Google chặn.",
-        "Thay bằng Google Places API key thật với Billing đã bật",
-        source ? `(nguồn: ${source}).` : ".",
-        "Xem docs/google-key-verification.md để cấu hình đúng.",
-      ].join(" "),
-    );
-    this.name = "PlaceholderApiKeyError";
   }
 }
 
@@ -206,11 +187,6 @@ const resolvePlacesKeyFromFiles = (): PlacesKeyFileCandidate | null =>
   resolvePlacesKeyFromFilesImpl();
 
 const finalizeResolvedKey = (key: string, source: string): string => {
-  if (KNOWN_PLACEHOLDER_KEYS.has(key)) {
-    logJson("warn", "places.placeholder_key_detected", { source });
-    throw new PlaceholderApiKeyError(source);
-  }
-
   cachedApiKey = key;
   cachedApiKeySource = source;
   return cachedApiKey;

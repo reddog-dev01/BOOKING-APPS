@@ -12,10 +12,9 @@ returns `503` because a service picked up the wrong environment variable.
 
 Both keys must be generated from your Google Cloud project with billing
 enabled. The repository no longer ships demo key strings—committed `.env`
-templates intentionally leave the values blank and the runtime guards will
-reject known placeholder keys. Always paste your real keys (with the proper IP
-/ referrer restrictions) into the `.env` files and secrets store before
-starting any service.
+templates intentionally leave the values blank. Always paste your real keys
+(with the proper IP / referrer restrictions) into the `.env` files and secrets
+store before starting any service.
 
 > [!TIP]
 > The Next.js Places proxy still falls back to reading `PLACES_API_KEY` from

@@ -49,8 +49,8 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
   > [!IMPORTANT]
   > The repository no longer commits demo Google API keys. Supply your real,
   > billing-enabled Places and Maps JavaScript keys in the `.env` files before
-  > starting any process. The runtime now rejects the old placeholder strings so
-  > misconfigured environments fail fast.
+  > starting any process. Keys that remain blank will surface 403 errors from
+  > Google once traffic flows through the Places proxy.
 
    **Where these variables are consumed**
 
