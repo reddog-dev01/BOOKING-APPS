@@ -38,6 +38,10 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    components. Use a *separate* browser-restricted key for the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` value in
    `apps/web/.env.local` and `apps/admin/.env.local`.
 
+   The web app’s Places proxy now falls back to these `.env` files if the process environment is empty, which prevents
+   `503 Service Unavailable` responses when you forget to export `PLACES_API_KEY` before starting `pnpm --filter web dev`.
+   Still keep the shell variables in sync so Docker, local scripts, and test runners resolve the same credentials.
+
    The quick audit checklist in [`docs/google-key-verification.md`](docs/google-key-verification.md)
    walks through verifying that every service (.env files, Docker Compose, and running
    containers) resolves the same key strings end-to-end.
