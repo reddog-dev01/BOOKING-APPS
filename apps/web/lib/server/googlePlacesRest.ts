@@ -31,10 +31,29 @@ const FALLBACK_KEY_FILE_PATHS = [
   "apps/admin/.env.local",
 ] as const;
 
+const KNOWN_PLACEHOLDER_KEYS = new Set([
+  "AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo",
+  "AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ",
+]);
+
 export class MissingApiKeyError extends Error {
-  constructor() {
-    super("Thiếu PLACES_API_KEY. Thiết lập API key Google Places cho server.");
+  constructor(message = "Thiếu PLACES_API_KEY. Thiết lập API key Google Places cho server.") {
+    super(message);
     this.name = "MissingApiKeyError";
+  }
+}
+
+export class PlaceholderApiKeyError extends MissingApiKeyError {
+  constructor(source?: string | null) {
+    super(
+      [
+        "PLACES_API_KEY đang sử dụng key mẫu không hợp lệ và bị Google chặn.",
+        "Thay bằng Google Places API key thật với Billing đã bật",
+        source ? `(nguồn: ${source}).` : ".",
+        "Xem docs/google-key-verification.md để cấu hình đúng.",
+      ].join(" "),
+    );
+    this.name = "PlaceholderApiKeyError";
   }
 }
 
@@ -186,6 +205,17 @@ let resolvePlacesKeyFromFilesImpl = defaultResolvePlacesKeyFromFiles;
 const resolvePlacesKeyFromFiles = (): PlacesKeyFileCandidate | null =>
   resolvePlacesKeyFromFilesImpl();
 
+const finalizeResolvedKey = (key: string, source: string): string => {
+  if (KNOWN_PLACEHOLDER_KEYS.has(key)) {
+    logJson("warn", "places.placeholder_key_detected", { source });
+    throw new PlaceholderApiKeyError(source);
+  }
+
+  cachedApiKey = key;
+  cachedApiKeySource = source;
+  return cachedApiKey;
+};
+
 const resolvePlacesKey = (): string => {
   if (cachedApiKey) {
     return cachedApiKey;
@@ -193,9 +223,7 @@ const resolvePlacesKey = (): string => {
 
   const primary = process.env.PLACES_API_KEY?.trim();
   if (primary) {
-    cachedApiKey = primary;
-    cachedApiKeySource = "PLACES_API_KEY";
-    return cachedApiKey;
+    return finalizeResolvedKey(primary, "PLACES_API_KEY");
   }
 
   for (const fallbackKey of FALLBACK_KEY_ENV_KEYS) {
@@ -208,9 +236,7 @@ const resolvePlacesKey = (): string => {
       logJson("warn", "places.fallback_env_used", { fallbackKey });
     }
 
-    cachedApiKey = candidate;
-    cachedApiKeySource = fallbackKey;
-    return cachedApiKey;
+    return finalizeResolvedKey(candidate, fallbackKey);
   }
 
   const fileCandidate = resolvePlacesKeyFromFiles();
@@ -219,9 +245,7 @@ const resolvePlacesKey = (): string => {
     if (cachedApiKeySource !== sourceId) {
       logJson("warn", "places.env_file_fallback", { path: fileCandidate.source });
     }
-    cachedApiKey = fileCandidate.key;
-    cachedApiKeySource = sourceId;
-    return cachedApiKey;
+    return finalizeResolvedKey(fileCandidate.key, sourceId);
   }
 
   throw new MissingApiKeyError();

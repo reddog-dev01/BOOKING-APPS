@@ -215,3 +215,48 @@ describe("googlePlacesRest circuit breaker", () => {
     resetPlacesCircuitBreakerForTests();
   });
 });
+
+describe("googlePlacesRest placeholder key guard", () => {
+  beforeEach(() => {
+    jest.resetModules();
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  });
+
+  afterEach(() => {
+    delete (global as { fetch?: unknown }).fetch;
+    delete process.env.PLACES_API_KEY;
+  });
+
+  const importModule = async () => await import("../lib/server/googlePlacesRest");
+
+  it("rejects placeholder keys before calling Google", async () => {
+    process.env.PLACES_API_KEY = "AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo";
+
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const {
+      fetchAutocomplete,
+      resetPlacesCircuitBreakerForTests,
+      resetPlacesKeyCacheForTests,
+      PlaceholderApiKeyError,
+    } = await importModule();
+
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(fetchAutocomplete({ input: "Hue" })).rejects.toBeInstanceOf(
+      PlaceholderApiKeyError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"msg":"places.placeholder_key_detected"'),
+    );
+
+    warnSpy.mockRestore();
+    resetPlacesKeyCacheForTests();
+    resetPlacesCircuitBreakerForTests();
+  });
+});

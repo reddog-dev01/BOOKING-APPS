@@ -34,9 +34,10 @@ RL_ALLOWLIST=
 PLACES_API_KEY=<IP-restricted Google Places key>
 ```
 
-> ℹ️ When the API runs inside Docker, set the `DATABASE_URL` host to `db` instead of `localhost`. Use the IP-restricted
-> Places key (e.g. `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo`) for `PLACES_API_KEY`. Frontend bundles must rely on the
-> separate referrer-restricted key exposed via `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+> ℹ️ When the API runs inside Docker, set the `DATABASE_URL` host to `db` instead of `localhost`. Use an IP-restricted
+> Places key for `PLACES_API_KEY`—the repository intentionally leaves the value blank so you must paste your own
+> billing-enabled key. Frontend bundles must rely on the separate referrer-restricted key exposed via
+> `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
 
 > ⚠️ Google Places endpoints will reject requests until the Cloud project has Billing enabled. If you see a 403 response with
 > `This API method requires billing to be enabled`, link the project to a billing account in the Google Cloud Console.
