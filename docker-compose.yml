@@ -26,7 +26,7 @@ services:
       - ./apps/api/.env
     environment:
       PORT: ${API_CONTAINER_PORT:-3006}
-      PLACES_API_KEY: ${PLACES_API_KEY:?Set PLACES_API_KEY in your shell or apps/api/.env}
+      PLACES_API_KEY: ${PLACES_API_KEY:-__YOUR_GOOGLE_PLACES_API_KEY__}
     ports:
       - "3006:3006"
     depends_on:
@@ -57,8 +57,8 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3006}
       INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3006}
-      PLACES_API_KEY: ${PLACES_API_KEY:?Set PLACES_API_KEY in your shell or apps/api/.env}
-      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:?Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in your shell or apps/web/.env.local}
+      PLACES_API_KEY: ${PLACES_API_KEY:-__YOUR_GOOGLE_PLACES_API_KEY__}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-__YOUR_GOOGLE_MAPS_BROWSER_API_KEY__}
       NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
       NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
       PORT: 3000
