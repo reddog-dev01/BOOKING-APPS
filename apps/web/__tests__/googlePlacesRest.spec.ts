@@ -219,7 +219,7 @@ describe("googlePlacesRest circuit breaker", () => {
 describe("googlePlacesRest API key resolution", () => {
   it("allows IP-restricted production keys", async () => {
     jest.resetModules();
-    process.env.PLACES_API_KEY = "AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo";
+    process.env.PLACES_API_KEY = "AIzaSyBwSgnM_plKYymCX6OeuwIbmkouCcXbOBQ";
 
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
