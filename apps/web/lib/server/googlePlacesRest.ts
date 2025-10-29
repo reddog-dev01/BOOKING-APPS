@@ -1,5 +1,8 @@
 import "server-only";
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import type { PlaceDetails, PlacePrediction } from "../googlePlacesTypes";
 
 const PLACES_BASE_URL = "https://places.googleapis.com/v1";
@@ -13,6 +16,20 @@ const DEFAULT_LANGUAGE = "vi";
 const DEFAULT_REGION = "VN";
 const BILLING_CIRCUIT_TIMEOUT_MS = 10 * 60 * 1000;
 const GENERIC_CIRCUIT_TIMEOUT_MS = 60 * 1000;
+const FALLBACK_KEY_ENV_KEYS = [
+  "GOOGLE_PLACES_API_KEY",
+  "GOOGLE_MAPS_API_KEY",
+  "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY",
+] as const;
+const FALLBACK_KEY_FILE_PATHS = [
+  ".env.local",
+  ".env",
+  "apps/web/.env.local",
+  "apps/web/.env",
+  "apps/api/.env",
+  "apps/api/.env.local",
+  "apps/admin/.env.local",
+] as const;
 
 export class MissingApiKeyError extends Error {
   constructor() {
@@ -73,7 +90,16 @@ type CachedFailure = {
   details?: unknown;
 };
 
+type PlacesKeyFileCandidate = { key: string; source: string };
+
 let cachedFailure: CachedFailure | null = null;
+let cachedApiKey: string | null = null;
+let cachedApiKeySource: string | null = null;
+
+const resetPlacesApiKeyCache = () => {
+  cachedApiKey = null;
+  cachedApiKeySource = null;
+};
 
 const logJson = (level: "warn" | "error", message: string, extra?: Record<string, unknown>) => {
   // eslint-disable-next-line no-console
@@ -100,12 +126,105 @@ const resolveReferer = (value?: string | null): string | undefined => {
   return candidate && candidate.length > 0 ? candidate : undefined;
 };
 
-const resolvePlacesKey = (): string => {
-  const key = process.env.PLACES_API_KEY?.trim();
-  if (!key) {
-    throw new MissingApiKeyError();
+const stripEnvValue = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const isWrappedInDoubleQuotes = trimmed.startsWith("\"") && trimmed.endsWith("\"");
+  const isWrappedInSingleQuotes = trimmed.startsWith("\'") && trimmed.endsWith("\'");
+
+  if (isWrappedInDoubleQuotes || isWrappedInSingleQuotes) {
+    return trimmed.slice(1, -1).trim();
   }
-  return key;
+
+  return trimmed;
+};
+
+const extractKeyFromEnvFile = (contents: string): string | null => {
+  const lines = contents.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const [rawKey, ...rest] = trimmed.split("=");
+    if (!rawKey || rawKey.trim() !== "PLACES_API_KEY") {
+      continue;
+    }
+    const candidate = stripEnvValue(rest.join("="));
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+const defaultResolvePlacesKeyFromFiles = (): PlacesKeyFileCandidate | null => {
+  for (const relativePath of FALLBACK_KEY_FILE_PATHS) {
+    const absolutePath = resolve(process.cwd(), relativePath);
+    try {
+      const contents = readFileSync(absolutePath, "utf8");
+      const candidate = extractKeyFromEnvFile(contents);
+      if (candidate) {
+        return { key: candidate, source: relativePath } satisfies PlacesKeyFileCandidate;
+      }
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err?.code && err.code !== "ENOENT") {
+        logJson("warn", "places.env_file_read_failed", {
+          path: relativePath,
+          code: err.code,
+          message: err.message,
+        });
+      }
+    }
+  }
+
+  return null;
+};
+
+let resolvePlacesKeyFromFilesImpl = defaultResolvePlacesKeyFromFiles;
+
+const resolvePlacesKeyFromFiles = (): PlacesKeyFileCandidate | null =>
+  resolvePlacesKeyFromFilesImpl();
+
+const resolvePlacesKey = (): string => {
+  if (cachedApiKey) {
+    return cachedApiKey;
+  }
+
+  const primary = process.env.PLACES_API_KEY?.trim();
+  if (primary) {
+    cachedApiKey = primary;
+    cachedApiKeySource = "PLACES_API_KEY";
+    return cachedApiKey;
+  }
+
+  for (const fallbackKey of FALLBACK_KEY_ENV_KEYS) {
+    const candidate = process.env[fallbackKey]?.trim();
+    if (!candidate) {
+      continue;
+    }
+
+    if (cachedApiKeySource !== fallbackKey) {
+      logJson("warn", "places.fallback_env_used", { fallbackKey });
+    }
+
+    cachedApiKey = candidate;
+    cachedApiKeySource = fallbackKey;
+    return cachedApiKey;
+  }
+
+  const fileCandidate = resolvePlacesKeyFromFiles();
+  if (fileCandidate) {
+    const sourceId = `file:${fileCandidate.source}`;
+    if (cachedApiKeySource !== sourceId) {
+      logJson("warn", "places.env_file_fallback", { path: fileCandidate.source });
+    }
+    cachedApiKey = fileCandidate.key;
+    cachedApiKeySource = sourceId;
+    return cachedApiKey;
+  }
+
+  throw new MissingApiKeyError();
 };
 
 const applyRefererOptions = (init: RequestInit, referer?: string): RequestInit => {
@@ -153,6 +272,23 @@ export const resetPlacesCircuitBreakerForTests = () => {
     throw new Error("resetPlacesCircuitBreakerForTests is only available in tests");
   }
   clearFailure();
+};
+
+export const resetPlacesKeyCacheForTests = () => {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("resetPlacesKeyCacheForTests is only available in tests");
+  }
+  resetPlacesApiKeyCache();
+};
+
+export const setPlacesKeyFileResolverForTests = (
+  resolver: (() => PlacesKeyFileCandidate | null) | null,
+) => {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("setPlacesKeyFileResolverForTests is only available in tests");
+  }
+  resolvePlacesKeyFromFilesImpl = resolver ?? defaultResolvePlacesKeyFromFiles;
+  resetPlacesApiKeyCache();
 };
 
 export async function fetchAutocomplete(
@@ -228,7 +364,7 @@ export async function fetchAutocomplete(
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
-        circuitStatus = 503;
+        circuitStatus = 403;
       } else if (normalized.includes("referer") || normalized.includes("ip")) {
         message =
           [
@@ -334,7 +470,7 @@ export async function fetchPlaceDetails(
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
-        circuitStatus = 503;
+        circuitStatus = 403;
       } else if (normalized.includes("referer") || normalized.includes("ip")) {
         message =
           [

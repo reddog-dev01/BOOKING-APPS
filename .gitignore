@@ -8,6 +8,7 @@ pnpm-debug.log*
 !apps/web/.env.local
 !apps/web/.env.local.example
 !apps/web/.env.example
+!apps/admin/.env.local.example
 coverage/
 tmp/
 
