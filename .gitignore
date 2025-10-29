@@ -18,3 +18,7 @@ apps/web/node_modules/
 
 apps/api/dist/
 apps/api/node_modules/
+# env & secrets
+*.env
+*.env.*
+!.env.example
