@@ -3,7 +3,15 @@
 This checklist makes sure the server (`PLACES_API_KEY`) and browser
 (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) keys are identical across every entry point
 (API, customer web, admin console, Docker Compose) so the Places proxy no longer
-returns `503` because a service picked up the wrong environment variable.
+returns `503` because a service picked up the wrong environment variable. It
+also documents how to resolve the Google error message:
+
+```
+Google Places yêu cầu bật Billing cho dự án chứa API key. Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.
+```
+
+If you see that payload from `/api/places/*`, follow step 4 below to enable
+billing on the project that owns both keys.
 
 ## Required key strings
 
@@ -41,12 +49,13 @@ grep -n "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" apps/web/.env.local apps/admin/.env.lo
 
 ## 2. Confirm Docker Compose wiring
 
-`docker-compose.yml` injects both keys for the API and web containers. Because
-the default fallback was removed, Compose will refuse to start if
-`PLACES_API_KEY` is missing—ensure the key is present in your shell or
-`apps/api/.env` before running the stack. If you change a key, rebuild the
-affected services so the new value is baked into the container image and
-runtime environment:
+`docker-compose.yml` injects both keys for the API and web containers. The file
+now falls back to the committed values in the `.env` templates, so Compose no
+longer fails fast when your shell variables are empty. Before deploying or
+sharing the stack, overwrite the defaults with your **real**, billing-enabled
+keys by copying the `.env.example` files (see step 1). Whenever you change a
+key, rebuild the affected services so the new value is baked into the container
+image and runtime environment:
 
 ```bash
 docker compose up -d --force-recreate api web
@@ -87,8 +96,11 @@ curl -i http://localhost:3000/api/places/autocomplete \
 ```
 
 A successful configuration returns HTTP 200 with JSON predictions. HTTP 403
-indicates billing or key restrictions. HTTP 503 signals a missing or mismatched
-`PLACES_API_KEY`—repeat the steps above to find the mismatch.
+indicates billing or key restrictions. When the upstream response body includes
+`This API method requires billing to be enabled` the proxy rewrites the message
+to the Vietnamese guidance quoted at the top of this document—enable Google
+Cloud billing for the project and retry. HTTP 503 signals a missing or
+mismatched `PLACES_API_KEY`—repeat the steps above to find the mismatch.
 
 ## 5. Restart from scratch when values change
 
