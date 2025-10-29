@@ -42,14 +42,18 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    `503 Service Unavailable` responses when you forget to export `PLACES_API_KEY` before starting `pnpm --filter web dev`.
    Still keep the shell variables in sync so Docker, local scripts, and test runners resolve the same credentials.
 
-   The quick audit checklist in [`docs/google-key-verification.md`](docs/google-key-verification.md)
-   walks through verifying that every service (.env files, Docker Compose, and running
-   containers) resolves the same key strings end-to-end.
+  The quick audit checklist in [`docs/google-key-verification.md`](docs/google-key-verification.md)
+  walks through verifying that every service (.env files, Docker Compose, and running
+  containers) resolves the same key strings end-to-end.
 
-   | Purpose                              | Variable                          | Key string                       |
-   | ------------------------------------ | --------------------------------- | -------------------------------- |
-   | Server-to-server Google Places calls | `PLACES_API_KEY`                  | `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo` |
-   | Browser Google Maps JavaScript SDK   | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ` |
+  > [!IMPORTANT]
+  > Billing-enabled Places (`PLACES_API_KEY`) and Maps JavaScript
+  > (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) keys are now pre-populated in the
+  > committed `.env` templates for local development. Keep the Google Cloud
+  > console restrictions in sync with the configured dev origins (e.g.
+  > `http://localhost:3005/*`, `http://127.0.0.1:3005/*`, `http://localhost:3007/*`).
+  > Update the values if the credentials rotate so Docker and local runners pick
+  > up the new strings immediately.
 
    **Where these variables are consumed**
 
@@ -59,10 +63,11 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
      Maps JavaScript SDK.
    - `apps/api/src/infra/maps/map.util.ts` reuses the same server key for NestJS flows that talk directly to Google.
 
-   If those files resolve the wrong key, double-check the `.env` files above or the Docker Compose overrides.
+  If those files resolve the wrong key, double-check the `.env` files above or the Docker Compose overrides.
 
-   The `docker-compose.yml` file now injects these keys by default so rebuilding the containers automatically wires the
-   correct credentials even if the host environment is empty.
+  The `docker-compose.yml` file requires the keys to be set (via shell env vars or
+  `apps/api/.env`) before the stack will start. Rebuild the containers after you
+  rotate credentials so the runtime picks up the new values.
 
    After modifying any of the `.env` files, restart the affected services so Docker picks up the new variables:
 

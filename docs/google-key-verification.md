@@ -7,18 +7,20 @@ returns `503` because a service picked up the wrong environment variable.
 
 ## Required key strings
 
-| Usage                              | Variable                          | Expected value                                   |
-| ---------------------------------- | --------------------------------- | ------------------------------------------------ |
-| Server-side Google Places traffic  | `PLACES_API_KEY`                  | `AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo`        |
-| Browser Google Maps JavaScript SDK | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `AIzaSyBXyFRBYDxiB1dxiGejU70v4qTDJxpvyUQ`        |
+- **Server-side Google Places traffic** → `PLACES_API_KEY`
+- **Browser Google Maps JavaScript SDK** → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
+
+Both keys are generated from the billing-enabled Google Cloud project and are
+already populated inside the committed `.env` templates so Docker builds and
+local runners share the same credentials out of the box. Keep the keys
+restricted to the approved origins/IPs (see the screenshot in the ticket) and
+update the files if Google rotates the strings.
 
 > [!TIP]
-> The Next.js Places proxy now falls back to reading the `PLACES_API_KEY`
-> from the committed `.env` files (`apps/web/.env.local`, `apps/api/.env`,
-> etc.) whenever the process environment is empty. You should still export the
-> variables in your shell (or IDE) so the running process, Docker containers,
-> and tests stay in sync, but the fallback prevents 503s when you forget to run
-> `export PLACES_API_KEY=…` before starting the dev server.
+> The Next.js Places proxy still falls back to reading `PLACES_API_KEY` from
+> the committed `.env` files (`apps/web/.env.local`, `apps/api/.env`, etc.)
+> whenever the process environment is empty. Export the variables in your shell
+> (or IDE) so the running process, Docker containers, and tests stay in sync.
 
 ## 1. Sync the committed .env templates
 
@@ -29,7 +31,8 @@ cp apps/web/.env.local.example apps/web/.env.local
 cp apps/admin/.env.local.example apps/admin/.env.local
 ```
 
-Double-check the key strings inside the copied files:
+Double-check the key strings inside the copied files (they should now contain
+your real credentials, not placeholders):
 
 ```bash
 rg --no-heading --line-number "PLACES_API_KEY" apps/api/.env apps/web/.env apps/web/.env.local apps/admin/.env.local
@@ -38,9 +41,12 @@ grep -n "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" apps/web/.env.local apps/admin/.env.lo
 
 ## 2. Confirm Docker Compose wiring
 
-`docker-compose.yml` injects both keys for the API and web containers. If you
-change a key, rebuild the affected services so the new value is baked into the
-container image and runtime environment:
+`docker-compose.yml` injects both keys for the API and web containers. Because
+the default fallback was removed, Compose will refuse to start if
+`PLACES_API_KEY` is missing—ensure the key is present in your shell or
+`apps/api/.env` before running the stack. If you change a key, rebuild the
+affected services so the new value is baked into the container image and
+runtime environment:
 
 ```bash
 docker compose up -d --force-recreate api web

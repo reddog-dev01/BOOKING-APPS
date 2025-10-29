@@ -215,3 +215,33 @@ describe("googlePlacesRest circuit breaker", () => {
     resetPlacesCircuitBreakerForTests();
   });
 });
+
+describe("googlePlacesRest API key resolution", () => {
+  it("allows IP-restricted production keys", async () => {
+    jest.resetModules();
+    process.env.PLACES_API_KEY = "AIzaSyB3RRbbqQKUFLsTlw_SnDa8io3bKbx2Kuo";
+
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { fetchAutocomplete, resetPlacesCircuitBreakerForTests, resetPlacesKeyCacheForTests } =
+      await import("../lib/server/googlePlacesRest");
+
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({ suggestions: [] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(fetchAutocomplete({ input: "Hue" })).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('"msg":"places.placeholder_key_detected"'),
+    );
+
+    warnSpy.mockRestore();
+    resetPlacesKeyCacheForTests();
+    resetPlacesCircuitBreakerForTests();
+    delete process.env.PLACES_API_KEY;
+    delete (global as { fetch?: unknown }).fetch;
+  });
+});
