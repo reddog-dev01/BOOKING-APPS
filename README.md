@@ -68,6 +68,76 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
 
   If those files resolve the wrong key, double-check the `.env` files above or the Docker Compose overrides.
 
+  ### Load the Maps JavaScript SDK for the client widget
+
+  The `/api/places/*` proxy only covers server-to-server requests. To power the
+  Places Autocomplete widget directly in the browser you must load the Maps
+  JavaScript SDK with the `places` library using your
+  `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, then bind the widget to an input element.
+
+  ```tsx
+  // apps/web/app/layout.tsx (or any client component rendered on every page)
+  import Script from "next/script";
+
+  export default function RootLayout({ children }: { children: React.ReactNode }) {
+    return (
+      <html lang="vi">
+        <body>
+          <Script
+            id="google-maps"
+            strategy="afterInteractive"
+            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&language=vi`}
+          />
+          {children}
+        </body>
+      </html>
+    );
+  }
+  ```
+
+  After the script loads, instantiate the widget on the desired input. The
+  snippet below assumes you render the field from a client component so it can
+  access the `google.maps` global:
+
+  ```tsx
+  // apps/web/components/LocationAutocomplete.tsx
+  "use client";
+
+  import { useEffect, useRef } from "react";
+
+  export function LocationAutocomplete(props: React.InputHTMLAttributes<HTMLInputElement>) {
+    const inputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+      if (!inputRef.current || typeof window === "undefined" || !window.google?.maps?.places) {
+        return;
+      }
+
+      const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
+        fields: ["place_id", "formatted_address", "geometry", "name"],
+        componentRestrictions: { country: ["vn"] },
+      });
+
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        // TODO: handle the selected place (persist to form, call API, etc.)
+      });
+
+      return () => {
+        google.maps.event.clearInstanceListeners(autocomplete);
+      };
+    }, []);
+
+    return <input ref={inputRef} {...props} />;
+  }
+  ```
+
+  Make sure the browser key allow-list covers every dev origin you launch the
+  web app on (`http://localhost:3005`, `http://127.0.0.1:3005`, fallback ports
+  such as `3000`/`3008`, and your production domain). If you see
+  `RefererNotAllowedMapError` in the browser console, update the HTTP referrer
+  restrictions before retrying.
+
   The `docker-compose.yml` file requires the keys to be set (via shell env vars or
   `apps/api/.env`) before the stack will start. Rebuild the containers after you
   rotate credentials so the runtime picks up the new values.

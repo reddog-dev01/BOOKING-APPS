@@ -104,7 +104,25 @@ to the Vietnamese guidance quoted at the top of this document—enable Google
 Cloud billing for the project and retry. HTTP 503 signals a missing or
 mismatched `PLACES_API_KEY`—repeat the steps above to find the mismatch.
 
-## 5. Restart from scratch when values change
+## 5. Validate the client-side Places widget
+
+The browser key must successfully load the Maps JavaScript SDK with the
+`places` library from every allowed referrer. Launch the web app and open DevTools
+to confirm the script loads without `RefererNotAllowedMapError` messages:
+
+```bash
+pnpm --filter web dev
+# In a browser tab open the printed localhost URL and check the Network tab for
+# https://maps.googleapis.com/maps/api/js?key=<NEXT_PUBLIC_GOOGLE_MAPS_API_KEY>&libraries=places
+```
+
+When you render an autocomplete input (for example with the
+`LocationAutocomplete` component shown in the README), selecting a prediction
+should call your change handler without logging additional Google errors. If the
+script fails to load, update the HTTP referrer allow-list for the browser key to
+match the exact scheme/host/port reported in the DevTools request.
+
+## 6. Restart from scratch when values change
 
 Whenever the key strings or referrer/IP allow-lists change, rebuild the
 containers and restart local dev servers so every process picks up the new
