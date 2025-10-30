@@ -245,3 +245,23 @@ describe("googlePlacesRest API key resolution", () => {
     delete (global as { fetch?: unknown }).fetch;
   });
 });
+
+describe("googlePlacesRest env parsing", () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+
+  it("supports export syntax when reading env files", async () => {
+    const module = await import("../lib/server/googlePlacesRest");
+    expect(
+      module.__testing_extractKeyFromEnvFile(`export   PLACES_API_KEY =  "abc123"`),
+    ).toBe("abc123");
+  });
+
+  it("strips inline comments for unquoted values", async () => {
+    const module = await import("../lib/server/googlePlacesRest");
+    expect(
+      module.__testing_extractKeyFromEnvFile(`PLACES_API_KEY=abc123 # comment here`),
+    ).toBe("abc123");
+  });
+});
