@@ -68,17 +68,26 @@ Repository cung cấp `docker-compose.yml` đa dịch vụ và Dockerfile riêng
   3. **Tạo key server cho backend (`PLACES_API_KEY`)**
 
      ```bash
-     PLACES_KEY_NAME=$(gcloud beta services api-keys create \
+     gcloud beta services api-keys create \
        --project="$PROJECT_ID" \
        --display-name="places-server-dev" \
-       --api-target="service=places.googleapis.com" \
-       --format="value(name)")
+       --api-target="service=places.googleapis.com"
 
-     PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
+     export PLACES_KEY_NAME=$(gcloud services api-keys list \
        --project="$PROJECT_ID" \
-       --format="value(keyString)")
+       --filter='displayName=places-server-dev' \
+       --sort-by='~createTime' \
+       --limit=1 \
+       --format='value(name)')
+
+     export PLACES_KEY=$(gcloud services api-keys get-key-string "$PLACES_KEY_NAME" \
+       --project="$PROJECT_ID" \
+       --format='value(keyString)')
      echo "PLACES_API_KEY=$PLACES_KEY"
      ```
+
+     `PLACES_KEY_NAME` có dạng `projects/<PROJECT_ID>/locations/global/keys/<uid>` và là giá trị bạn dùng cho mọi lệnh describe/upd
+ate. Nếu tạo nhiều key cùng display name, hãy xoá key cũ để tránh nhầm lẫn.
 
      Giới hạn key theo IP outbound của server/dev box:
 
@@ -93,16 +102,22 @@ Repository cung cấp `docker-compose.yml` đa dịch vụ và Dockerfile riêng
   4. **Tạo key browser cho Maps JavaScript (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`)**
 
      ```bash
-     MAPS_JS_KEY_NAME=$(gcloud beta services api-keys create \
+     gcloud beta services api-keys create \
        --project="$PROJECT_ID" \
        --display-name="maps-js-browser-dev" \
        --api-target="service=maps-backend.googleapis.com" \
-       --api-target="service=places.googleapis.com" \
-       --format="value(name)")
+       --api-target="service=places.googleapis.com"
 
-     MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
+     export MAPS_JS_KEY_NAME=$(gcloud services api-keys list \
        --project="$PROJECT_ID" \
-       --format="value(keyString)")
+       --filter='displayName=maps-js-browser-dev' \
+       --sort-by='~createTime' \
+       --limit=1 \
+       --format='value(name)')
+
+     export MAPS_JS_KEY=$(gcloud services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
+       --project="$PROJECT_ID" \
+       --format='value(keyString)')
      echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY"
      ```
 
@@ -111,7 +126,7 @@ Repository cung cấp `docker-compose.yml` đa dịch vụ và Dockerfile riêng
      ```bash
      gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
        --project="$PROJECT_ID" \
-       --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,http://localhost:3008/*,https://<domain-production>/*" \
+       --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,http://localhost:3000/*,http://127.0.0.1:3000/*,http://localhost:3008/*,http://127.0.0.1:3008/*,https://<domain-production>/*" \
        --api-target="service=maps-backend.googleapis.com" \
        --api-target="service=places.googleapis.com"
      ```
@@ -219,10 +234,11 @@ Repository cung cấp `docker-compose.yml` đa dịch vụ và Dockerfile riêng
 
   7. **Smoke test cả proxy lẫn widget**
 
-     - Proxy REST: mở terminal mới và chạy
+     - Proxy REST: mở terminal mới, thay `WEB_PORT` bằng port Next.js dev log in ra (mặc định 3005, fallback 3000/3008):
 
        ```bash
-       curl -i http://localhost:3000/api/places/autocomplete \
+       WEB_PORT=3005
+       curl -i "http://localhost:${WEB_PORT}/api/places/autocomplete" \
          -H 'content-type: application/json' \
          -d '{"input":"ho chi"}'
        ```

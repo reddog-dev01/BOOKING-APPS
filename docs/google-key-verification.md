@@ -10,7 +10,7 @@ Làm theo mục “Lộ trình tạo mới hai key Google” trong [README](../R
 - Sinh key server, giới hạn theo IP và lưu vào biến `PLACES_API_KEY`.
 - Sinh key browser, giới hạn referrer (localhost các port dev & domain production) và lưu vào `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
 
-Ghi chú các biến shell `PLACES_KEY_NAME`, `MAPS_JS_KEY_NAME`, `PLACES_KEY`, `MAPS_JS_KEY` để dùng trong bước xác minh.
+Ghi chú các biến shell `PLACES_KEY_NAME`, `MAPS_JS_KEY_NAME`, `PLACES_KEY`, `MAPS_JS_KEY` (README đã export sẵn) để dùng trong bước xác minh.
 
 ## 2. Đồng bộ tất cả file `.env`
 
@@ -38,16 +38,17 @@ gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
 ```
 
 - IP outbound (khi chạy Docker dev) phải nằm trong danh sách `allowedIps`.
-- Origin dev phổ biến (`http://localhost:3005/*`, `http://127.0.0.1:3005/*`, fallback 3000/3008, domain production) phải có trong `allowedReferrers`.
+- Origin dev phổ biến (`http://localhost:3005/*`, `http://127.0.0.1:3005/*`, fallback `http://localhost:3000/*`, `http://127.0.0.1:3000/*`, `http://localhost:3008/*`, `http://127.0.0.1:3008/*`, cùng domain production) phải có trong `allowedReferrers`.
 
-Nếu thiếu, cập nhật ngay bằng `gcloud beta services api-keys update ... --allowed-ips/--allowed-referrers` rồi đợi vài phút để Google đồng bộ.
+Nếu thiếu, cập nhật ngay bằng `gcloud beta services api-keys update "$PLACES_KEY_NAME" ...` hoặc `... "$MAPS_JS_KEY_NAME" ...` rồi đợi vài phút để Google đồng bộ.
 
 ## 4. Smoke test backend proxy
 
 ```bash
 pnpm --filter web dev &
 sleep 5
-curl -i http://localhost:3000/api/places/autocomplete \
+WEB_PORT=3005 # thay bằng port Next.js dev đang chạy (3005 mặc định, có thể fallback 3000/3008)
+curl -i "http://localhost:${WEB_PORT}/api/places/autocomplete" \
   -H 'content-type: application/json' \
   -d '{"input":"ho chi"}'
 ```
