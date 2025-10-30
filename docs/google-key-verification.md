@@ -20,9 +20,11 @@ billing on the project that owns both keys.
 
 Both keys are generated from the billing-enabled Google Cloud project and are
 already populated inside the committed `.env` templates so Docker builds and
-local runners share the same credentials out of the box. Keep the keys
-restricted to the approved origins/IPs (see the screenshot in the ticket) and
-update the files if Google rotates the strings.
+local runners share the same credentials out of the box. If the keys were
+deleted, follow the "Create new Places + Maps API keys" instructions in the
+[root README](../README.md) to provision replacements before continuing. Keep
+the keys restricted to the approved origins/IPs (see the screenshot in the
+ticket) and update the files if Google rotates the strings.
 
 > [!TIP]
 > The Next.js Places proxy still falls back to reading `PLACES_API_KEY` from

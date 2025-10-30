@@ -88,7 +88,64 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    export MAPS_JS_KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
    ```
 
-   To fetch the dedicated keys from the `inbound-object-476110-d5` project and apply the correct restrictions, run:
+  If the original keys were deleted, create brand-new credentials before populating the `.env` files. The steps below assume
+  you already linked the project to an active billing account.
+
+  ```bash
+  # Make sure the required APIs are enabled on the project
+  gcloud services enable \
+    maps-backend.googleapis.com \
+    places.googleapis.com \
+    geocoding-backend.googleapis.com \
+    --project="$PROJECT_ID"
+
+  # Create a new server key for backend Places requests
+  PLACES_KEY_NAME=$(gcloud beta services api-keys create \
+    --project="$PROJECT_ID" \
+    --display-name="places-server-dev" \
+    --api-target="service=places.googleapis.com" \
+    --format="value(name)")
+
+  # Create a new browser key for the Maps JavaScript SDK (also allow Places)
+  MAPS_JS_KEY_NAME=$(gcloud beta services api-keys create \
+    --project="$PROJECT_ID" \
+    --display-name="maps-js-browser-dev" \
+    --api-target="service=maps-backend.googleapis.com" \
+    --api-target="service=places.googleapis.com" \
+    --format="value(name)")
+
+  # Fetch the key strings so they can be stored in .env files
+  PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
+    --project="$PROJECT_ID" \
+    --format="value(keyString)")
+  MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
+    --project="$PROJECT_ID" \
+    --format="value(keyString)")
+
+  echo "Server key (PLACES_API_KEY): $PLACES_KEY"
+  echo "Browser key (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY): $MAPS_JS_KEY"
+  ```
+
+  Apply the minimum required restrictions before the keys are used by Docker or local dev servers:
+
+  ```bash
+  ALLOWED_IPS="<replace-with-your-public-ip>/32"
+
+  # Lock the server key down to the Places API and your outbound IP addresses
+  gcloud beta services api-keys update "$PLACES_KEY_NAME" \
+    --project="$PROJECT_ID" \
+    --allowed-ips="$ALLOWED_IPS" \
+    --api-target="service=places.googleapis.com"
+
+  # Allow the browser key to be used from trusted localhost/dev origins
+  gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
+    --project="$PROJECT_ID" \
+    --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,http://localhost:3007/*" \
+    --api-target="service=maps-backend.googleapis.com" \
+    --api-target="service=places.googleapis.com"
+  ```
+
+  To fetch the dedicated keys from the `inbound-object-476110-d5` project and apply the correct restrictions, run:
 
    ```bash
    # Ensure the gcloud beta component is available
