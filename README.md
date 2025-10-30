@@ -89,9 +89,9 @@ Repository cung cấp `docker-compose.yml` đa dịch vụ và Dockerfile riêng
 
   1. **Chuẩn bị dự án Google Cloud**
 
-     ```bash
-     export PROJECT_ID="<project-id-cua-ban>"
-     gcloud config set project "$PROJECT_ID"
+    ```bash
+    export PROJECT_ID="inbound-object-476110-d5"
+    gcloud config set project "$PROJECT_ID"
 
      # Đảm bảo dự án đã liên kết billing trước khi tiếp tục.
      gcloud beta billing projects describe "$PROJECT_ID" \
@@ -102,33 +102,33 @@ Repository cung cấp `docker-compose.yml` đa dịch vụ và Dockerfile riêng
 
   2. **Bật các API cần thiết**
 
-     ```bash
-     gcloud services enable \
-       maps-backend.googleapis.com \
-       places.googleapis.com \
-       geocoding-backend.googleapis.com \
-       --project="$PROJECT_ID"
+    ```bash
+    gcloud services enable \
+      maps-backend.googleapis.com \
+      places.googleapis.com \
+      geocoding-backend.googleapis.com \
+      --project="$PROJECT_ID"
      ```
 
   3. **Tạo key server cho backend (`PLACES_API_KEY`)**
 
-     ```bash
-     gcloud beta services api-keys create \
-       --project="$PROJECT_ID" \
-       --display-name="places-server-dev" \
-       --api-target="service=places.googleapis.com"
+    ```bash
+    gcloud beta services api-keys create \
+      --project="$PROJECT_ID" \
+      --display-name="places-server-dev" \
+      --api-target="service=places.googleapis.com"
 
-     export PLACES_KEY_NAME=$(gcloud services api-keys list \
-       --project="$PROJECT_ID" \
-       --filter='displayName=places-server-dev' \
-       --sort-by='~createTime' \
-       --limit=1 \
-       --format='value(name)')
+    export PLACES_KEY_NAME=$(gcloud services api-keys list \
+      --project="$PROJECT_ID" \
+      --filter='displayName=places-server-dev' \
+      --sort-by='~createTime' \
+      --limit=1 \
+      --format='value(name)')
 
-     export PLACES_KEY=$(gcloud services api-keys get-key-string "$PLACES_KEY_NAME" \
-       --project="$PROJECT_ID" \
-       --format='value(keyString)')
-     echo "PLACES_API_KEY=$PLACES_KEY"
+    export PLACES_KEY=$(gcloud services api-keys get-key-string "$PLACES_KEY_NAME" \
+      --project="$PROJECT_ID" \
+      --format='value(keyString)')
+    echo "PLACES_API_KEY=$PLACES_KEY"
      ```
 
      `PLACES_KEY_NAME` có dạng `projects/<PROJECT_ID>/locations/global/keys/<uid>` và là giá trị bạn dùng cho mọi lệnh describe/upd
@@ -146,24 +146,24 @@ ate. Nếu tạo nhiều key cùng display name, hãy xoá key cũ để tránh 
 
   4. **Tạo key browser cho Maps JavaScript (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`)**
 
-     ```bash
-     gcloud beta services api-keys create \
-       --project="$PROJECT_ID" \
-       --display-name="maps-js-browser-dev" \
-       --api-target="service=maps-backend.googleapis.com" \
-       --api-target="service=places.googleapis.com"
+    ```bash
+    gcloud beta services api-keys create \
+      --project="$PROJECT_ID" \
+      --display-name="maps-js-browser-dev" \
+      --api-target="service=maps-backend.googleapis.com" \
+      --api-target="service=places.googleapis.com"
 
-     export MAPS_JS_KEY_NAME=$(gcloud services api-keys list \
-       --project="$PROJECT_ID" \
-       --filter='displayName=maps-js-browser-dev' \
-       --sort-by='~createTime' \
-       --limit=1 \
-       --format='value(name)')
+    export MAPS_JS_KEY_NAME=$(gcloud services api-keys list \
+      --project="$PROJECT_ID" \
+      --filter='displayName=maps-js-browser-dev' \
+      --sort-by='~createTime' \
+      --limit=1 \
+      --format='value(name)')
 
-     export MAPS_JS_KEY=$(gcloud services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
-       --project="$PROJECT_ID" \
-       --format='value(keyString)')
-     echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY"
+    export MAPS_JS_KEY=$(gcloud services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
+      --project="$PROJECT_ID" \
+      --format='value(keyString)')
+    echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY"
      ```
 
      Giới hạn referrer khớp với origin dev & production bạn dùng:
