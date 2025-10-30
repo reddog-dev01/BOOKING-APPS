@@ -18,8 +18,14 @@ Ghi chú các biến shell `PLACES_KEY_NAME`, `MAPS_JS_KEY_NAME`, `PLACES_KEY`, 
 REPO_DIR=~/booking-app # thay đường dẫn nếu cần
 cd "$REPO_DIR"
 
+export PLACES_API_KEY="$PLACES_KEY"
+export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="$MAPS_JS_KEY"
+
 WEB_PORT=3005 pnpm apply:google-keys
 pnpm check:google-keys
+
+# Tuỳ chọn: xoá biến shell sau khi đồng bộ để tránh rò rỉ history
+unset PLACES_API_KEY NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ```
 
 - `apply:google-keys` tự sao chép `.env.example` nếu thiếu và cập nhật giá trị `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` theo biến shell hiện tại.
