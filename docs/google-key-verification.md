@@ -15,14 +15,19 @@ Ghi chú các biến shell `PLACES_KEY_NAME`, `MAPS_JS_KEY_NAME`, `PLACES_KEY`, 
 ## 2. Đồng bộ tất cả file `.env`
 
 ```bash
+REPO_DIR=~/booking-app # thay đường dẫn nếu cần
+cd "$REPO_DIR"
+
+WEB_PORT=3005 pnpm apply:google-keys
 pnpm check:google-keys
 ```
 
-- Script đọc `apps/api/.env`, `apps/web/.env*`, `apps/admin/.env.local` (nếu tồn tại) và đảm bảo không còn placeholder.
+- `apply:google-keys` tự sao chép `.env.example` nếu thiếu và cập nhật giá trị `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` theo biến shell hiện tại.
+- `check:google-keys` đọc `apps/api/.env`, `apps/web/.env*`, `apps/admin/.env.local` (nếu tồn tại) và đảm bảo không còn placeholder.
 - Nếu ở bước 3–4 bạn vẫn đang giữ các biến shell `PLACES_KEY`/`MAPS_JS_KEY` hoặc `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, script sẽ so sánh trực tiếp để chắc chắn mọi file dùng chung một giá trị.
 - Khi biết chính xác chuỗi key cũ, export `GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"` trước khi chạy để script báo lỗi nếu vô tình sót.
 
-Sau khi script trả về trạng thái thành công, restart container để nạp key mới:
+Sau khi các script trả về trạng thái thành công, restart container để nạp key mới:
 
 ```bash
 docker compose up -d --force-recreate api web

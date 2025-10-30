@@ -178,59 +178,28 @@ ate. Nếu tạo nhiều key cùng display name, hãy xoá key cũ để tránh 
 
   5. **Ghi key vào các file `.env`**
 
-     Điền hai giá trị vừa tạo vào toàn bộ entry point:
+     Export hai biến shell `PLACES_KEY` và `MAPS_JS_KEY` từ bước 3–4 rồi chạy script đồng bộ. Lệnh dưới đây giả định repository nằm tại `~/booking-app`; thay đổi đường dẫn nếu bạn clone ở vị trí khác.
 
      ```bash
-     cat <<EOF > apps/api/.env
-     PORT=3006
-     CORS_ORIGINS=http://localhost:3005,http://127.0.0.1:3005
-     RL_MAX=120
-     RL_WINDOW=1 minute
-     RL_ALLOWLIST=
-     PLACES_API_KEY=$PLACES_KEY
-     DATABASE_URL=postgresql://booking:secret@db:5432/booking?schema=public
-     EOF
+     REPO_DIR=~/booking-app
+     cd "$REPO_DIR"
 
-    WEB_PORT=3005 # thay 3005 bằng port Next.js dev bạn đang dùng (3005/3000/3008)
+     # WEB_PORT = port Next.js dev thực tế (3005 mặc định, fallback 3000/3008)
+     WEB_PORT=3005 pnpm apply:google-keys
+     pnpm check:google-keys
+     ```
 
-    cat <<EOF > apps/web/.env
-    PLACES_API_KEY=$PLACES_KEY
-    GOOGLE_MAPS_REFERER=http://localhost:${WEB_PORT}/
-    EOF
+     - `apply:google-keys` sẽ tự sao chép file `.env.example` nếu chưa tồn tại, thay thế toàn bộ biến `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` và cập nhật `GOOGLE_MAPS_REFERER` cho đúng port đang dùng.
+     - `check:google-keys` xác thực rằng không còn placeholder/key cũ, đồng thời so sánh với các biến shell đã export.
+     - Nếu bạn nhớ chính xác key lịch sử và muốn ép kiểm tra, export denylist trước khi chạy:
 
-    cat <<EOF > apps/web/.env.local
-    PLACES_API_KEY=$PLACES_KEY
-    GOOGLE_MAPS_REFERER=http://localhost:${WEB_PORT}/
-    NEXT_PUBLIC_API_BASE=http://127.0.0.1:3006
-    INTERNAL_API_BASE=http://127.0.0.1:3006
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY
-    NEXT_PUBLIC_QUOTE_PATH=/pricing/quote
-    NEXT_PUBLIC_BOOKINGS_PATH=/bookings
-    EOF
+       ```bash
+       export GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"
+       pnpm check:google-keys
+       ```
 
-    cat <<EOF > apps/admin/.env.local
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_JS_KEY
-    GOOGLE_MAPS_REFERER=http://localhost:3007/ # sửa nếu Admin chạy port khác
-    PLACES_API_KEY=$PLACES_KEY
-    EOF
-    ```
-
-    Sau khi ghi đè các file `.env`, chạy script kiểm tra đồng bộ key (giữ nguyên các biến `PLACES_KEY`/`MAPS_JS_KEY` đã export ở bước trên):
-
-    ```bash
-    pnpm check:google-keys
-    ```
-
-    - Script sẽ báo lỗi nếu còn placeholder, key nằm trong `GOOGLE_KEY_DENYLIST` hoặc giá trị khác với biến shell đã export.
-    - Nếu bạn nhớ chính xác key cũ và muốn ép kiểm tra, export danh sách trước khi chạy:
-
-      ```bash
-      export GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"
-      pnpm check:google-keys
-      ```
-
-    > [!NOTE]
-    > `docker-compose.yml` buộc phải có `PLACES_API_KEY` và `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. Nếu quên cập nhật `.env`, lệnh `docker compose up` sẽ lỗi ngay thay vì chạy với key cũ.
+     > [!NOTE]
+     > `docker-compose.yml` buộc phải có `PLACES_API_KEY` và `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`. Nếu quên cập nhật `.env`, lệnh `docker compose up` sẽ lỗi ngay thay vì chạy với key cũ.
 
      Sau khi cập nhật, restart các service để container/process nạp giá trị mới:
 
