@@ -38,9 +38,12 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    components. Use a *separate* browser-restricted key for the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` value in
    `apps/web/.env.local` and `apps/admin/.env.local`.
 
-   The web app’s Places proxy now falls back to these `.env` files if the process environment is empty, which prevents
-   `503 Service Unavailable` responses when you forget to export `PLACES_API_KEY` before starting `pnpm --filter web dev`.
-   Still keep the shell variables in sync so Docker, local scripts, and test runners resolve the same credentials.
+  The web app’s Places proxy now falls back to these `.env` files if the process environment is empty, which prevents
+  `503 Service Unavailable` responses when you forget to export `PLACES_API_KEY` before starting `pnpm --filter web dev`.
+  Still keep the shell variables in sync so Docker, local scripts, and test runners resolve the same credentials. If the
+  proxy responds with `503` and the body contains `Google Places yêu cầu bật Billing cho dự án chứa API key`, the
+  upstream Places API rejected the request because billing is disabled on the Google Cloud project—follow the billing
+  troubleshooting steps below and then retry after the 10‑minute circuit breaker window expires.
 
   The quick audit checklist in [`docs/google-key-verification.md`](docs/google-key-verification.md)
   walks through verifying that every service (.env files, Docker Compose, and running
@@ -153,9 +156,10 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
 
    > 💡 Google Places APIs require billing to be enabled on the Cloud project that owns the keys. If you see `This API method
    > requires billing to be enabled`, visit the [Google Cloud Billing page](https://console.cloud.google.com/billing) and link the
-   > project before retrying. Also review your IP/referrer allow-lists if requests still return HTTP 403.
+   > project before retrying. Also review your IP/referrer allow-lists if requests still return HTTP 403. The Places proxy caches
+   > billing failures for ten minutes, so restart the dev server or wait for the cache to expire after enabling billing.
 
-   ### Verify the keys and troubleshoot 403s
+   ### Verify the keys and troubleshoot 403/503s
 
    1. **Check restrictions in Google Cloud Console**
 
@@ -192,7 +196,14 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
       The command must return a billing account ID. If it is blank, enable billing from the Cloud Console before retrying API
       calls.
 
-   3. **Smoke test the Places proxy**
+   3. **Recognize the `/api/places/autocomplete` 503 message**
+
+      The Next.js route translates Google’s `FAILED_PRECONDITION` billing error into an HTTP 503 with the message `Google
+      Places yêu cầu bật Billing cho dự án chứa API key. Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.`
+      After enabling billing, restart the dev server (or wait ten minutes for the cache to clear) before reissuing the
+      request.
+
+   4. **Smoke test the Places proxy**
 
       ```bash
       # Terminal 1 – start the web app so the Next.js route handlers run
@@ -207,10 +218,10 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
       A healthy configuration returns HTTP 200 with JSON predictions. HTTP 403 indicates either billing is still disabled or the
       key restrictions do not match the incoming IP/referrer shown in the server logs.
 
-   4. **Inspect server logs** – Next.js logs the `places.autocomplete_failed` entries with the exact HTTP status from Google.
+   5. **Inspect server logs** – Next.js logs the `places.autocomplete_failed` entries with the exact HTTP status from Google.
       Use them to match failing requests to the corresponding key restriction.
 
-   5. **Confirm environment wiring (optional)** – If you need to prove that a Docker container or `.env` file carries the same
+   6. **Confirm environment wiring (optional)** – If you need to prove that a Docker container or `.env` file carries the same
       key string that Cloud Console shows, compare their SHA-256 hashes without printing the raw key:
 
       ```bash
