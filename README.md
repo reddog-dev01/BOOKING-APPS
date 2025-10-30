@@ -1,30 +1,28 @@
-# Booking Platform Monorepo
+# Monorepo Nền tảng Đặt chỗ
 
-This repository contains the services for the booking platform:
+Kho mã này chứa toàn bộ dịch vụ của nền tảng đặt chỗ:
 
-- `apps/api` – NestJS API that powers pricing, bookings, settings, and vehicle management.
-- `apps/web` – Next.js frontend for customer bookings.
-- `apps/admin` – Admin console (development via pnpm).
-- `packages/db` – Prisma schema and seed scripts shared across services.
+- `apps/api` – API NestJS xử lý giá, đặt chỗ, cấu hình và quản lý phương tiện.
+- `apps/web` – Frontend Next.js phục vụ khách hàng.
+- `apps/admin` – Bảng điều khiển quản trị (chạy bằng pnpm).
+- `packages/db` – Schema Prisma và script seed dùng chung.
 
-The repository uses pnpm workspaces and TypeScript across all packages.
+Tất cả package dùng chung TypeScript và pnpm workspaces.
 
-## Install dependencies
+## Cài đặt phụ thuộc
 
 ```bash
 pnpm install
 ```
 
 > [!NOTE]
-> pnpm v10 blocks packages with postinstall/build scripts until they are explicitly whitelisted. The workspace `.npmrc` now
-> allows the build steps required by Prisma, NestJS, Sharp, and related tooling so `pnpm install` and the Docker builds can run
-> `prisma generate` and other necessary setup automatically.
+> pnpm v10 chặn các package có postinstall/build script cho tới khi được whitelist rõ ràng. `.npmrc` của workspace đã cho phép các bước build Prisma, NestJS, Sharp... để `pnpm install` và quá trình build Docker có thể chạy `prisma generate` và các bước chuẩn bị cần thiết tự động.
 
-## Production-style Docker quickstart
+## Khởi động nhanh kiểu production bằng Docker
 
-The project ships with a multi-service `docker-compose.yml` and dedicated Dockerfiles for the API and web applications. This setup mirrors production expectations: each service is built via multi-stage Dockerfiles, runs as a non-root user, and is orchestrated together with Postgres and Caddy.
+Repository cung cấp `docker-compose.yml` đa dịch vụ và Dockerfile riêng cho API/web. Kiến trúc này phản ánh môi trường production: mỗi service build qua multi-stage Dockerfile, chạy bằng user không phải root và được phối hợp cùng Postgres + Caddy.
 
-1. **Prepare environment files**
+1. **Chuẩn bị file môi trường**
 
    ```bash
    cp apps/api/.env.example apps/api/.env
@@ -33,124 +31,93 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    cp apps/admin/.env.local.example apps/admin/.env.local
    ```
 
-   Update the copied files with your actual secrets (API keys, database URL, etc.). The API and web containers both consume
-   `apps/api/.env`, so the **server-side** Google Places key defined there is shared between NestJS and Next.js server
-   components. Use a *separate* browser-restricted key for the `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` value in
-   `apps/web/.env.local` and `apps/admin/.env.local`.
+   Cập nhật các file này bằng secret thật (API key, DATABASE_URL...). API và web container đều đọc `apps/api/.env`, vì vậy Google Places key dùng cho **server** (`PLACES_API_KEY`) được chia sẻ giữa NestJS và server component của Next.js. Với frontend, dùng **riêng** một key bị giới hạn HTTP referrer cho `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` trong `apps/web/.env.local` và `apps/admin/.env.local`.
 
-  The web app’s Places proxy now falls back to these `.env` files if the process environment is empty, which prevents
-  `503 Service Unavailable` responses when you forget to export `PLACES_API_KEY` before starting `pnpm --filter web dev`.
-  Still keep the shell variables in sync so Docker, local scripts, and test runners resolve the same credentials. If the
-  proxy responds with `503` and the body contains `Google Places yêu cầu bật Billing cho dự án chứa API key`, the
-  upstream Places API rejected the request because billing is disabled on the Google Cloud project—follow the billing
-  troubleshooting steps below and then retry after the 10‑minute circuit breaker window expires.
+   Proxy Places trong web app sẽ fallback về các file `.env` nếu biến môi trường tiến trình trống, giúp tránh `503 Service Unavailable` khi quên `export PLACES_API_KEY` trước khi chạy `pnpm --filter web dev`. Tuy nhiên hãy giữ biến shell đồng bộ để Docker, script cục bộ và test runner đều lấy đúng credential. Nếu proxy trả về `503` với nội dung `Google Places yêu cầu bật Billing cho dự án chứa API key`, nghĩa là dự án Google Cloud chưa bật billing—làm theo phần xử lý sự cố bên dưới rồi đợi hết khoảng 10 phút circuit breaker.
 
-  The quick audit checklist in [`docs/google-key-verification.md`](docs/google-key-verification.md)
-  walks through verifying that every service (.env files, Docker Compose, and running
-  containers) resolves the same key strings end-to-end.
+   Checklist trong [`docs/google-key-verification.md`](docs/google-key-verification.md) hướng dẫn xác thực rằng mọi service (.env, Docker Compose, container đang chạy) đều nhận cùng một key.
 
-  > [!IMPORTANT]
-  > Billing-enabled Places (`PLACES_API_KEY`) and Maps JavaScript
-  > (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) keys are now pre-populated in the
-  > committed `.env` templates for local development. Keep the Google Cloud
-  > console restrictions in sync with the configured dev origins (e.g.
-  > `http://localhost:3005/*`, `http://127.0.0.1:3005/*`, `http://localhost:3007/*`).
-  > Update the values if the credentials rotate so Docker and local runners pick
-  > up the new strings immediately.
+   > [!IMPORTANT]
+   > Hai key Places (server) và Maps JavaScript (browser) đã được chèn sẵn vào `.env.example` phục vụ dev. Hãy giữ restriction trong Google Cloud Console khớp với origin dev thực tế (ví dụ `http://localhost:3005/*`, `http://127.0.0.1:3005/*`, `http://localhost:3007/*`). Khi xoay vòng credential, cập nhật các file ngay để Docker và runner nhận giá trị mới.
 
-   **Where these variables are consumed**
+   **Vị trí tiêu thụ các biến**
 
-   - `apps/web/lib/server/googlePlacesRest.ts` injects `PLACES_API_KEY` as the `X-Goog-Api-Key` header for the Places REST
-     calls that power `/api/places/autocomplete` and `/api/places/details`.
-   - `apps/web/Dockerfile` exposes `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` to the browser bundle so client components can load the
-     Maps JavaScript SDK.
-   - `apps/api/src/infra/maps/map.util.ts` reuses the same server key for NestJS flows that talk directly to Google.
+   - `apps/web/lib/server/googlePlacesRest.ts` gắn `PLACES_API_KEY` vào header `X-Goog-Api-Key` cho REST call `/api/places/autocomplete` và `/api/places/details`.
+   - `apps/web/Dockerfile` expose `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` cho bundle trình duyệt để load Maps JavaScript SDK.
+   - `apps/api/src/infra/maps/map.util.ts` tái sử dụng server key cho các luồng NestJS gọi trực tiếp Google.
 
-  If those files resolve the wrong key, double-check the `.env` files above or the Docker Compose overrides.
+   Nếu các file trên lấy sai key, hãy kiểm tra lại `.env` hoặc override trong Docker Compose.
 
-  ### Load the Maps JavaScript SDK for the client widget
+   ### Tải Maps JavaScript SDK để dùng widget Places phía client
 
-  The `/api/places/*` proxy only covers server-to-server requests. To power the
-  Places Autocomplete widget directly in the browser you must load the Maps
-  JavaScript SDK with the `places` library using your
-  `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, then bind the widget to an input element.
+   Proxy `/api/places/*` chỉ xử lý request server-to-server. Để chạy widget Places Autocomplete trực tiếp trên trình duyệt, bạn phải nạp Maps JavaScript SDK với `libraries=places` bằng `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, rồi bind widget vào input.
 
-  ```tsx
-  // apps/web/app/layout.tsx (or any client component rendered on every page)
-  import Script from "next/script";
+   ```tsx
+   // apps/web/app/layout.tsx (hoặc client component được render toàn site)
+   import Script from "next/script";
 
-  export default function RootLayout({ children }: { children: React.ReactNode }) {
-    return (
-      <html lang="vi">
-        <body>
-          <Script
-            id="google-maps"
-            strategy="afterInteractive"
-            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&language=vi`}
-          />
-          {children}
-        </body>
-      </html>
-    );
-  }
-  ```
+   export default function RootLayout({ children }: { children: React.ReactNode }) {
+     return (
+       <html lang="vi">
+         <body>
+           <Script
+             id="google-maps"
+             strategy="afterInteractive"
+             src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&language=vi`}
+           />
+           {children}
+         </body>
+       </html>
+     );
+   }
+   ```
 
-  After the script loads, instantiate the widget on the desired input. The
-  snippet below assumes you render the field from a client component so it can
-  access the `google.maps` global:
+   Sau khi script tải xong, khởi tạo widget ở input mong muốn. Đoạn mã dưới giả định component là client component để truy cập `google.maps` toàn cục:
 
-  ```tsx
-  // apps/web/components/LocationAutocomplete.tsx
-  "use client";
+   ```tsx
+   // apps/web/components/LocationAutocomplete.tsx
+   "use client";
 
-  import { useEffect, useRef } from "react";
+   import { useEffect, useRef } from "react";
 
-  export function LocationAutocomplete(props: React.InputHTMLAttributes<HTMLInputElement>) {
-    const inputRef = useRef<HTMLInputElement | null>(null);
+   export function LocationAutocomplete(props: React.InputHTMLAttributes<HTMLInputElement>) {
+     const inputRef = useRef<HTMLInputElement | null>(null);
 
-    useEffect(() => {
-      if (!inputRef.current || typeof window === "undefined" || !window.google?.maps?.places) {
-        return;
-      }
+     useEffect(() => {
+       if (!inputRef.current || typeof window === "undefined" || !window.google?.maps?.places) {
+         return;
+       }
 
-      const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
-        fields: ["place_id", "formatted_address", "geometry", "name"],
-        componentRestrictions: { country: ["vn"] },
-      });
+       const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
+         fields: ["place_id", "formatted_address", "geometry", "name"],
+         componentRestrictions: { country: ["vn"] },
+       });
 
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        // TODO: handle the selected place (persist to form, call API, etc.)
-      });
+       autocomplete.addListener("place_changed", () => {
+         const place = autocomplete.getPlace();
+         // TODO: lưu dữ liệu place vào form hoặc gọi API
+       });
 
-      return () => {
-        google.maps.event.clearInstanceListeners(autocomplete);
-      };
-    }, []);
+       return () => {
+         google.maps.event.clearInstanceListeners(autocomplete);
+       };
+     }, []);
 
-    return <input ref={inputRef} {...props} />;
-  }
-  ```
+     return <input ref={inputRef} {...props} />;
+   }
+   ```
 
-  Make sure the browser key allow-list covers every dev origin you launch the
-  web app on (`http://localhost:3005`, `http://127.0.0.1:3005`, fallback ports
-  such as `3000`/`3008`, and your production domain). If you see
-  `RefererNotAllowedMapError` in the browser console, update the HTTP referrer
-  restrictions before retrying.
+   Đảm bảo browser key allow-list bao phủ mọi origin dev bạn dùng (`http://localhost:3005`, `http://127.0.0.1:3005`, các port fallback như `3000`/`3008`, cùng domain production). Nếu gặp `RefererNotAllowedMapError` trong console, cập nhật restriction rồi thử lại.
 
-  The `docker-compose.yml` file requires the keys to be set (via shell env vars or
-  `apps/api/.env`) before the stack will start. Rebuild the containers after you
-  rotate credentials so the runtime picks up the new values.
+   `docker-compose.yml` yêu cầu các key phải được set (qua biến shell hoặc `apps/api/.env`) trước khi stack khởi động. Sau khi xoay key, rebuild container để runtime nạp giá trị mới.
 
-   After modifying any of the `.env` files, restart the affected services so Docker picks up the new variables:
+   Khi sửa `.env`, restart dịch vụ để Docker cập nhật biến:
 
    ```bash
    docker compose up -d --force-recreate api web
    ```
 
-   Export the project and key resource names up-front so every command has the context it needs. The `gcloud beta billing
-   projects describe` command in particular fails with `could not parse resource []` when `PROJECT_ID` is unset, so double
-   check these values before continuing.
+   Xuất trước các biến dự án và tên resource để mọi lệnh có đủ ngữ cảnh. `gcloud beta billing projects describe` sẽ báo lỗi `could not parse resource []` nếu thiếu `PROJECT_ID`, nên hãy kiểm tra kỹ trước khi chạy tiếp.
 
    ```bash
    export PROJECT_ID="inbound-object-476110-d5"
@@ -158,70 +125,69 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    export MAPS_JS_KEY_NAME="projects/339756545616/locations/global/keys/3ee1a3b8-875b-4a07-b25d-c6154a06657d"
    ```
 
-  If the original keys were deleted, create brand-new credentials before populating the `.env` files. The steps below assume
-  you already linked the project to an active billing account.
-
-  ```bash
-  # Make sure the required APIs are enabled on the project
-  gcloud services enable \
-    maps-backend.googleapis.com \
-    places.googleapis.com \
-    geocoding-backend.googleapis.com \
-    --project="$PROJECT_ID"
-
-  # Create a new server key for backend Places requests
-  PLACES_KEY_NAME=$(gcloud beta services api-keys create \
-    --project="$PROJECT_ID" \
-    --display-name="places-server-dev" \
-    --api-target="service=places.googleapis.com" \
-    --format="value(name)")
-
-  # Create a new browser key for the Maps JavaScript SDK (also allow Places)
-  MAPS_JS_KEY_NAME=$(gcloud beta services api-keys create \
-    --project="$PROJECT_ID" \
-    --display-name="maps-js-browser-dev" \
-    --api-target="service=maps-backend.googleapis.com" \
-    --api-target="service=places.googleapis.com" \
-    --format="value(name)")
-
-  # Fetch the key strings so they can be stored in .env files
-  PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
-    --project="$PROJECT_ID" \
-    --format="value(keyString)")
-  MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
-    --project="$PROJECT_ID" \
-    --format="value(keyString)")
-
-  echo "Server key (PLACES_API_KEY): $PLACES_KEY"
-  echo "Browser key (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY): $MAPS_JS_KEY"
-  ```
-
-  Apply the minimum required restrictions before the keys are used by Docker or local dev servers:
-
-  ```bash
-  ALLOWED_IPS="<replace-with-your-public-ip>/32"
-
-  # Lock the server key down to the Places API and your outbound IP addresses
-  gcloud beta services api-keys update "$PLACES_KEY_NAME" \
-    --project="$PROJECT_ID" \
-    --allowed-ips="$ALLOWED_IPS" \
-    --api-target="service=places.googleapis.com"
-
-  # Allow the browser key to be used from trusted localhost/dev origins
-  gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
-    --project="$PROJECT_ID" \
-    --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,http://localhost:3007/*" \
-    --api-target="service=maps-backend.googleapis.com" \
-    --api-target="service=places.googleapis.com"
-  ```
-
-  To fetch the dedicated keys from the `inbound-object-476110-d5` project and apply the correct restrictions, run:
+   Nếu key cũ đã bị xóa, tạo credential hoàn toàn mới trước khi populate `.env`. Các bước dưới giả định dự án đã liên kết billing.
 
    ```bash
-   # Ensure the gcloud beta component is available
+   # Bật các API cần thiết
+   gcloud services enable \
+     maps-backend.googleapis.com \
+     places.googleapis.com \
+     geocoding-backend.googleapis.com \
+     --project="$PROJECT_ID"
+
+   # Tạo server key cho Places backend
+   PLACES_KEY_NAME=$(gcloud beta services api-keys create \
+     --project="$PROJECT_ID" \
+     --display-name="places-server-dev" \
+     --api-target="service=places.googleapis.com" \
+     --format="value(name)")
+
+   # Tạo browser key cho Maps JavaScript SDK (kèm Places)
+   MAPS_JS_KEY_NAME=$(gcloud beta services api-keys create \
+     --project="$PROJECT_ID" \
+     --display-name="maps-js-browser-dev" \
+     --api-target="service=maps-backend.googleapis.com" \
+     --api-target="service=places.googleapis.com" \
+     --format="value(name)")
+
+   # Lấy key string để điền vào .env
+   PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
+     --project="$PROJECT_ID" \
+     --format="value(keyString)")
+   MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
+     --project="$PROJECT_ID" \
+     --format="value(keyString)")
+
+   echo "Server key (PLACES_API_KEY): $PLACES_KEY"
+   echo "Browser key (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY): $MAPS_JS_KEY"
+   ```
+
+   Áp restriction tối thiểu trước khi dùng với Docker/dev server:
+
+   ```bash
+   ALLOWED_IPS="<thay-bang-IP-cong-khai-cua-ban>/32"
+
+   # Giới hạn server key theo Places API và IP outbound của bạn
+   gcloud beta services api-keys update "$PLACES_KEY_NAME" \
+     --project="$PROJECT_ID" \
+     --allowed-ips="$ALLOWED_IPS" \
+     --api-target="service=places.googleapis.com"
+
+   # Cho phép browser key dùng từ các origin localhost đáng tin
+   gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
+     --project="$PROJECT_ID" \
+     --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,http://localhost:3007/*" \
+     --api-target="service=maps-backend.googleapis.com" \
+     --api-target="service=places.googleapis.com"
+   ```
+
+   Để lấy key có sẵn của dự án `inbound-object-476110-d5` và áp restriction chính xác, chạy:
+
+   ```bash
+   # Đảm bảo đã cài component beta
    gcloud components install beta --quiet
 
-   # Retrieve the key strings
+   # Lấy key string
    PLACES_KEY=$(gcloud beta services api-keys get-key-string "$PLACES_KEY_NAME" \
      --project="$PROJECT_ID" \
      --format="value(keyString)")
@@ -232,26 +198,26 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    echo "Server key (PLACES_API_KEY): $PLACES_KEY"
    echo "Browser key (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY): $MAPS_JS_KEY"
 
-   ALLOWED_IPS="<replace-with-your-public-ip>/32"
+   ALLOWED_IPS="<thay-bang-IP-cong-khai-cua-ban>/32"
 
-   # Apply IP allow-list restrictions to the server key (used for PLACES_API_KEY)
+   # Áp restriction IP cho server key
    gcloud beta services api-keys update "$PLACES_KEY_NAME" \
      --project=inbound-object-476110-d5 \
      --allowed-ips="$ALLOWED_IPS" \
      --api-target="service=places.googleapis.com"
 
-   # Apply HTTP referrer restrictions to the browser key (used for NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)
+   # Áp restriction referrer cho browser key
    gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
      --project=inbound-object-476110-d5 \
-     --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,https://<your-domain>/*" \
+     --allowed-referrers="http://localhost:3005/*,http://127.0.0.1:3005/*,https://<ten-mien-cua-ban>/*" \
      --api-target="service=maps-backend.googleapis.com" \
      --api-target="service=places.googleapis.com"
 
-   # (Optional) Verify the restrictions on existing key strings
+   # (Tuỳ chọn) Kiểm tra restriction của key hiện tại
    gcloud beta services api-keys lookup --key-string="$PLACES_KEY"
    gcloud beta services api-keys lookup --key-string="$MAPS_JS_KEY"
 
-   # Persist the server key for backend requests (NestJS + Next.js server components)
+   # Ghi server key cho backend (NestJS + Next.js server components)
    cat <<EOF > apps/api/.env
    PORT=3006
    CORS_ORIGINS=http://localhost:3005,http://127.0.0.1:3005,http://localhost:3007,http://127.0.0.1:3007
@@ -267,7 +233,7 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    GOOGLE_MAPS_REFERER=http://localhost:3005/
    EOF
 
-   # Persist the browser key (HTTP referrer restricted) for the frontend bundle
+   # Ghi browser key (bị giới hạn referrer) cho bundle frontend
    cat <<EOF > apps/web/.env.local
    PLACES_API_KEY=$PLACES_KEY
    GOOGLE_MAPS_REFERER=http://localhost:3005/
@@ -279,32 +245,26 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    EOF
    ```
 
-   Replace `<your-domain>` with the production hostname. Regenerate the key if you need to rotate secrets.
+   Thay `<ten-mien-cua-ban>` bằng hostname production. Nếu cần xoay key, tạo lại mới.
 
-   > 💡 Google Places APIs require billing to be enabled on the Cloud project that owns the keys. If you see `This API method
-   > requires billing to be enabled`, visit the [Google Cloud Billing page](https://console.cloud.google.com/billing) and link the
-   > project before retrying. Also review your IP/referrer allow-lists if requests still return HTTP 403. The Places proxy caches
-   > billing failures for ten minutes, so restart the dev server or wait for the cache to expire after enabling billing.
+   > 💡 Google Places yêu cầu bật billing cho dự án chứa key. Nếu gặp thông điệp `This API method requires billing to be enabled`, hãy vào [Google Cloud Billing](https://console.cloud.google.com/billing) để liên kết dự án rồi thử lại. Đồng thời rà soát allow-list IP/referrer nếu vẫn nhận HTTP 403. Proxy Places cache lỗi billing trong 10 phút; hãy restart dev server hoặc đợi cache hết hạn sau khi bật billing.
 
-   ### Verify the keys and troubleshoot 403/503s
+   ### Xác minh key và xử lý 403/503
 
-   1. **Check restrictions in Google Cloud Console**
+   1. **Kiểm tra restriction trong Google Cloud Console**
 
-      - Server key (`PLACES_API_KEY`): Application restriction = `IP addresses`; add your outbound public IPs (for Docker
-        Compose this is the host machine). API restriction = `Places API`.
-      - Browser key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`): Application restriction = `Websites`; add development origins such as
-        `http://localhost:3005/*` and production domains. API restriction = `Maps JavaScript API` + `Places API`.
+      - Server key (`PLACES_API_KEY`): Application restriction = `IP addresses`; thêm IP outbound của bạn (với Docker Compose là IP máy host). API restriction = `Places API`.
+      - Browser key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`): Application restriction = `Websites`; thêm origin dev như `http://localhost:3005/*` và domain production. API restriction = `Maps JavaScript API` + `Places API`.
 
-      If you run the web app on a different origin (for example `http://localhost:3000` or HTTPS), update the allow-list to
-      match the exact scheme, host, and port or Google will respond with `403 PERMISSION_DENIED`.
+      Nếu chạy web app trên origin khác (ví dụ `http://localhost:3000` hoặc HTTPS), cập nhật allow-list khớp chính xác scheme/host/port, nếu không Google sẽ trả `403 PERMISSION_DENIED`.
 
       ```bash
-      # Inspect the current browser key restrictions and confirm the allowedReferrers list
+      # Xem danh sách referrer hiện tại của browser key
       gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
         --project="$PROJECT_ID" \
         --format='get(restrictions.browserKeyRestrictions.allowedReferrers)'
 
-      # Add or replace referrers to match your dev server, e.g. localhost:3000 over HTTP and HTTPS
+      # Thêm/thay referrer để khớp dev server, ví dụ localhost:3000
       gcloud beta services api-keys update "$MAPS_JS_KEY_NAME" \
         --project="$PROJECT_ID" \
         --allowed-referrers="http://localhost:3000/*,https://localhost:3000/*" \
@@ -312,7 +272,7 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
         --api-target="service=places.googleapis.com"
       ```
 
-   2. **Ensure billing is active**
+   2. **Đảm bảo billing đang hoạt động**
 
       ```bash
       gcloud beta billing projects describe inbound-object-476110-d5 \
@@ -320,107 +280,71 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
         --format='value(billingAccountName)'
       ```
 
-      The command must return a billing account ID. If it is blank, enable billing from the Cloud Console before retrying API
-      calls.
+      Lệnh phải trả về ID tài khoản thanh toán. Nếu trống, bật billing trong Console trước khi gọi API.
 
-   3. **Recognize the `/api/places/autocomplete` 503 message**
+   3. **Nhận diện thông báo 503 từ `/api/places/autocomplete`**
 
-      The Next.js route translates Google’s `FAILED_PRECONDITION` billing error into an HTTP 503 with the message `Google
-      Places yêu cầu bật Billing cho dự án chứa API key. Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.`
-      After enabling billing, restart the dev server (or wait ten minutes for the cache to clear) before reissuing the
-      request.
+      Next.js route sẽ chuyển lỗi `FAILED_PRECONDITION` của Google thành HTTP 503 với nội dung tiếng Việt như trên. Sau khi bật billing, restart dev server (hoặc chờ 10 phút cache xoá) rồi gọi lại.
 
-   4. **Smoke test the Places proxy**
+   4. **Smoke test proxy Places**
 
       ```bash
-      # Terminal 1 – start the web app so the Next.js route handlers run
+      # Terminal 1 – chạy web app để route handler hoạt động
       pnpm --filter web dev
 
-      # Terminal 2 – exercise the autocomplete proxy
+      # Terminal 2 – gọi thử autocomplete proxy
       curl -i http://localhost:3000/api/places/autocomplete \
         -H 'content-type: application/json' \
         -d '{"input":"ho chi"}'
       ```
 
-      A healthy configuration returns HTTP 200 with JSON predictions. HTTP 403 indicates either billing is still disabled or the
-      key restrictions do not match the incoming IP/referrer shown in the server logs.
+      Nếu cấu hình đúng sẽ nhận HTTP 200 cùng JSON gợi ý. HTTP 403 báo billing chưa bật hoặc restriction sai. Nếu body gốc chứa `This API method requires billing to be enabled`, hãy bật billing theo hướng dẫn rồi thử lại. HTTP 503 báo thiếu/sai `PLACES_API_KEY`—hãy kiểm tra lại các bước trên.
 
-   5. **Inspect server logs** – Next.js logs the `places.autocomplete_failed` entries with the exact HTTP status from Google.
-      Use them to match failing requests to the corresponding key restriction.
+   5. **Kiểm tra log server** – Next.js log event `places.autocomplete_failed` kèm HTTP status thực tế từ Google. Dùng log để lần ra request thất bại tương ứng restriction nào.
 
-   6. **Confirm environment wiring (optional)** – If you need to prove that a Docker container or `.env` file carries the same
-      key string that Cloud Console shows, compare their SHA-256 hashes without printing the raw key:
+   6. **(Tuỳ chọn) So sánh hash giá trị** – Nếu cần chứng minh container hoặc `.env` chứa cùng key với Console mà không lộ key:
 
       ```bash
       export MAPS_JS_KEY=$(gcloud beta services api-keys get-key-string "$MAPS_JS_KEY_NAME" \
         --project="$PROJECT_ID" \
         --format='value(keyString)')
 
-      # Hash from Google Cloud
+      # Hash từ Google Cloud
       printf '%s' "$MAPS_JS_KEY" | sha256sum
 
-      # Hash from the running web container
+      # Hash từ container web đang chạy
       docker compose exec web sh -lc 'printf "%s" "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"' | sha256sum
       ```
 
-      Matching hashes confirm the value is wired correctly without leaking the secret.
+      Hash khớp chứng tỏ wiring chính xác mà không lộ secret.
 
-2. **Build the containers**
-
-   ```bash
-   docker compose build api web
-   ```
-
-3. **Start the stack**
+2. **Build container**
 
    ```bash
-   docker compose up -d db api web
+docker compose build api web
    ```
 
-   The API is exposed on `http://127.0.0.1:3006` and the web frontend on `http://127.0.0.1:3005` by default. If you need the
-   consolidated reverse proxy on port 80, start Caddy alongside the core services:
+3. **Khởi động stack**
 
    ```bash
-   docker compose up -d caddy
+docker compose up -d db api web
    ```
 
-   Caddy listens on `http://127.0.0.1:80` and `https://127.0.0.1:443` and forwards `/api/*` routes to the NestJS API while all
-   other paths hit the Next.js frontend.
+   API sẽ lắng nghe `http://127.0.0.1:3006`, frontend tại `http://127.0.0.1:3005`. Nếu cần reverse proxy hợp nhất trên port 80, chạy thêm Caddy:
 
-4. **Verify health checks**
+   ```bash
+docker compose up -d caddy
+   ```
+
+   Caddy lắng nghe `http://127.0.0.1:80` và `https://127.0.0.1:443`, forward `/api/*` tới NestJS, còn lại gửi tới Next.js.
+
+4. **Kiểm tra health**
 
    ```bash
    curl -i http://127.0.0.1:3006/healthz
    curl -I http://127.0.0.1:3005
    ```
 
-5. **(Optional) Enable HTTPS via Caddy**
+5. **(Tuỳ chọn) Bật HTTPS qua Caddy**
 
-   If you expose the stack publicly or need local HTTPS testing, keep the Caddy service running and update
-   `NEXT_PUBLIC_API_BASE` and `CORS_ORIGINS` to use your HTTPS domain when fronting through Caddy.
-
-> ⚠️ Postgres data is persisted in the named volume `pg`. Always take a backup before applying new Prisma migrations.
-
-## Local development (pnpm)
-
-If you prefer local development outside Docker, follow the service-specific READMEs (for example `apps/api/README.md`) for setup, environment variables, and sample curl commands.
-
-### Frontend dev server ports
-
-`pnpm --filter web dev` prefers port `3005`, but if that slot is busy it will try `3000` (the classic Next.js default) before scanning upwards for the next free port (skipping the API/Admin defaults on `3006`/`3007`). Always trust the port printed in the dev server banner. A common reason for landing on an alternate port (for example `http://127.0.0.1:3008`) is that `docker compose up web` is still running and occupying `3005`.
-
-To reclaim `3005`, stop the conflicting process and restart the dev server:
-
-```bash
-docker compose stop web   # or `docker compose down` to stop the entire stack
-pnpm --filter web dev
-```
-
-If you intentionally need a different port, pass it explicitly or export `WEB_DEV_PORT`:
-
-```bash
-pnpm --filter web dev -- --port 3010
-# or
-WEB_DEV_PORT=3010 pnpm --filter web dev
-```
-
+   Nếu public stack hoặc cần test HTTPS, giữ Caddy chạy và cập nhật `NEXT_PUBLIC_API_BASE`, `CORS_ORIGINS` sang domain HTTPS khi đi qua proxy.

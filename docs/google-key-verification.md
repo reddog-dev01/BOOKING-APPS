@@ -1,38 +1,24 @@
-# Google Maps & Places API key verification checklist
+# Checklist kiểm tra Google Maps & Places API key
 
-This checklist makes sure the server (`PLACES_API_KEY`) and browser
-(`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) keys are identical across every entry point
-(API, customer web, admin console, Docker Compose) so the Places proxy no longer
-returns `503` because a service picked up the wrong environment variable. It
-also documents how to resolve the Google error message:
+Checklist này đảm bảo hai key `PLACES_API_KEY` (server) và `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (browser) khớp nhau trên mọi entry point (API, web khách hàng, admin, Docker Compose) để proxy Places không còn trả `503` vì nhầm biến môi trường. Tài liệu cũng giải thích cách xử lý lỗi Google trả về:
 
 ```
 Google Places yêu cầu bật Billing cho dự án chứa API key. Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.
 ```
 
-If you see that payload from `/api/places/*`, follow step 4 below to enable
-billing on the project that owns both keys.
+Nếu gặp payload đó từ `/api/places/*`, hãy làm theo bước 4 để bật billing cho dự án sở hữu cả hai key.
 
-## Required key strings
+## Chuỗi key bắt buộc
 
-- **Server-side Google Places traffic** → `PLACES_API_KEY`
-- **Browser Google Maps JavaScript SDK** → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
+- **Gọi Google Places phía server** → `PLACES_API_KEY`
+- **Maps JavaScript SDK phía trình duyệt** → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
 
-Both keys are generated from the billing-enabled Google Cloud project and are
-already populated inside the committed `.env` templates so Docker builds and
-local runners share the same credentials out of the box. If the keys were
-deleted, follow the "Create new Places + Maps API keys" instructions in the
-[root README](../README.md) to provision replacements before continuing. Keep
-the keys restricted to the approved origins/IPs (see the screenshot in the
-ticket) and update the files if Google rotates the strings.
+Cả hai được tạo từ dự án Google Cloud đã bật billing và đã điền vào `.env.example` nên Docker và runner cục bộ chia sẻ credential ngay lập tức. Nếu key bị xóa, xem mục “Tạo key Places + Maps mới” trong [README gốc](../README.md) để cấp lại trước khi tiếp tục. Luôn giữ restriction đúng origin/IP cho phép (xem screenshot trong ticket) và cập nhật file nếu Google rotate chuỗi key.
 
 > [!TIP]
-> The Next.js Places proxy still falls back to reading `PLACES_API_KEY` from
-> the committed `.env` files (`apps/web/.env.local`, `apps/api/.env`, etc.)
-> whenever the process environment is empty. Export the variables in your shell
-> (or IDE) so the running process, Docker containers, and tests stay in sync.
+> Proxy Places trong Next.js vẫn fallback đọc `PLACES_API_KEY` từ `.env` (`apps/web/.env.local`, `apps/api/.env`...) khi biến môi trường trống. Hãy export biến trong shell/IDE để process đang chạy, container và test cùng giá trị.
 
-## 1. Sync the committed .env templates
+## 1. Đồng bộ file `.env`
 
 ```bash
 cp apps/api/.env.example apps/api/.env
@@ -41,32 +27,24 @@ cp apps/web/.env.local.example apps/web/.env.local
 cp apps/admin/.env.local.example apps/admin/.env.local
 ```
 
-Double-check the key strings inside the copied files (they should now contain
-your real credentials, not placeholders):
+Kiểm tra lại key trong file vừa copy (giờ phải chứa credential thật, không còn placeholder):
 
 ```bash
 rg --no-heading --line-number "PLACES_API_KEY" apps/api/.env apps/web/.env apps/web/.env.local apps/admin/.env.local
 grep -n "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" apps/web/.env.local apps/admin/.env.local docker-compose.yml
 ```
 
-## 2. Confirm Docker Compose wiring
+## 2. Xác nhận wiring trong Docker Compose
 
-`docker-compose.yml` injects both keys for the API and web containers. The file
-now falls back to the committed values in the `.env` templates, so Compose no
-longer fails fast when your shell variables are empty. Before deploying or
-sharing the stack, overwrite the defaults with your **real**, billing-enabled
-keys by copying the `.env.example` files (see step 1). Whenever you change a
-key, rebuild the affected services so the new value is baked into the container
-image and runtime environment:
+`docker-compose.yml` đã inject cả hai key cho container API và web. File này fallback về giá trị trong `.env` nên Compose không còn fail khi shell của bạn trống. Trước khi deploy hoặc chia sẻ stack, overwrite mặc định bằng key **thật** đã bật billing (bước 1). Mỗi lần đổi key, rebuild service để container và runtime nạp giá trị mới:
 
 ```bash
 docker compose up -d --force-recreate api web
 ```
 
-## 3. Verify running containers resolve the same values
+## 3. Kiểm tra container đang chạy nhận đúng giá trị
 
-Use the following commands to compare the keys inside running containers without
-printing the raw strings. The hashes must match between services.
+Dùng lệnh sau để so sánh hash key trong container mà không in chuỗi thật. Kết quả hash phải trùng nhau giữa các service.
 
 ```bash
 docker compose exec api sh -lc 'printf "%s" "$PLACES_API_KEY"' | sha256sum
@@ -74,21 +52,18 @@ docker compose exec web sh -lc 'printf "%s" "$PLACES_API_KEY"' | sha256sum
 docker compose exec web sh -lc 'printf "%s" "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"' | sha256sum
 ```
 
-For the admin console (which runs outside Docker in development) confirm that
-`.env.local` carries the same values:
+Với admin (chạy ngoài Docker khi dev), xác nhận `.env.local` chứa cùng giá trị:
 
 ```bash
 grep -n "PLACES_API_KEY" apps/admin/.env.local
 grep -n "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" apps/admin/.env.local
 ```
 
-If the admin app ever moves into a container, add it to `docker-compose.yml`
-with the same environment entries used by the `web` service.
+Nếu sau này đưa admin vào container, thêm environment tương tự service `web` trong `docker-compose.yml`.
 
-## 4. Smoke test the Places proxy
+## 4. Smoke test proxy Places
 
-Start the web app and exercise the proxy route to confirm the API keys are
-resolving correctly end-to-end:
+Khởi động web app và gọi route proxy để chắc chắn API key truyền đúng đầu-cuối:
 
 ```bash
 pnpm --filter web dev
@@ -97,36 +72,17 @@ curl -i http://localhost:3000/api/places/autocomplete \
   -d '{"input":"ho chi"}'
 ```
 
-A successful configuration returns HTTP 200 with JSON predictions. HTTP 403
-indicates billing or key restrictions. When the upstream response body includes
-`This API method requires billing to be enabled` the proxy rewrites the message
-to the Vietnamese guidance quoted at the top of this document—enable Google
-Cloud billing for the project and retry. HTTP 503 signals a missing or
-mismatched `PLACES_API_KEY`—repeat the steps above to find the mismatch.
+Nếu cấu hình ổn, response trả HTTP 200 kèm JSON `predictions`. HTTP 403 báo vấn đề billing hoặc restriction. Khi body upstream chứa `This API method requires billing to be enabled`, proxy sẽ rewrite thành thông điệp tiếng Việt ở đầu tài liệu—hãy bật billing rồi thử lại. HTTP 503 nghĩa là `PLACES_API_KEY` thiếu hoặc lệch—lặp lại các bước trên để tìm vị trí sai.
 
-## 5. Validate the client-side Places widget
+## 5. Xác thực widget Places phía client
 
-The browser key must successfully load the Maps JavaScript SDK with the
-`places` library from every allowed referrer. Launch the web app and open DevTools
-to confirm the script loads without `RefererNotAllowedMapError` messages:
+Browser key phải load thành công Maps JavaScript SDK với `libraries=places` từ mọi referrer hợp lệ. Chạy web app, mở DevTools và kiểm tra Network xem request `https://maps.googleapis.com/maps/api/js?key=<NEXT_PUBLIC_GOOGLE_MAPS_API_KEY>&libraries=places` tải thành công, không có `RefererNotAllowedMapError`.
 
-```bash
-pnpm --filter web dev
-# In a browser tab open the printed localhost URL and check the Network tab for
-# https://maps.googleapis.com/maps/api/js?key=<NEXT_PUBLIC_GOOGLE_MAPS_API_KEY>&libraries=places
-```
+Khi render input autocomplete (ví dụ component `LocationAutocomplete` trong README), chọn một gợi ý sẽ gọi handler của bạn mà không xuất hiện lỗi Google bổ sung. Nếu script không tải được, cập nhật danh sách HTTP referrer cho browser key khớp scheme/host/port trong request DevTools.
 
-When you render an autocomplete input (for example with the
-`LocationAutocomplete` component shown in the README), selecting a prediction
-should call your change handler without logging additional Google errors. If the
-script fails to load, update the HTTP referrer allow-list for the browser key to
-match the exact scheme/host/port reported in the DevTools request.
+## 6. Khởi động lại toàn bộ khi thay đổi giá trị
 
-## 6. Restart from scratch when values change
-
-Whenever the key strings or referrer/IP allow-lists change, rebuild the
-containers and restart local dev servers so every process picks up the new
-values:
+Mỗi lần thay key hoặc sửa allow-list IP/referrer, rebuild container và restart dev server để mọi process lấy giá trị mới:
 
 ```bash
 docker compose down
@@ -135,6 +91,4 @@ pnpm --filter web dev
 pnpm --filter admin dev
 ```
 
-Following this list guarantees that API, web, and admin always agree on the same
-Google credentials, preventing inconsistent keys from triggering circuit breaker
-503 responses.
+Tuân thủ checklist này sẽ giúp API, web và admin luôn đồng bộ credential Google, tránh việc giá trị lệch nhau kích hoạt cơ chế circuit breaker 503.
