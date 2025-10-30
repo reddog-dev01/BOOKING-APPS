@@ -22,3 +22,9 @@ apps/api/node_modules/
 *.env
 *.env.*
 !.env.example
+
+# local secrets
+*.env
+*.env.local
+apps/**/.env
+apps/**/.env.local
