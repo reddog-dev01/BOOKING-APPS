@@ -335,3 +335,22 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
 
 If you prefer local development outside Docker, follow the service-specific READMEs (for example `apps/api/README.md`) for setup, environment variables, and sample curl commands.
 
+### Frontend dev server ports
+
+`pnpm --filter web dev` prefers port `3005`, but it will automatically fall back to the next available port (skipping the API/Admin defaults on `3006`/`3007`). A common reason for seeing the web app on `http://127.0.0.1:3008` is that `docker compose up web` is still running and occupying `3005`.
+
+To reclaim `3005`, stop the conflicting process and restart the dev server:
+
+```bash
+docker compose stop web   # or `docker compose down` to stop the entire stack
+pnpm --filter web dev
+```
+
+If you intentionally need a different port, pass it explicitly or export `WEB_DEV_PORT`:
+
+```bash
+pnpm --filter web dev -- --port 3010
+# or
+WEB_DEV_PORT=3010 pnpm --filter web dev
+```
+

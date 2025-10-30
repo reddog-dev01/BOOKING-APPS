@@ -108,7 +108,10 @@ const collectReservedPorts = () => {
   return reserved;
 };
 
-const findAvailablePort = async (startingPort, excludedPorts = new Set()) => {
+const findAvailablePort = async (startingPort, excludedPorts = new Set(), options = {}) => {
+  const { onPortUnavailable } = options;
+
+  const reportedBusyPorts = new Set();
   let candidate = startingPort;
   const maxAttempts = 20;
 
@@ -127,6 +130,12 @@ const findAvailablePort = async (startingPort, excludedPorts = new Set()) => {
     if (await isPortAvailable(candidate)) {
       return candidate;
     }
+
+    if (typeof onPortUnavailable === 'function' && !reportedBusyPorts.has(candidate)) {
+      onPortUnavailable(candidate);
+      reportedBusyPorts.add(candidate);
+    }
+
     candidate += 1;
   }
 
@@ -168,7 +177,24 @@ const run = async () => {
   }
 
   const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3005;
-  const availablePort = await findAvailablePort(initialPort, collectReservedPorts());
+  const availablePort = await findAvailablePort(initialPort, collectReservedPorts(), {
+    onPortUnavailable: (port) => {
+      const guidance =
+        port === initialPort
+          ? 'The Docker web container or another Next.js dev server is probably still running.'
+          : undefined;
+
+      console.warn(
+        [
+          `Port ${port} is already in use.`,
+          guidance,
+          'Stop the conflicting process (e.g. `docker compose down`) or pass `--port <free-port>` to override.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+      );
+    },
+  });
   spawnDevServer(availablePort, 'auto-detected', initialPort);
 };
 
