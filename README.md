@@ -239,7 +239,15 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    docker compose up -d db api web
    ```
 
-  The API is exposed on `http://127.0.0.1:3006` and the web frontend on `http://127.0.0.1:3005` by default.
+   The API is exposed on `http://127.0.0.1:3006` and the web frontend on `http://127.0.0.1:3005` by default. If you need the
+   consolidated reverse proxy on port 80, start Caddy alongside the core services:
+
+   ```bash
+   docker compose up -d caddy
+   ```
+
+   Caddy listens on `http://127.0.0.1:80` and `https://127.0.0.1:443` and forwards `/api/*` routes to the NestJS API while all
+   other paths hit the Next.js frontend.
 
 4. **Verify health checks**
 
@@ -248,13 +256,10 @@ The project ships with a multi-service `docker-compose.yml` and dedicated Docker
    curl -I http://127.0.0.1:3005
    ```
 
-5. **(Optional) Run Caddy for HTTPS/reverse proxy**
+5. **(Optional) Enable HTTPS via Caddy**
 
-   ```bash
-   docker compose up -d caddy
-   ```
-
-   Update `NEXT_PUBLIC_API_BASE` and `CORS_ORIGINS` to use your HTTPS domain when fronting through Caddy.
+   If you expose the stack publicly or need local HTTPS testing, keep the Caddy service running and update
+   `NEXT_PUBLIC_API_BASE` and `CORS_ORIGINS` to use your HTTPS domain when fronting through Caddy.
 
 > ⚠️ Postgres data is persisted in the named volume `pg`. Always take a backup before applying new Prisma migrations.
 
