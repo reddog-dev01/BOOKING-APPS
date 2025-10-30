@@ -22,3 +22,5 @@ apps/api/node_modules/
 *.env
 *.env.*
 !.env.example
+apps/api/.env
+apps/web/.env.local
