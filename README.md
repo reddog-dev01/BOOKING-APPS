@@ -337,7 +337,7 @@ If you prefer local development outside Docker, follow the service-specific READ
 
 ### Frontend dev server ports
 
-`pnpm --filter web dev` prefers port `3005`, but it will automatically fall back to the next available port (skipping the API/Admin defaults on `3006`/`3007`). A common reason for seeing the web app on `http://127.0.0.1:3008` is that `docker compose up web` is still running and occupying `3005`.
+`pnpm --filter web dev` prefers port `3005`, but if that slot is busy it will try `3000` (the classic Next.js default) before scanning upwards for the next free port (skipping the API/Admin defaults on `3006`/`3007`). Always trust the port printed in the dev server banner. A common reason for landing on an alternate port (for example `http://127.0.0.1:3008`) is that `docker compose up web` is still running and occupying `3005`.
 
 To reclaim `3005`, stop the conflicting process and restart the dev server:
 

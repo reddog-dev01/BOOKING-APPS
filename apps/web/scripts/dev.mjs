@@ -177,23 +177,50 @@ const run = async () => {
   }
 
   const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3005;
-  const availablePort = await findAvailablePort(initialPort, collectReservedPorts(), {
-    onPortUnavailable: (port) => {
-      const guidance =
-        port === initialPort
-          ? 'The Docker web container or another Next.js dev server is probably still running.'
-          : undefined;
+  const reservedPorts = collectReservedPorts();
 
-      console.warn(
-        [
-          `Port ${port} is already in use.`,
-          guidance,
-          'Stop the conflicting process (e.g. `docker compose down`) or pass `--port <free-port>` to override.',
-        ]
-          .filter(Boolean)
-          .join(' '),
-      );
-    },
+  const reportBusyPort = (port) => {
+    const guidance =
+      port === initialPort
+        ? 'The Docker web container or another Next.js dev server is probably still running.'
+        : undefined;
+
+    console.warn(
+      [
+        `Port ${port} is already in use.`,
+        guidance,
+        'Stop the conflicting process (e.g. `docker compose down`) or pass `--port <free-port>` to override.',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+  };
+
+  if (await isPortAvailable(initialPort)) {
+    spawnDevServer(initialPort, 'default port');
+    return;
+  }
+
+  reportBusyPort(initialPort);
+
+  const fallbackCandidates = [3000].filter(
+    (candidate) => candidate !== initialPort && !reservedPorts.has(candidate),
+  );
+
+  for (const candidate of fallbackCandidates) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await isPortAvailable(candidate)) {
+      spawnDevServer(candidate, 'auto-detected', initialPort);
+      return;
+    }
+
+    reportBusyPort(candidate);
+  }
+
+  const excludedPorts = new Set([...reservedPorts, initialPort, ...fallbackCandidates]);
+  const fallbackStart = initialPort >= 65535 ? 1 : initialPort + 1;
+  const availablePort = await findAvailablePort(fallbackStart, excludedPorts, {
+    onPortUnavailable: reportBusyPort,
   });
   spawnDevServer(availablePort, 'auto-detected', initialPort);
 };
