@@ -127,7 +127,7 @@ const resolveReferer = (value?: string | null): string | undefined => {
 };
 
 const stripEnvValue = (value: string): string => {
-  const trimmed = value.trim();
+  let trimmed = value.trim();
   if (!trimmed) return "";
 
   const isWrappedInDoubleQuotes = trimmed.startsWith("\"") && trimmed.endsWith("\"");
@@ -135,6 +135,11 @@ const stripEnvValue = (value: string): string => {
 
   if (isWrappedInDoubleQuotes || isWrappedInSingleQuotes) {
     return trimmed.slice(1, -1).trim();
+  }
+
+  const inlineCommentIndex = trimmed.indexOf(" #");
+  if (inlineCommentIndex >= 0) {
+    trimmed = trimmed.slice(0, inlineCommentIndex).trimEnd();
   }
 
   return trimmed;
@@ -145,11 +150,13 @@ const extractKeyFromEnvFile = (contents: string): string | null => {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
-    const [rawKey, ...rest] = trimmed.split("=");
-    if (!rawKey || rawKey.trim() !== "PLACES_API_KEY") {
+
+    const match = trimmed.match(/^(?:export\s+)?PLACES_API_KEY\s*=\s*(.+)$/);
+    if (!match) {
       continue;
     }
-    const candidate = stripEnvValue(rest.join("="));
+
+    const candidate = stripEnvValue(match[1]);
     if (candidate) {
       return candidate;
     }
@@ -185,6 +192,9 @@ let resolvePlacesKeyFromFilesImpl = defaultResolvePlacesKeyFromFiles;
 
 const resolvePlacesKeyFromFiles = (): PlacesKeyFileCandidate | null =>
   resolvePlacesKeyFromFilesImpl();
+
+export const __testing_extractKeyFromEnvFile = (contents: string): string | null =>
+  extractKeyFromEnvFile(contents);
 
 const finalizeResolvedKey = (key: string, source: string): string => {
   cachedApiKey = key;
