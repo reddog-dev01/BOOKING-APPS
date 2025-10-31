@@ -145,6 +145,19 @@ const API_KEY_RESTRICTION_REASONS = new Set([
   "API_KEY_API_TARGET_BLOCKED",
 ]);
 
+const normalizeProjectIdentifier = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const projectMatch = trimmed.match(/^projects\/(.+)$/i);
+  if (projectMatch && projectMatch[1]) {
+    const normalized = projectMatch[1].trim();
+    return normalized ? normalized : null;
+  }
+
+  return trimmed;
+};
+
 const extractErrorReasons = (payload: unknown): string[] => {
   const details =
     (payload as { error?: { details?: unknown } } | null)?.error?.details ?? null;
@@ -177,6 +190,48 @@ const extractErrorReasons = (payload: unknown): string[] => {
   }
 
   return reasons;
+};
+
+const extractBillingProject = (payload: unknown): string | null => {
+  const details =
+    (payload as { error?: { details?: unknown } } | null)?.error?.details ?? null;
+  if (!Array.isArray(details)) {
+    return null;
+  }
+
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object") {
+      continue;
+    }
+
+    const errorInfoType = (detail as { [key: string]: unknown })["@type"];
+    if (errorInfoType !== GOOGLE_ERROR_INFO_TYPE) {
+      continue;
+    }
+
+    const metadata = (detail as { metadata?: unknown }).metadata;
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      continue;
+    }
+
+    const candidateValues = [
+      (metadata as { consumer?: unknown }).consumer,
+      (metadata as { containerInfo?: unknown }).containerInfo,
+    ];
+
+    for (const candidate of candidateValues) {
+      if (typeof candidate !== "string") {
+        continue;
+      }
+
+      const normalized = normalizeProjectIdentifier(candidate);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return null;
 };
 
 const resolveReferer = (value?: string | null): string | undefined => {
@@ -444,16 +499,29 @@ export async function fetchAutocomplete(
         hasBillingReason ||
         (normalized.includes("billing") && normalized.includes("enable"))
       ) {
+        const billingProject = extractBillingProject(errorBody);
+        const projectDescriptor =
+          billingProject && billingProject.length > 0
+            ? ` (project ${billingProject})`
+            : "";
+
         message =
           [
-            "Google Places yêu cầu bật Billing cho dự án chứa API key.",
+            `Google Places yêu cầu bật Billing cho dự án chứa API key${projectDescriptor}.`,
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
         hints.push(
-          "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
+          billingProject
+            ? `Đảm bảo dự án ${billingProject} đã liên kết Billing account trong Google Cloud Console (Billing → Account management).`
+            : "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
           "Đợi 1-3 phút sau khi bật Billing rồi chạy lại curl trực tiếp tới https://places.googleapis.com/v1/places:autocomplete với header X-Goog-Api-Key để kiểm tra.",
         );
+        if (billingProject) {
+          hints.push(
+            `Xác nhận API key đang sử dụng thuộc dự án ${billingProject} trong Google Cloud Console → APIs & Services → Credentials.`,
+          );
+        }
         docsPath = BILLING_TROUBLESHOOTING_DOC;
       } else if (
         hasRestrictionReason ||
@@ -588,16 +656,29 @@ export async function fetchPlaceDetails(
         hasBillingReason ||
         (normalized.includes("billing") && normalized.includes("enable"))
       ) {
+        const billingProject = extractBillingProject(errorBody);
+        const projectDescriptor =
+          billingProject && billingProject.length > 0
+            ? ` (project ${billingProject})`
+            : "";
+
         message =
           [
-            "Google Places yêu cầu bật Billing cho dự án chứa API key.",
+            `Google Places yêu cầu bật Billing cho dự án chứa API key${projectDescriptor}.`,
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
         hints.push(
-          "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
+          billingProject
+            ? `Đảm bảo dự án ${billingProject} đã liên kết Billing account trong Google Cloud Console (Billing → Account management).`
+            : "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
           "Đợi 1-3 phút sau khi bật Billing rồi chạy lại curl trực tiếp tới https://places.googleapis.com/v1/places:autocomplete với header X-Goog-Api-Key để kiểm tra.",
         );
+        if (billingProject) {
+          hints.push(
+            `Xác nhận API key đang sử dụng thuộc dự án ${billingProject} trong Google Cloud Console → APIs & Services → Credentials.`,
+          );
+        }
         docsPath = BILLING_TROUBLESHOOTING_DOC;
       } else if (
         hasRestrictionReason ||
