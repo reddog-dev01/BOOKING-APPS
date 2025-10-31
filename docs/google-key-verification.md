@@ -12,6 +12,7 @@ Làm theo mục “Lộ trình tạo mới hai key Google” trong [README](../R
 
 Ghi chú các biến shell `PLACES_KEY_NAME`, `MAPS_JS_KEY_NAME`, `PLACES_KEY`, `MAPS_JS_KEY` (README đã export sẵn) để dùng trong bước xác minh.
 
+<a id="sync-env-files"></a>
 ## 2. Đồng bộ tất cả file `.env`
 
 ```bash
@@ -56,6 +57,7 @@ gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
 
 Nếu thiếu, cập nhật ngay bằng `gcloud beta services api-keys update "$PLACES_KEY_NAME" ...` hoặc `... "$MAPS_JS_KEY_NAME" ...` rồi đợi vài phút để Google đồng bộ.
 
+<a id="smoke-test-proxy"></a>
 ## 4. Smoke test backend proxy
 
 ```bash

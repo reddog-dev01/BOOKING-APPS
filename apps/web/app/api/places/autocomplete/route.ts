@@ -22,6 +22,70 @@ type AutocompletePayload = {
 
 type ValidationResult<T> = { success: true; data: T } | { success: false; error: string };
 
+type GoogleErrorPayload = {
+  error?: { code?: number | string; status?: string | null };
+};
+
+const STATUS_TEXT_TO_CODE: Record<string, number> = {
+  PERMISSION_DENIED: 403,
+  INVALID_ARGUMENT: 400,
+  NOT_FOUND: 404,
+  RESOURCE_EXHAUSTED: 429,
+  UNAVAILABLE: 503,
+  INTERNAL: 500,
+};
+
+const isErrorStatus = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 400 && value < 600;
+
+const coerceStatus = (value: unknown): number | null => {
+  if (isErrorStatus(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed) && parsed >= 400 && parsed < 600) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
+const resolveStatusFromText = (value: unknown): number | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return STATUS_TEXT_TO_CODE[normalized] ?? null;
+};
+
+const extractStatusFromDetails = (details: unknown): number | null => {
+  const payload = details as GoogleErrorPayload | null;
+  const fromCode = coerceStatus(payload?.error?.code);
+  if (fromCode) {
+    return fromCode;
+  }
+
+  return resolveStatusFromText(payload?.error?.status);
+};
+
+const resolveErrorStatus = (error: PlacesApiError): number => {
+  const payloadStatus = extractStatusFromDetails(error.details);
+  if (payloadStatus) {
+    return payloadStatus;
+  }
+
+  const upstreamStatus = coerceStatus(error.status);
+  if (upstreamStatus) {
+    return upstreamStatus;
+  }
+
+  return 502;
+};
+
 function takeSlot(key: string): boolean {
   const now = Date.now();
   const current = rateBuckets.get(key);
@@ -137,21 +201,73 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    const baseLog = {
+      ts: new Date().toISOString(),
+      at: "places.autocomplete_failed",
+    };
+
     if (error instanceof MissingApiKeyError) {
+      console.warn(
+        JSON.stringify({
+          ...baseLog,
+          level: "warn",
+          kind: "missing_api_key",
+        }),
+      );
+
       return NextResponse.json(
         { error: { message: error.message } },
-        { status: 503 },
+        { status: 500 },
       );
     }
 
     if (error instanceof PlacesApiError) {
-      return NextResponse.json(
-        { error: { message: error.message } },
-        { status: Math.max(error.status, 400) },
+      const status = resolveErrorStatus(error);
+      const hints = error.hints;
+      const docsPath = error.docsPath;
+      console.warn(
+        JSON.stringify({
+          ...baseLog,
+          level: "warn",
+          status,
+          upstreamStatus: error.status,
+          docsPath,
+          hints,
+          body: error.details,
+        }),
       );
+
+      const payload: {
+        error: {
+          message: string;
+          detail?: unknown;
+          hints?: string[];
+          docsPath?: string;
+        };
+      } = {
+        error: { message: error.message, detail: error.details },
+      };
+
+      if (hints?.length) {
+        payload.error.hints = hints;
+      }
+
+      if (docsPath) {
+        payload.error.docsPath = docsPath;
+      }
+
+      return NextResponse.json(payload, { status });
     }
 
-    console.error("Google Places autocomplete proxy error", error);
+    console.error(
+      JSON.stringify({
+        ...baseLog,
+        level: "error",
+        kind: "unknown",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+
     return NextResponse.json(
       { error: { message: "Không thể gợi ý địa chỉ từ Google." } },
       { status: 502 },
