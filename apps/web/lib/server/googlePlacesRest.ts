@@ -16,6 +16,8 @@ const DEFAULT_LANGUAGE = "vi";
 const DEFAULT_REGION = "VN";
 const BILLING_CIRCUIT_TIMEOUT_MS = 10 * 60 * 1000;
 const GENERIC_CIRCUIT_TIMEOUT_MS = 60 * 1000;
+const BILLING_TROUBLESHOOTING_DOC = "docs/google-key-verification.md#smoke-test-proxy";
+const ENV_SYNC_DOC = "docs/google-key-verification.md#sync-env-files";
 const FALLBACK_KEY_ENV_KEYS = [
   "GOOGLE_PLACES_API_KEY",
   "GOOGLE_MAPS_API_KEY",
@@ -38,15 +40,25 @@ export class MissingApiKeyError extends Error {
   }
 }
 
+type PlacesApiErrorOptions = {
+  details?: unknown;
+  hints?: string[];
+  docsPath?: string;
+};
+
 export class PlacesApiError extends Error {
   readonly status: number;
   readonly details?: unknown;
+  readonly hints?: string[];
+  readonly docsPath?: string;
 
-  constructor(message: string, status: number, details?: unknown) {
+  constructor(message: string, status: number, options: PlacesApiErrorOptions = {}) {
     super(message);
     this.name = "PlacesApiError";
     this.status = status;
-    this.details = details;
+    this.details = options.details;
+    this.hints = options.hints;
+    this.docsPath = options.docsPath;
   }
 }
 
@@ -88,6 +100,8 @@ type CachedFailure = {
   status: number;
   message: string;
   details?: unknown;
+  hints?: string[];
+  docsPath?: string;
 };
 
 type PlacesKeyFileCandidate = { key: string; source: string };
@@ -291,7 +305,11 @@ const applyRefererOptions = (init: RequestInit, referer?: string): RequestInit =
 };
 
 const clonePlacesError = (entry: CachedFailure): PlacesApiError =>
-  new PlacesApiError(entry.message, entry.status, entry.details);
+  new PlacesApiError(entry.message, entry.status, {
+    details: entry.details,
+    hints: entry.hints,
+    docsPath: entry.docsPath,
+  });
 
 const resolveCachedFailure = (): PlacesApiError | null => {
   if (!cachedFailure) return null;
@@ -308,12 +326,15 @@ const rememberFailure = (
   message: string,
   details: unknown,
   ttl: number,
+  options?: { hints?: string[]; docsPath?: string },
 ) => {
   cachedFailure = {
     status,
     message,
     details,
     until: Date.now() + ttl,
+    hints: options?.hints,
+    docsPath: options?.docsPath,
   } satisfies CachedFailure;
 };
 
@@ -407,6 +428,8 @@ export async function fetchAutocomplete(
         : `Places Autocomplete failed (HTTP ${response.status}).`;
 
     let circuitTtl: number | null = null;
+    const hints: string[] = [];
+    let docsPath: string | undefined;
 
     if (response.status === 403) {
       const normalized = originalMessage?.toLowerCase() ?? "";
@@ -427,6 +450,11 @@ export async function fetchAutocomplete(
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
+        hints.push(
+          "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
+          "Đợi 1-3 phút sau khi bật Billing rồi chạy lại curl trực tiếp tới https://places.googleapis.com/v1/places:autocomplete với header X-Goog-Api-Key để kiểm tra.",
+        );
+        docsPath = BILLING_TROUBLESHOOTING_DOC;
       } else if (
         hasRestrictionReason ||
         normalized.includes("referer") ||
@@ -438,15 +466,34 @@ export async function fetchAutocomplete(
             "Kiểm tra lại hạn mức trong Google Cloud Console.",
           ].join(" ");
         circuitTtl = GENERIC_CIRCUIT_TIMEOUT_MS;
+        hints.push(
+          "Kiểm tra danh sách IP/referrer được phép của key server trong Google Cloud Console → API Keys.",
+          "Đảm bảo biến môi trường PLACES_API_KEY tồn tại trong tiến trình Next.js (ví dụ apps/web/.env.local).",
+        );
+        docsPath = ENV_SYNC_DOC;
       }
     }
 
+    const normalizedHints = hints.length > 0 ? [...new Set(hints)] : undefined;
+    const errorDetails = errorBody ?? undefined;
+
     if (response.status === 403 && circuitTtl) {
-      rememberFailure(response.status, message, errorBody ?? undefined, circuitTtl);
-      throw new PlacesApiError(message, response.status, errorBody ?? undefined);
+      rememberFailure(response.status, message, errorDetails, circuitTtl, {
+        hints: normalizedHints,
+        docsPath,
+      });
+      throw new PlacesApiError(message, response.status, {
+        details: errorDetails,
+        hints: normalizedHints,
+        docsPath,
+      });
     }
 
-    throw new PlacesApiError(message, response.status, errorBody ?? undefined);
+    throw new PlacesApiError(message, response.status, {
+      details: errorDetails,
+      hints: normalizedHints,
+      docsPath,
+    });
   }
 
   const data = (await response.json()) as AutocompleteApiResponse;
@@ -525,6 +572,8 @@ export async function fetchPlaceDetails(
         : `Places Details failed (HTTP ${response.status}).`;
 
     let circuitTtl: number | null = null;
+    const hints: string[] = [];
+    let docsPath: string | undefined;
 
     if (response.status === 403) {
       const normalized = originalMessage?.toLowerCase() ?? "";
@@ -545,6 +594,11 @@ export async function fetchPlaceDetails(
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
+        hints.push(
+          "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
+          "Đợi 1-3 phút sau khi bật Billing rồi chạy lại curl trực tiếp tới https://places.googleapis.com/v1/places:autocomplete với header X-Goog-Api-Key để kiểm tra.",
+        );
+        docsPath = BILLING_TROUBLESHOOTING_DOC;
       } else if (
         hasRestrictionReason ||
         normalized.includes("referer") ||
@@ -556,15 +610,34 @@ export async function fetchPlaceDetails(
             "Kiểm tra lại hạn mức trong Google Cloud Console.",
           ].join(" ");
         circuitTtl = GENERIC_CIRCUIT_TIMEOUT_MS;
+        hints.push(
+          "Kiểm tra danh sách IP/referrer được phép của key server trong Google Cloud Console → API Keys.",
+          "Đảm bảo biến môi trường PLACES_API_KEY tồn tại trong tiến trình Next.js (ví dụ apps/web/.env.local).",
+        );
+        docsPath = ENV_SYNC_DOC;
       }
     }
 
+    const normalizedHints = hints.length > 0 ? [...new Set(hints)] : undefined;
+    const errorDetails = errorBody ?? undefined;
+
     if (response.status === 403 && circuitTtl) {
-      rememberFailure(response.status, message, errorBody ?? undefined, circuitTtl);
-      throw new PlacesApiError(message, response.status, errorBody ?? undefined);
+      rememberFailure(response.status, message, errorDetails, circuitTtl, {
+        hints: normalizedHints,
+        docsPath,
+      });
+      throw new PlacesApiError(message, response.status, {
+        details: errorDetails,
+        hints: normalizedHints,
+        docsPath,
+      });
     }
 
-    throw new PlacesApiError(message, response.status, errorBody ?? undefined);
+    throw new PlacesApiError(message, response.status, {
+      details: errorDetails,
+      hints: normalizedHints,
+      docsPath,
+    });
   }
 
   const data = (await response.json()) as DetailsApiResponse;

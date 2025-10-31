@@ -43,10 +43,14 @@ describe("Places API routes propagate upstream statuses", () => {
     );
 
     const error = new placesModule.PlacesApiError("Billing disabled", 503, {
-      error: {
-        code: 403,
-        message: "This API method requires billing to be enabled.",
+      details: {
+        error: {
+          code: 403,
+          message: "This API method requires billing to be enabled.",
+        },
       },
+      hints: ["Enable billing"],
+      docsPath: "docs/billing.md",
     });
 
     (placesModule.fetchAutocomplete as any).mockRejectedValueOnce(error);
@@ -60,7 +64,11 @@ describe("Places API routes propagate upstream statuses", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
-      error: { detail: { error: { code: 403 } } },
+      error: {
+        detail: { error: { code: 403 } },
+        hints: ["Enable billing"],
+        docsPath: "docs/billing.md",
+      },
     });
   });
 
@@ -88,7 +96,8 @@ describe("Places API routes propagate upstream statuses", () => {
     const { POST: detailsPost } = await import("../app/api/places/details/route");
 
     const error = new placesModule.PlacesApiError("Billing disabled", 503, {
-      error: { code: 403 },
+      details: { error: { code: 403 } },
+      hints: ["Enable billing"],
     });
     (placesModule.fetchPlaceDetails as any).mockRejectedValueOnce(error);
 

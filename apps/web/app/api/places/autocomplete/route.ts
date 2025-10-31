@@ -22,7 +22,18 @@ type AutocompletePayload = {
 
 type ValidationResult<T> = { success: true; data: T } | { success: false; error: string };
 
-type GoogleErrorPayload = { error?: { code?: number | string } };
+type GoogleErrorPayload = {
+  error?: { code?: number | string; status?: string | null };
+};
+
+const STATUS_TEXT_TO_CODE: Record<string, number> = {
+  PERMISSION_DENIED: 403,
+  INVALID_ARGUMENT: 400,
+  NOT_FOUND: 404,
+  RESOURCE_EXHAUSTED: 429,
+  UNAVAILABLE: 503,
+  INTERNAL: 500,
+};
 
 const isErrorStatus = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 400 && value < 600;
@@ -42,9 +53,23 @@ const coerceStatus = (value: unknown): number | null => {
   return null;
 };
 
+const resolveStatusFromText = (value: unknown): number | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return STATUS_TEXT_TO_CODE[normalized] ?? null;
+};
+
 const extractStatusFromDetails = (details: unknown): number | null => {
   const payload = details as GoogleErrorPayload | null;
-  return coerceStatus(payload?.error?.code);
+  const fromCode = coerceStatus(payload?.error?.code);
+  if (fromCode) {
+    return fromCode;
+  }
+
+  return resolveStatusFromText(payload?.error?.status);
 };
 
 const resolveErrorStatus = (error: PlacesApiError): number => {
@@ -198,20 +223,40 @@ export async function POST(request: NextRequest) {
 
     if (error instanceof PlacesApiError) {
       const status = resolveErrorStatus(error);
+      const hints = error.hints;
+      const docsPath = error.docsPath;
       console.warn(
         JSON.stringify({
           ...baseLog,
           level: "warn",
           status,
           upstreamStatus: error.status,
+          docsPath,
+          hints,
           body: error.details,
         }),
       );
 
-      return NextResponse.json(
-        { error: { message: error.message, detail: error.details } },
-        { status },
-      );
+      const payload: {
+        error: {
+          message: string;
+          detail?: unknown;
+          hints?: string[];
+          docsPath?: string;
+        };
+      } = {
+        error: { message: error.message, detail: error.details },
+      };
+
+      if (hints?.length) {
+        payload.error.hints = hints;
+      }
+
+      if (docsPath) {
+        payload.error.docsPath = docsPath;
+      }
+
+      return NextResponse.json(payload, { status });
     }
 
     console.error(

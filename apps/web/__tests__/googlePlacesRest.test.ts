@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
+const BILLING_DOC_PATH = "docs/google-key-verification.md#smoke-test-proxy";
+const ENV_DOC_PATH = "docs/google-key-verification.md#sync-env-files";
+
 describe("googlePlacesRest circuit breaker", () => {
   const advanceTo = (iso: string) => {
     jest.setSystemTime(new Date(iso));
@@ -93,12 +96,17 @@ describe("googlePlacesRest circuit breaker", () => {
     ).rejects.toMatchObject({
       message: expect.stringContaining("Google Places yêu cầu bật Billing"),
       status: 403,
+      hints: expect.arrayContaining([
+        expect.stringContaining("Bật Billing"),
+        expect.stringContaining("curl trực tiếp"),
+      ]),
+      docsPath: BILLING_DOC_PATH,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await expect(
       fetchAutocomplete({ input: "Ho Chi Minh" }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 403, docsPath: BILLING_DOC_PATH });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     advanceTo("2025-01-01T00:11:00.000Z");
@@ -141,6 +149,7 @@ describe("googlePlacesRest circuit breaker", () => {
 
     await expect(fetchAutocomplete({ input: "Ha Noi" })).rejects.toMatchObject({
       status: 403,
+      docsPath: BILLING_DOC_PATH,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -218,6 +227,11 @@ describe("googlePlacesRest circuit breaker", () => {
     await expect(fetchAutocomplete({ input: "Hue" })).rejects.toMatchObject({
       status: 403,
       message: expect.stringContaining("Google Places key đang bị hạn chế"),
+      hints: expect.arrayContaining([
+        expect.stringContaining("IP/referrer"),
+        expect.stringContaining("PLACES_API_KEY"),
+      ]),
+      docsPath: ENV_DOC_PATH,
     });
 
     resetPlacesCircuitBreakerForTests();
