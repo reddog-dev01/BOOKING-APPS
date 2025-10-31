@@ -129,6 +129,7 @@ Hash giống nhau nghĩa là key trong container khớp với giá trị bạn v
 ## Kiến trúc Google Places trong repo
 
 - `apps/web/lib/server/googlePlacesRest.ts` tải `PLACES_API_KEY` từ biến môi trường hoặc các file `.env` (có cache, cảnh báo placeholder, circuit-breaker 10 phút cho lỗi billing) rồi forward request sang Google Places v1.
+- `packages/google-maps-services-js` cung cấp workspace package `@googlemaps/google-maps-services-js` (thin client tương thích với thư viện Google chính thức) để mọi service trong monorepo có thể gọi Places API cùng chung logic header/Field Mask.
 - `apps/web/app/api/places/autocomplete/route.ts` & `.../details/route.ts` sử dụng helper trên.
 - `apps/web/components/AddressInput.tsx` gọi `/api/places/autocomplete` và render danh sách gợi ý.
 - `apps/api/src/infra/maps/map.util.ts` tái sử dụng key server cho nhu cầu NestJS khác.

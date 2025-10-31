@@ -7,12 +7,10 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
-type ResponseLike = {
-  ok: boolean;
-  status: number;
-  text?: () => Promise<string>;
-  json?: () => Promise<unknown>;
-};
+import {
+  Client as GoogleMapsClient,
+  RequestError as GoogleMapsRequestError,
+} from "@googlemaps/google-maps-services-js";
 
 type PlacesKeySource = {
   value: string;
@@ -35,9 +33,6 @@ type PlaceDetailsParams = {
   languageCode?: string;
 };
 
-const PLACES_ENDPOINT_AUTOCOMPLETE = "https://places.googleapis.com/v1/places:autocomplete";
-const PLACES_ENDPOINT_DETAILS = (id: string) =>
-  `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`;
 const DEFAULT_FIELD_MASK = "id,displayName,formattedAddress,location";
 const BILLING_CIRCUIT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_ERROR_BODY_LENGTH = 2_000;
@@ -303,100 +298,126 @@ function looksLikeBillingDisabled(status: number, body: string | undefined, pars
   return typeof errorStatus === "string" && errorStatus.toUpperCase().includes("BILLING");
 }
 
-async function readResponseBody(res: ResponseLike): Promise<{ raw?: string; parsed?: unknown }> {
-  if (typeof res.text === "function") {
-    const raw = await res.text();
-    try {
-      return { raw, parsed: raw ? JSON.parse(raw) : undefined };
-    } catch {
-      return { raw };
+let googleMapsClient: GoogleMapsClient | null = null;
+
+function getGoogleMapsClient(): GoogleMapsClient {
+  if (!googleMapsClient) {
+    const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (typeof fetchImpl !== "function") {
+      throw new Error("global fetch implementation is required to query Google Maps");
     }
+    googleMapsClient = new GoogleMapsClient({ fetchImplementation: fetchImpl });
   }
-
-  if (typeof res.json === "function") {
-    const parsed = await res.json();
-    const raw =
-      typeof parsed === "string" ? parsed : parsed !== undefined ? JSON.stringify(parsed) : undefined;
-    return { raw, parsed };
-  }
-
-  return {};
+  return googleMapsClient;
 }
 
-async function executePlacesRequest(
-  url: string,
-  init: RequestInit & { headers: Record<string, string> },
-): Promise<{ parsed?: unknown }> {
-  ensureCircuitClosed();
-  const res = await fetch(url, init);
-  const { raw, parsed } = await readResponseBody(res as ResponseLike);
+type ClientErrorPayload = { status: number; raw?: string; parsed?: unknown };
 
-  if (!res.ok) {
-    if (looksLikeBillingDisabled(res.status, raw, parsed)) {
-      tripBillingCircuit("api_response");
-      throw createBillingError();
-    }
+function stringifyErrorBody(parsed: unknown): string | undefined {
+  if (parsed === undefined || parsed === null) {
+    return undefined;
+  }
+  if (typeof parsed === "string") {
+    return parsed;
+  }
+  try {
+    return JSON.stringify(parsed);
+  } catch {
+    return undefined;
+  }
+}
 
-    throw new PlacesApiError({ status: res.status, body: truncate(raw) });
+function extractClientError(error: unknown): ClientErrorPayload | null {
+  if (error instanceof GoogleMapsRequestError) {
+    const status = error.response?.status ?? 500;
+    const raw =
+      typeof error.response?.raw === "string"
+        ? error.response.raw
+        : typeof error.response?.data === "string"
+          ? error.response.data
+          : undefined;
+    return {
+      status,
+      raw,
+      parsed: error.response?.data,
+    };
+  }
+  return null;
+}
+
+function handleClientError(error: unknown): never {
+  const payload = extractClientError(error);
+  if (!payload) {
+    throw error;
   }
 
-  return { parsed };
+  const { status, raw, parsed } = payload;
+  if (looksLikeBillingDisabled(status, raw, parsed)) {
+    tripBillingCircuit("api_response");
+    throw createBillingError();
+  }
+
+  const body = raw ?? stringifyErrorBody(parsed);
+  throw new PlacesApiError({ status, body: truncate(body) });
 }
 
 export async function fetchAutocomplete(params: AutocompleteParams, _referer?: string) {
   const apiKey = resolvePlacesApiKey();
+  ensureCircuitClosed();
 
-  const payload: Record<string, unknown> = {
-    input: params.input,
-    languageCode: params.languageCode ?? "vi",
-  };
-  if (params.regionCode) payload.regionCode = params.regionCode;
-  if (params.sessionToken) payload.sessionToken = params.sessionToken;
+  const client = getGoogleMapsClient();
 
-  const { parsed } = await executePlacesRequest(PLACES_ENDPOINT_AUTOCOMPLETE, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "X-Goog-Api-Key": apiKey,
-    },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const { data } = await client.placeAutocomplete({
+      params: {
+        input: params.input,
+        key: apiKey,
+        language: params.languageCode ?? "vi",
+        sessiontoken: params.sessionToken,
+        components: params.regionCode ? `country:${params.regionCode}` : undefined,
+      },
+    });
 
-  const data = parsed as
-    | { suggestions?: unknown[]; predictions?: unknown[] }
-    | undefined
-    | null;
-  if (!data) {
-    return [];
+    const normalized = data as
+      | { suggestions?: unknown[]; predictions?: unknown[] }
+      | undefined
+      | null;
+    if (!normalized) {
+      return [];
+    }
+
+    return normalized.suggestions ?? normalized.predictions ?? [];
+  } catch (error) {
+    throw handleClientError(error);
   }
-
-  return data.suggestions ?? data.predictions ?? [];
 }
 
 export async function fetchPlaceDetails(params: PlaceDetailsParams, _referer?: string) {
   const apiKey = resolvePlacesApiKey();
-  const url = new URL(PLACES_ENDPOINT_DETAILS(params.placeId));
+  ensureCircuitClosed();
 
-  if (params.sessionToken) {
-    url.searchParams.set("sessionToken", params.sessionToken);
+  const client = getGoogleMapsClient();
+
+  try {
+    const { data } = await client.placeDetails({
+      params: {
+        place_id: params.placeId,
+        key: apiKey,
+        sessiontoken: params.sessionToken,
+        language: params.languageCode,
+        fields: params.fieldMask ?? DEFAULT_FIELD_MASK,
+      },
+    });
+
+    return data;
+  } catch (error) {
+    throw handleClientError(error);
   }
-  if (params.languageCode) {
-    url.searchParams.set("languageCode", params.languageCode);
-  }
-
-  const { parsed } = await executePlacesRequest(url.toString(), {
-    method: "GET",
-    headers: {
-      "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": params.fieldMask ?? DEFAULT_FIELD_MASK,
-    },
-  });
-
-  return parsed;
 }
 
 export function resetPlacesCircuitBreakerForTests() {
   billingCircuitOpenUntil = 0;
+  googleMapsClient = null;
 }
 
 export function resetPlacesKeyCacheForTests() {

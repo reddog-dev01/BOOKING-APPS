@@ -1,0 +1,12 @@
+{
+  "name": "@googlemaps/google-maps-services-js",
+  "version": "0.0.0-booking-app",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    }
+  }
+}
