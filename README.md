@@ -1,134 +1,179 @@
 # Booking Platform Monorepo
 
-> Monorepo pnpm quản lý toàn bộ dịch vụ đặt chỗ (Next.js web, NestJS API, Prisma). Tài liệu này giúp bạn khởi động dự án nhanh chóng và đảm bảo Google Maps/Places API key luôn sạch, đúng restriction.
+Monorepo pnpm vận hành toàn bộ sản phẩm đặt chỗ (Next.js web, NestJS API, Prisma/Postgres). Tài liệu này mô tả trọn vẹn quy trình onboarding: clone mã nguồn, khởi chạy hạ tầng cục bộ, tạo mới Google Cloud project cho Places API và đồng bộ cặp Google Maps key sạch vào mọi dịch vụ.
 
-## 1. Tổng quan kiến trúc
+---
+
+## 1. Kiến trúc & thư mục
 
 | Thư mục | Mô tả |
 | --- | --- |
-| `apps/web` | Frontend Next.js cho khách hàng (Route Handlers + Server Actions, AddressInput sử dụng Google Places Autocomplete). |
-| `apps/api` | API NestJS (pricing, booking, phương tiện). |
-| `apps/admin` | Trang quản trị Next.js. |
-| `packages/db` | Prisma schema + migration/seed. |
-| `packages/ui` | Thư viện UI dùng chung. |
-| `infra`, `scripts`, `docs` | Hạ tầng, tooling, tài liệu vận hành. |
+| `apps/web` | Frontend Next.js (Route Handlers + Server Actions) phục vụ khách đặt chỗ. |
+| `apps/api` | API NestJS (booking, pricing, routes) dùng Prisma để truy vấn Postgres. |
+| `apps/admin` | Bảng điều khiển quản trị Next.js. |
+| `packages/db` | Prisma schema, migration, seed idempotent. |
+| `packages/ui` | Thư viện UI chia sẻ giữa web & admin. |
+| `infra`, `scripts`, `docs` | Công cụ DevOps, terraform/thủ tục vận hành, runbook. |
 
-Cấu hình TypeScript strict + ESM, pnpm workspace, ESLint + Prettier.
+**Stack:** TypeScript strict + ESM, pnpm workspace, ESLint + Prettier. Mọi thay đổi phải giữ nguyên convention DTO/service/module, backup DB trước khi tạo migration, và log JSON (pino).
+
+---
 
 ## 2. Yêu cầu hệ thống
 
 - Node.js 20 LTS
 - pnpm 8+
-- Docker & Docker Compose (chạy Postgres và reverse proxy)
-- Google Cloud project `GGMAPS` (`ID: ggmaps-476813`, `Number: 886636766361`)
+- Docker & Docker Compose (Postgres, reverse proxy)
+- Quyền truy cập Google Cloud (Project Creator hoặc được ủy quyền tạo project con trong folder tổ chức)
 
-## 3. Thiết lập lần đầu
+---
+
+## 3. Thiết lập monorepo lần đầu
 
 ```bash
-# Clone repo
+# Clone
  git clone <REPO_URL>
  cd BOOKING-APPS
 
 # Cài đặt phụ thuộc
  pnpm install
 
-# Khởi chạy hạ tầng cơ bản (Postgres, Caddy)
+# Khởi động hạ tầng mặc định (Postgres, Caddy)
  docker compose up -d
 ```
 
-### 3.1. Tạo file môi trường
-
-Chạy script để tạo bản sao `.env.example` nếu chưa có:
+### 3.1. Khởi tạo biến môi trường
 
 ```bash
 cp -n .env.example .env
 pnpm exec turbo run generate:env --filter=web --filter=api 2>/dev/null || true
 ```
 
-Các file cần cập nhật thủ công sau khi có key:
+Sau khi có Google key (mục 5), cập nhật các file:
 
 - `./.env`
+- `apps/api/.env`
 - `apps/web/.env.local`
 - `apps/admin/.env.local`
-- `apps/api/.env`
 
-## 4. Tạo Google Maps/Places API key mới
+---
 
-### 4.1. Chuẩn bị dự án Google Cloud
+## 4. Tạo mới Google Cloud project `GGMAPS`
 
-1. Đăng nhập Google Cloud Console bằng tài khoản công ty.
-2. Chọn project **GGMAPS** (ID `ggmaps-476813`). Nếu chưa thấy, yêu cầu DevOps cấp quyền Viewer + API Keys Admin.
-3. Đảm bảo billing account đã gắn, nếu chưa hãy kích hoạt trước khi tạo key (tab **Billing**).
+> **Thông tin dự án đã cấp:** `Project name: GGMAPS`, `Project ID: ggmaps-476813`, `Project number: 886636766361`.
 
-### 4.2. Bật dịch vụ cần thiết
+1. Truy cập [Google Cloud Console](https://console.cloud.google.com/). Đăng nhập bằng tài khoản công ty.
+2. `IAM & Admin → Manage resources` → **Create Project**.
+   - **Project name:** `GGMAPS`
+   - **Project ID:** `ggmaps-476813` (đảm bảo khớp, nếu trùng hãy chọn biến thể gần nhất và cập nhật toàn repo).
+   - **Location:** folder/organization được phép tạo (ví dụ `Bookings`).
+3. Gắn billing: `Billing → Link a billing account → <booking-master>`.
+4. Phân quyền tối thiểu:
+   - Cho nhóm DevOps: `Project → IAM → Grant Access` với `roles/serviceusage.apiKeysAdmin`, `roles/viewer`.
+   - Cho ứng dụng CI/CD (nếu cần): tạo service account với `roles/iam.serviceAccountTokenCreator`.
+5. Đặt ngân sách/quota: `Billing → Budgets & alerts` → tạo budget `<GGMAPS Places>` với threshold 80%/100%.
 
-Trong Cloud Console → **APIs & Services** → **Enabled APIs & Services**:
+### 4.1. Bật API cần dùng
 
-- Maps JavaScript API
-- Places API (New)
-- Geocoding API (tuỳ chọn nếu cần reverse geocode)
+`APIs & Services → Library` và enable lần lượt:
 
-### 4.3. Tạo key server sạch
+- **Maps JavaScript API**
+- **Places API (New)**
+- **Geocoding API** (bật để hỗ trợ reverse geocode)
 
-1. Vào **APIs & Services → Credentials** → **Create Credentials → API key**.
-2. Đổi tên: `places-server-dev` (hoặc theo convention team).
-3. **Restrict key**:
-   - **Application restrictions**: `IP addresses`. Thêm danh sách IP outbound dev/bastion.
-   - **API restrictions**: hạn chế `Places API (New)` và các API REST cần thiết.
-4. Lưu lại key → gán cho biến `PLACES_API_KEY`.
+Kiểm tra lại trong tab **Enabled APIs & Services** để chắc chắn cả ba đều ở trạng thái `ENABLED`.
 
-### 4.4. Tạo key browser sạch
+### 4.2. Khoá project không dùng được key cũ
 
-1. **Create Credentials → API key** lần nữa.
-2. Đổi tên: `maps-browser-dev`.
-3. **Application restrictions**: `HTTP referrers`. Thêm:
+Tại `APIs & Services → Credentials`:
+
+- Xoá mọi API key mặc định Google tạo ra khi sinh project mới.
+- Xác nhận không còn key nào xuất hiện trước khi tạo key sạch ở mục 5.
+
+---
+
+## 5. Sinh cặp Google Maps/Places API key sạch
+
+Tại `APIs & Services → Credentials`.
+
+### 5.1. Server key (`PLACES_API_KEY`)
+
+1. **Create Credentials → API key**.
+2. Đặt tên: `places-server-dev`.
+3. **Application restrictions:** chọn `IP addresses` → add IP outbound của môi trường dev/bastion.
+4. **API restrictions:** `Restrict key` → chọn `Places API (New)` và `Geocoding API`.
+5. Lưu lại giá trị, copy vào biến shell `PLACES_API_KEY`.
+
+### 5.2. Browser key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`)
+
+1. **Create Credentials → API key**.
+2. Đặt tên: `maps-browser-dev`.
+3. **Application restrictions:** `HTTP referrers` → thêm:
    - `http://localhost:3005/*`
    - `http://127.0.0.1:3005/*`
-   - Domain staging/production (nếu có).
-4. **API restrictions**: chọn `Maps JavaScript API`, `Places API (New)`.
-5. Lưu lại key → gán `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+   - fallback dev: `http://localhost:3000/*`, `http://localhost:3008/*` (và biến thể `127.0.0.1`).
+   - domain staging/production thực tế.
+4. **API restrictions:** `Maps JavaScript API`, `Places API (New)`.
+5. Lưu giá trị vào biến `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
 
-### 4.5. Kiểm tra billing & quota
+### 5.3. Ghi nhận metadata key
 
 ```bash
-gcloud config set project ggmaps-476813
-gcloud services api-keys describe "places-server-dev" \
-  --format='value(restrictions.serverKeyRestrictions.allowedIps)'
+export PROJECT_ID="ggmaps-476813"
+export PLACES_KEY_NAME="places-server-dev"
+export MAPS_JS_KEY_NAME="maps-browser-dev"
+export PLACES_API_KEY="<chuoi_key_server>"
+export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="<chuoi_key_browser>"
 ```
 
-Đảm bảo output không trống và không có IP lạ. Lặp lại với key browser để kiểm tra referrer.
-
-## 5. Đồng bộ key vào repo
-
-Sau khi có cặp key mới, xuất biến tạm trong shell rồi dùng script tự động cập nhật tất cả `.env`:
+Dùng `gcloud` để double-check restriction:
 
 ```bash
-export PLACES_API_KEY="<KEY_SERVER_MOI>"
-export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="<KEY_BROWSER_MOI>"
+gcloud config set project "$PROJECT_ID"
 
-# Port dev thực tế (mặc định 3005, fallback 3000/3008)
+gcloud services api-keys describe "$PLACES_KEY_NAME" \
+  --format='get(restrictions.serverKeyRestrictions.allowedIps)'
+
+gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
+  --format='get(restrictions.browserKeyRestrictions.allowedReferrers)'
+```
+
+Đảm bảo danh sách không trống và chỉ chứa IP/referrer mong muốn.
+
+---
+
+## 6. Đồng bộ key vào repo
+
+Script `scripts/google-keys.mjs` (được wrap qua npm script) sẽ tự sao chép `.env.example` nếu thiếu và cập nhật đồng bộ cho tất cả dịch vụ.
+
+```bash
+cd /workspace/BOOKING-APPS
+
+# Export giá trị mới (nếu đã export ở bước 5.3 thì có thể bỏ qua)
+export PLACES_API_KEY="<chuoi_key_server>"
+export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="<chuoi_key_browser>"
+
+# Áp key vào toàn bộ .env
 WEB_PORT=3005 pnpm apply:google-keys
+
+# Kiểm tra lại giá trị
 pnpm check:google-keys
 
+# Xoá biến shell để tránh lộ history
 unset PLACES_API_KEY NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ```
 
-Script `apply:google-keys` sẽ:
+Các file được cập nhật: `./.env`, `apps/api/.env`, `apps/web/.env.local`, `apps/admin/.env.local`. Nếu có key cũ cần chặn, export thêm `GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"` trước khi chạy.
 
-- Sao chép `.env.example` nếu thiếu
-- Cập nhật `PLACES_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `GOOGLE_MAPS_REFERER`
-- Đồng bộ file gốc `./.env`
+---
 
-`check:google-keys` xác nhận tất cả file `.env` khớp giá trị bạn vừa export. Nếu muốn chặn key cũ bị dùng lại, export thêm `GOOGLE_KEY_DENYLIST` trước khi chạy.
-
-## 6. Smoke test
+## 7. Smoke test Google Places proxy
 
 ```bash
-# Chạy web dev (foreground)
 pnpm --filter web dev
 ```
 
-Mở terminal khác:
+Tab khác:
 
 ```bash
 WEB_PORT=3005
@@ -137,43 +182,40 @@ curl -i "http://localhost:${WEB_PORT}/api/places/autocomplete" \
   -d '{"input":"ho chi"}'
 ```
 
-- HTTP 200 + JSON `predictions` → OK
-- HTTP 503 tiếng Việt → thiếu/sai `PLACES_API_KEY` hoặc billing chưa bật
-- HTTP 403 `BILLING_DISABLED` → bật billing, chờ cache 10 phút rồi restart
+- HTTP 200 + mảng `predictions` → thành công.
+- HTTP 503 (tiếng Việt) → thiếu/sai `PLACES_API_KEY` hoặc billing chưa bật.
+- HTTP 403 `BILLING_DISABLED` → quay lại bước billing hoặc chờ Google đồng bộ 5-10 phút.
 
-## 7. Kiểm tra AddressInput UI
+Frontend:
 
-1. Mở trang chứa component `AddressInput` (`apps/web/components/AddressInput.tsx`).
-2. Nhập "Ho Chi Minh City".
-3. DevTools → **Network** filter `places` để xác nhận `POST /api/places/autocomplete` trả 200 và backend forward tới `https://places.googleapis.com/v1/places:autocomplete`.
-4. Nếu gặp `RefererNotAllowedMapError`, cập nhật restriction cho key browser.
+1. Mở trang chứa component `apps/web/components/AddressInput.tsx`.
+2. Gõ "Ho Chi Minh City" → kiểm tra DevTools Network đảm bảo request `places:autocomplete` trả 200.
+3. Nếu lỗi `RefererNotAllowedMapError`, cập nhật lại danh sách referrer cho browser key.
 
-## 8. Quy trình xoay key định kỳ
+---
 
-1. Tạo hai key mới theo mục 4.
-2. Cập nhật restriction và kiểm tra billing/quota.
-3. Chạy script ở mục 5 để đồng bộ `.env`.
-4. Commit thay đổi `.env` (nếu được phép) và thông báo cho team. Nếu không commit `.env`, gửi hash SHA-256 của key để mọi người đối chiếu:
+## 8. Xoay key định kỳ
+
+1. Lặp lại mục 5 để sinh cặp key mới (không reuse key cũ).
+2. Chạy lại script đồng bộ (mục 6).
+3. Ghi chú hash phục vụ đối chiếu, gửi cho team:
 
 ```bash
 printf '%s' "$PLACES_API_KEY" | sha256sum
 printf '%s' "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" | sha256sum
 ```
 
-5. Gỡ hoặc revoke key cũ sau khi mọi dịch vụ xác nhận hoạt động.
-
-## 9. Chạy toàn bộ stack phát triển
+4. Restart dịch vụ đang chạy:
 
 ```bash
-pnpm run dev
+docker compose up -d --force-recreate api web
 ```
 
-Lệnh trên khởi chạy song song các workspace theo cấu hình `turbo.json`. Xem log từng app bằng `pnpm --filter <app> dev`.
+---
 
-## 10. Tài liệu bổ sung
+## 9. Tài liệu tham khảo
 
-- [docs/places-troubleshooting-runbook.md](./docs/places-troubleshooting-runbook.md) – Runbook xử lý sự cố Google Places.
-- `infra/` – Manifest cơ sở hạ tầng (Terraform, Kubernetes).
-- `scripts/` – Script hỗ trợ DevOps (sao lưu DB, rotate key).
+- [docs/google-key-verification.md](docs/google-key-verification.md): checklist xác minh restriction và smoke test chi tiết.
+- [docs/places-troubleshooting-runbook.md](docs/places-troubleshooting-runbook.md): runbook khi API trả lỗi 4xx/5xx.
+- [docs/jest-troubleshooting-vi.md](docs/jest-troubleshooting-vi.md): fix unit test khi cập nhật key.
 
-Giữ README này cập nhật sau mỗi lần thay đổi quy trình Google Maps/Places để đảm bảo mọi người có thể tạo key sạch và deploy an toàn.
