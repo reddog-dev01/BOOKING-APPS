@@ -165,7 +165,11 @@ Tất cả sử dụng TypeScript strict + pnpm workspaces.
 pnpm install
 ```
 
-`.npmrc` của workspace đã whitelist các postinstall cần thiết (Prisma, NestJS build, Sharp…), vì vậy `pnpm install` và quá trình build Docker có thể chạy `prisma generate` tự động.
+`.npmrc` của workspace đã whitelist các postinstall cần thiết (Prisma, NestJS build, Sharp…), vì vậy `pnpm install` không cần cờ bổ sung. Từ commit này `pnpm --filter api dev`/`build` sẽ tự gọi `pnpm --filter api run prisma:generate` trước khi biên dịch; nếu gặp lỗi `PrismaClient` missing sau khi pull, chỉ cần chạy lại:
+
+```bash
+pnpm --filter api run prisma:generate
+```
 
 ## Test frontend (Jest)
 
