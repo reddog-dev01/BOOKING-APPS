@@ -84,6 +84,9 @@ describe("googlePlacesRest circuit breaker", () => {
               {
                 "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                 reason: "BILLING_DISABLED",
+                metadata: {
+                  consumer: "projects/339756545616",
+                },
               },
             ],
           },
@@ -94,11 +97,12 @@ describe("googlePlacesRest circuit breaker", () => {
     await expect(
       fetchAutocomplete({ input: "Ho Chi Minh" }),
     ).rejects.toMatchObject({
-      message: expect.stringContaining("Google Places yêu cầu bật Billing"),
+      message: expect.stringContaining("Google Places yêu cầu bật Billing cho dự án chứa API key (project 339756545616)."),
       status: 403,
       hints: expect.arrayContaining([
-        expect.stringContaining("Bật Billing"),
+        expect.stringContaining("Billing account"),
         expect.stringContaining("curl trực tiếp"),
+        expect.stringContaining("APIs & Services"),
       ]),
       docsPath: BILLING_DOC_PATH,
     });
@@ -140,6 +144,9 @@ describe("googlePlacesRest circuit breaker", () => {
               {
                 "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                 reason: "BILLING_DISABLED",
+                metadata: {
+                  containerInfo: "projects/339756545616",
+                },
               },
             ],
           },

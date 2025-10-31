@@ -39,6 +39,10 @@ PLACES_API_KEY=<IP-restricted Google Places key>
 > Google Cloud restriction list aligned with your environment. Frontend bundles must rely on the separate
 > referrer-restricted key exposed via `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
 
+> 🐳 Using the provided `docker-compose.yml` does not require editing `.env` for container networking—the API service
+> overrides `DATABASE_URL` with `API_DATABASE_URL` (defaulting to the `db` hostname). If you run Postgres elsewhere,
+> export `API_DATABASE_URL="postgresql://..."` before starting Compose to point containers at the correct instance.
+
 > ⚠️ Google Places endpoints will reject requests until the Cloud project has Billing enabled. If you see a 403 response with
 > `This API method requires billing to be enabled`, link the project to a billing account in the Google Cloud Console.
 
