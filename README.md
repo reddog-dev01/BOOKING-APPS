@@ -13,47 +13,23 @@
 > [!IMPORTANT]
 > Sau khi nhận cặp key mới, luôn đi hết checklist dưới đây **trước** khi bàn giao cho người khác để tránh lỗi 403/503.
 
-### 1. Tạo mới key hoàn toàn
+### 1. Nhận key từ DevOps và export vào shell
+
+Đợt này đã cấp sẵn 2 key để test đồng bộ:
 
 ```bash
-export PROJECT_ID="inbound-object-476110-d5"
-gcloud config set project "$PROJECT_ID"
-
-# Đảm bảo dự án đã bật billing (bắt buộc cho Places).
-gcloud beta billing projects describe "$PROJECT_ID" \
-  --format='value(billingAccountName)'
-
-# Bật API cần thiết.
-gcloud services enable \
-  maps-backend.googleapis.com \
-  places.googleapis.com \
-  geocoding-backend.googleapis.com \
-  --project="$PROJECT_ID"
-
-# Sinh key server (PLACES_API_KEY) và giới hạn theo IP outbound của dev box/container.
-gcloud beta services api-keys create \
-  --project="$PROJECT_ID" \
-  --display-name="places-server-dev" \
-  --api-target="service=places.googleapis.com"
-
-# Sinh key browser (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) và giới hạn referrer.
-gcloud beta services api-keys create \
-  --project="$PROJECT_ID" \
-  --display-name="maps-js-browser-dev" \
-  --api-target="service=maps-backend.googleapis.com" \
-  --api-target="service=places.googleapis.com"
+export PLACES_API_KEY="AIzaSyDGGWT-KId7wbuqbq9apUaXRUutjrJOkWI" # server proxy Places
+export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="AIzaSyCSEvFUuxU-eDiKIoOSCUpplHk-03JAbPo" # browser Maps SDK
 ```
 
-Lưu lại các biến `PLACES_KEY_NAME`, `MAPS_JS_KEY_NAME`, `PLACES_KEY`, `MAPS_JS_KEY` để dùng ở bước kiểm tra (README cũ hoặc [`docs/google-key-verification.md`](docs/google-key-verification.md) mô tả chi tiết hơn).
+> [!NOTE]
+> Nếu DevOps gửi key mới, chỉ cần thay chuỗi tương ứng rồi chạy tiếp các bước bên dưới. Không cần tự tạo thêm key mới.
 
 ### 2. Đồng bộ mọi file `.env`
 
 ```bash
 REPO_DIR=~/booking-app # sửa lại nếu bạn clone repo ở vị trí khác
 cd "$REPO_DIR"
-
-export PLACES_API_KEY="$PLACES_KEY"
-export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="$MAPS_JS_KEY"
 
 # WEB_PORT = port Next.js dev thực tế (mặc định 3005, fallback 3000/3008)
 WEB_PORT=3005 pnpm apply:google-keys
@@ -64,7 +40,7 @@ unset PLACES_API_KEY NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ```
 
 - `apply:google-keys` tự sao chép `.env.example` nếu thiếu, cập nhật tất cả `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`/`GOOGLE_MAPS_REFERER` theo biến shell hiện tại.
-- `check:google-keys` đảm bảo không còn placeholder và mọi file `.env` đều mang cùng giá trị với biến shell. Có thể export thêm `GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"` để script báo lỗi nếu thấy key cũ.
+- `check:google-keys` đảm bảo không còn placeholder và mọi file `.env` đều mang cùng giá trị với biến shell. Nếu muốn ngăn việc dùng lại key cũ, export thêm `GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"` trước khi chạy.
 
 Xác thực nhanh bằng grep (không in ra toàn bộ key):
 
@@ -112,13 +88,16 @@ Kết quả mong đợi:
 
 ### 5. Xác minh restriction trên Google Cloud
 
+Nếu có quyền Cloud Console, mô tả key theo tên do DevOps gửi (ví dụ `places-server-dev`, `maps-js-browser-dev`).
+
 ```bash
-gcloud services api-keys describe "$PLACES_KEY_NAME" \
-  --project="$PROJECT_ID" \
+PROJECT_ID="inbound-object-476110-d5" # đổi lại nếu team cập nhật
+gcloud config set project "$PROJECT_ID"
+
+gcloud services api-keys describe "<TEN_KEY_SERVER>" \
   --format='get(restrictions.serverKeyRestrictions.allowedIps)'
 
-gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
-  --project="$PROJECT_ID" \
+gcloud services api-keys describe "<TEN_KEY_BROWSER>" \
   --format='get(restrictions.browserKeyRestrictions.allowedReferrers)'
 ```
 
@@ -128,12 +107,12 @@ gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
 ### 6. (Tuỳ chọn) So sánh hash để chắc chắn container nhận đúng key
 
 ```bash
-printf '%s' "$PLACES_KEY" | sha256sum
+printf '%s' "$PLACES_API_KEY" | sha256sum
 docker compose exec web sh -lc 'printf "%s" "$PLACES_API_KEY"' | sha256sum
 docker compose exec web sh -lc 'printf "%s" "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"' | sha256sum
 ```
 
-Hash giống nhau nghĩa là key trong container khớp với giá trị bạn vừa sinh mà không cần lộ chuỗi thật.
+Hash giống nhau nghĩa là key trong container khớp với giá trị bạn vừa export mà không cần lộ chuỗi thật.
 
 ## Kiến trúc Google Places trong repo
 
