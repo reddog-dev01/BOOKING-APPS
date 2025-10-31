@@ -45,6 +45,10 @@ const keyHints = {
 
 const runtimeTargets = [
   {
+    file: ".env",
+    keys: ["PLACES_API_KEY", "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"],
+  },
+  {
     file: "apps/api/.env",
     keys: ["PLACES_API_KEY"],
   },

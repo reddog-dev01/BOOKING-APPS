@@ -2,6 +2,7 @@ node_modules/
 pnpm-debug.log*
 .yarn/*
 .DS_Store
+!.env
 .env*
 !apps/api/.env
 !apps/api/.env.example
@@ -21,10 +22,10 @@ apps/api/node_modules/
 # env & secrets
 *.env
 *.env.*
+!.env
 !.env.example
 
 # local secrets
-*.env
 *.env.local
 apps/**/.env
 apps/**/.env.local
