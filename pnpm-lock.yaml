@@ -163,9 +163,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@googlemaps/google-maps-services-js':
-        specifier: workspace:*
-        version: link:../packages/google-maps-services-js
       lucide-react:
         specifier: ^0.544.0
         version: 0.544.0(react@18.3.1)
@@ -237,9 +234,6 @@ importers:
       prisma:
         specifier: 6.18.0
         version: 6.18.0(typescript@5.9.3)
-
-  packages/google-maps-services-js:
-    dependencies: {}
 
 packages:
 

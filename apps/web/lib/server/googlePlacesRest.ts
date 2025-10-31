@@ -4,20 +4,22 @@
  * - Details:      GET  https://places.googleapis.com/v1/places/{placeId} (yêu cầu Field Mask)
  */
 
-import { readFileSync, existsSync } from "node:fs";
-import path from "node:path";
+export class MissingApiKeyError extends Error {
+  constructor() {
+    super('PLACES_API_KEY missing');
+  }
+}
 
-import {
-  Client as GoogleMapsClient,
-  RequestError as GoogleMapsRequestError,
-} from "@googlemaps/google-maps-services-js";
+export class PlacesApiError extends Error {
+  status: number;
+  body?: string;
 
-type PlacesKeySource = {
-  value: string;
-  source: string;
-};
-
-type EnvFileResult = { key: string; source: string } | null;
+  constructor(status: number, body?: string) {
+    super(`Google Places API error (status=${status})`);
+    this.status = status;
+    this.body = body;
+  }
+}
 
 type AutocompleteParams = {
   input: string;
@@ -26,409 +28,72 @@ type AutocompleteParams = {
   sessionToken?: string;
 };
 
-type PlaceDetailsParams = {
-  placeId: string;
-  fieldMask?: string;
-  sessionToken?: string;
-  languageCode?: string;
-};
+const PLACES_ENDPOINT_AUTOCOMPLETE =
+  'https://places.googleapis.com/v1/places:autocomplete';
+const PLACES_ENDPOINT_DETAILS = (id: string) =>
+  `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`;
 
-const DEFAULT_FIELD_MASK = "id,displayName,formattedAddress,location";
-const BILLING_CIRCUIT_WINDOW_MS = 10 * 60 * 1000;
-const MAX_ERROR_BODY_LENGTH = 2_000;
-const BILLING_ERROR_MESSAGE =
-  "Google Places yêu cầu bật Billing cho dự án chứa API key.";
-const PLACEHOLDER_KEYS = new Set([
-  "__REPLACE_WITH_GOOGLE_PLACES_KEY__",
-  "AIzaSyDGGWT-KId7wbuqbq9apUaXRUutjrJOkWI",
-]);
-const PROCESS_ENV_CANDIDATES: Array<{
-  key: string;
-  label: string;
-  warnOnUse: boolean;
-}> = [
-  { key: "PLACES_API_KEY", label: "process.env.PLACES_API_KEY", warnOnUse: false },
-  {
-    key: "GOOGLE_PLACES_API_KEY",
-    label: "process.env.GOOGLE_PLACES_API_KEY",
-    warnOnUse: true,
-  },
-  {
-    key: "GOOGLE_MAPS_API_KEY",
-    label: "process.env.GOOGLE_MAPS_API_KEY",
-    warnOnUse: true,
-  },
-  {
-    key: "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY",
-    label: "process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY",
-    warnOnUse: true,
-  },
-];
-const DEFAULT_ENV_FILES = [
-  "apps/web/.env.local",
-  "apps/web/.env",
-  ".env.local",
-  ".env",
-  "apps/api/.env",
-  "apps/api/.env.local",
-  "apps/admin/.env.local",
-];
+/** Autocomplete (v1) – trả về mảng suggestions (chuẩn v1).
+ *  Để tương thích code cũ trả 'predictions', hàm sẽ fallback:
+ *  suggestions ?? predictions ?? []
+ */
+export async function fetchAutocomplete(
+  params: AutocompleteParams,
+  _referer?: string // giữ tham số để tương thích signature cũ
+) {
+  const API_KEY = process.env.PLACES_API_KEY;
+  if (!API_KEY) throw new MissingApiKeyError();
 
-let placesKeyCache: PlacesKeySource | null = null;
-let billingCircuitOpenUntil = 0;
-let placeholderWarningIssuedFor: string | null = null;
-let envFileResolverOverride: (() => EnvFileResult) | undefined;
+  const payload: Record<string, any> = {
+    input: params.input,
+    languageCode: params.languageCode || 'vi',
+  };
+  if (params.regionCode) payload.regionCode = params.regionCode;
+  if (params.sessionToken) payload.sessionToken = params.sessionToken;
 
-export class MissingApiKeyError extends Error {
-  constructor() {
-    super("PLACES_API_KEY missing");
-  }
-}
-
-export class PlacesApiError extends Error {
-  status: number;
-  body?: string;
-
-  constructor(options: { status: number; message?: string; body?: string }) {
-    super(options.message ?? `Google Places API error (status=${options.status})`);
-    this.status = options.status;
-    this.body = options.body;
-  }
-}
-
-function logWarn(payload: Record<string, unknown>) {
-  try {
-    console.warn(JSON.stringify(payload));
-  } catch {
-    console.warn(payload);
-  }
-}
-
-function detectRepoRoot(): string {
-  const cwd = process.cwd();
-  const candidates = [cwd, path.resolve(cwd, ".."), path.resolve(cwd, "../..")];
-
-  for (const candidate of candidates) {
-    if (existsSync(path.join(candidate, "apps"))) {
-      return candidate;
-    }
-  }
-
-  return cwd;
-}
-
-const repoRoot = detectRepoRoot();
-
-function readEnvFile(filePath: string): string | null {
-  try {
-    return readFileSync(filePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export function __testing_extractKeyFromEnvFile(content: string): string | null {
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-
-    if (!line || line.startsWith("#")) {
-      continue;
-    }
-
-    const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
-    if (!match) {
-      continue;
-    }
-
-    const [, key, rawValue] = match;
-    if (key !== "PLACES_API_KEY") {
-      continue;
-    }
-
-    let value = rawValue.trim();
-    if (value.startsWith("\"") || value.startsWith("'")) {
-      const quote = value[0];
-      const closingIndex = value.indexOf(quote, 1);
-      if (closingIndex !== -1) {
-        value = value.slice(1, closingIndex);
-      } else {
-        value = value.slice(1);
-      }
-    } else {
-      const commentIndex = value.indexOf("#");
-      if (commentIndex !== -1) {
-        value = value.slice(0, commentIndex).trim();
-      }
-    }
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
-}
-
-function defaultEnvFileResolver(): EnvFileResult {
-  for (const relative of DEFAULT_ENV_FILES) {
-    const absolute = path.resolve(repoRoot, relative);
-    const content = readEnvFile(absolute);
-    if (!content) {
-      continue;
-    }
-
-    const key = __testing_extractKeyFromEnvFile(content);
-    if (key) {
-      return { key, source: relative };
-    }
-  }
-
-  return null;
-}
-
-function resolvePlacesKeyFromProcessEnv(): PlacesKeySource | null {
-  for (const candidate of PROCESS_ENV_CANDIDATES) {
-    const value = process.env[candidate.key]?.trim();
-    if (value) {
-      if (candidate.warnOnUse) {
-        logWarn({ msg: "places.fallback_env_used", source: candidate.label });
-      }
-      return { value, source: candidate.label };
-    }
-  }
-  return null;
-}
-
-function resolvePlacesKeyFromFiles(): PlacesKeySource | null {
-  const resolver = envFileResolverOverride ?? defaultEnvFileResolver;
-  if (!resolver) {
-    return null;
-  }
-
-  const result = resolver();
-  if (result) {
-    logWarn({ msg: "places.env_file_fallback", source: result.source });
-    return { value: result.key, source: result.source };
-  }
-
-  return null;
-}
-
-function maybeWarnPlaceholder(key: string, source: string) {
-  if (!PLACEHOLDER_KEYS.has(key)) {
-    return;
-  }
-  if (placeholderWarningIssuedFor === key) {
-    return;
-  }
-
-  placeholderWarningIssuedFor = key;
-  logWarn({ msg: "places.placeholder_key_detected", source });
-}
-
-function resolvePlacesApiKey(): string {
-  if (placesKeyCache) {
-    return placesKeyCache.value;
-  }
-
-  const fromProcess = resolvePlacesKeyFromProcessEnv();
-  if (fromProcess) {
-    placesKeyCache = fromProcess;
-    maybeWarnPlaceholder(fromProcess.value, fromProcess.source);
-    return fromProcess.value;
-  }
-
-  const fromFile = resolvePlacesKeyFromFiles();
-  if (fromFile) {
-    placesKeyCache = fromFile;
-    maybeWarnPlaceholder(fromFile.value, fromFile.source);
-    return fromFile.value;
-  }
-
-  throw new MissingApiKeyError();
-}
-
-function truncate(body?: string | null): string | undefined {
-  if (!body) {
-    return undefined;
-  }
-  if (body.length <= MAX_ERROR_BODY_LENGTH) {
-    return body;
-  }
-  return `${body.slice(0, MAX_ERROR_BODY_LENGTH)}…`;
-}
-
-function createBillingError(): PlacesApiError {
-  return new PlacesApiError({ status: 503, message: BILLING_ERROR_MESSAGE });
-}
-
-function tripBillingCircuit(reason: "api_response" | "circuit_open") {
-  billingCircuitOpenUntil = Date.now() + BILLING_CIRCUIT_WINDOW_MS;
-  logWarn({
-    msg: "places.billing_disabled",
-    reason,
-    circuitOpenUntil: new Date(billingCircuitOpenUntil).toISOString(),
+  const res = await fetch(PLACES_ENDPOINT_AUTOCOMPLETE, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Goog-Api-Key': API_KEY,
+    },
+    body: JSON.stringify(payload),
   });
-}
 
-function ensureCircuitClosed() {
-  if (billingCircuitOpenUntil > Date.now()) {
-    tripBillingCircuit("circuit_open");
-    throw createBillingError();
-  }
-}
+  const text = await res.text();
 
-function looksLikeBillingDisabled(status: number, body: string | undefined, parsed: unknown): boolean {
-  if (status !== 403) {
-    return false;
+  if (!res.ok) {
+    // Trả đúng lỗi thật (không gom về "Billing")
+    throw new PlacesApiError(res.status, text.slice(0, 2000));
   }
 
-  const text = body?.toLowerCase() ?? "";
-  if (text.includes("billing") && (text.includes("disable") || text.includes("enable"))) {
-    return true;
-  }
-
-  const errorStatus =
-    typeof parsed === "object" && parsed !== null && "error" in parsed
-      ? (parsed as { error?: { status?: string } }).error?.status
-      : undefined;
-  return typeof errorStatus === "string" && errorStatus.toUpperCase().includes("BILLING");
-}
-
-let googleMapsClient: GoogleMapsClient | null = null;
-
-function getGoogleMapsClient(): GoogleMapsClient {
-  if (!googleMapsClient) {
-    const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch;
-    if (typeof fetchImpl !== "function") {
-      throw new Error("global fetch implementation is required to query Google Maps");
-    }
-    googleMapsClient = new GoogleMapsClient({ fetchImplementation: fetchImpl });
-  }
-  return googleMapsClient;
-}
-
-type ClientErrorPayload = { status: number; raw?: string; parsed?: unknown };
-
-function stringifyErrorBody(parsed: unknown): string | undefined {
-  if (parsed === undefined || parsed === null) {
-    return undefined;
-  }
-  if (typeof parsed === "string") {
-    return parsed;
-  }
+  let data: any;
   try {
-    return JSON.stringify(parsed);
+    data = JSON.parse(text);
   } catch {
-    return undefined;
-  }
-}
-
-function extractClientError(error: unknown): ClientErrorPayload | null {
-  if (error instanceof GoogleMapsRequestError) {
-    const status = error.response?.status ?? 500;
-    const raw =
-      typeof error.response?.raw === "string"
-        ? error.response.raw
-        : typeof error.response?.data === "string"
-          ? error.response.data
-          : undefined;
-    return {
-      status,
-      raw,
-      parsed: error.response?.data,
-    };
-  }
-  return null;
-}
-
-function handleClientError(error: unknown): never {
-  const payload = extractClientError(error);
-  if (!payload) {
-    throw error;
+    data = {};
   }
 
-  const { status, raw, parsed } = payload;
-  if (looksLikeBillingDisabled(status, raw, parsed)) {
-    tripBillingCircuit("api_response");
-    throw createBillingError();
-  }
-
-  const body = raw ?? stringifyErrorBody(parsed);
-  throw new PlacesApiError({ status, body: truncate(body) });
+  // v1: data.suggestions; legacy: data.predictions
+  return data.suggestions ?? data.predictions ?? [];
 }
 
-export async function fetchAutocomplete(params: AutocompleteParams, _referer?: string) {
-  const apiKey = resolvePlacesApiKey();
-  ensureCircuitClosed();
+/** (Tuỳ chọn) Place Details (v1) – Field Mask BẮT BUỘC.
+ *  Ví dụ dùng 'id,displayName,formattedAddress,location'.
+ */
+export async function fetchPlaceDetails(placeId: string, fieldMask: string) {
+  const API_KEY = process.env.PLACES_API_KEY;
+  if (!API_KEY) throw new MissingApiKeyError();
 
-  const client = getGoogleMapsClient();
+  const res = await fetch(PLACES_ENDPOINT_DETAILS(placeId), {
+    method: 'GET',
+    headers: {
+      'X-Goog-Api-Key': API_KEY,
+      'X-Goog-FieldMask': fieldMask,
+    },
+  });
 
-  try {
-    const { data } = await client.placeAutocomplete({
-      params: {
-        input: params.input,
-        key: apiKey,
-        language: params.languageCode ?? "vi",
-        sessiontoken: params.sessionToken,
-        components: params.regionCode ? `country:${params.regionCode}` : undefined,
-      },
-    });
-
-    const normalized = data as
-      | { suggestions?: unknown[]; predictions?: unknown[] }
-      | undefined
-      | null;
-    if (!normalized) {
-      return [];
-    }
-
-    return normalized.suggestions ?? normalized.predictions ?? [];
-  } catch (error) {
-    throw handleClientError(error);
-  }
-}
-
-export async function fetchPlaceDetails(params: PlaceDetailsParams, _referer?: string) {
-  const apiKey = resolvePlacesApiKey();
-  ensureCircuitClosed();
-
-  const client = getGoogleMapsClient();
-
-  try {
-    const { data } = await client.placeDetails({
-      params: {
-        place_id: params.placeId,
-        key: apiKey,
-        sessiontoken: params.sessionToken,
-        language: params.languageCode,
-        fields: params.fieldMask ?? DEFAULT_FIELD_MASK,
-      },
-    });
-
-    return data;
-  } catch (error) {
-    throw handleClientError(error);
-  }
-}
-
-export function resetPlacesCircuitBreakerForTests() {
-  billingCircuitOpenUntil = 0;
-  googleMapsClient = null;
-}
-
-export function resetPlacesKeyCacheForTests() {
-  placesKeyCache = null;
-  placeholderWarningIssuedFor = null;
-}
-
-export function setPlacesKeyFileResolverForTests(resolver: (() => EnvFileResult) | null) {
-  if (resolver === null) {
-    envFileResolverOverride = undefined;
-    return;
-  }
-  envFileResolverOverride = resolver;
+  const text = await res.text();
+  if (!res.ok) throw new PlacesApiError(res.status, text.slice(0, 2000));
+  return JSON.parse(text);
 }

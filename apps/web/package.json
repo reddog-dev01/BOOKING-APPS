@@ -16,7 +16,6 @@
   "license": "ISC",
   "packageManager": "pnpm@10.17.1",
   "dependencies": {
-    "@googlemaps/google-maps-services-js": "workspace:*",
     "lucide-react": "^0.544.0",
     "next": "14.2.12",
     "react": "18.3.1",
