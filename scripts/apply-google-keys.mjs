@@ -33,6 +33,14 @@ if (!serverKey || !browserKey) {
 
 const targets = [
   {
+    file: ".env",
+    example: ".env.example",
+    entries: [
+      { key: "PLACES_API_KEY", value: serverKey },
+      { key: "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY", value: browserKey },
+    ],
+  },
+  {
     file: "apps/api/.env",
     example: "apps/api/.env.example",
     entries: [{ key: "PLACES_API_KEY", value: serverKey }],
@@ -136,11 +144,11 @@ function updateContent(content, { key, value }) {
   const bare = new RegExp(`^${key}=[^\n]*`, "m");
 
   if (doubleQuoted.test(content)) {
-    return content.replace(doubleQuoted, `${key}="${value}"`);
+    return content.replace(doubleQuoted, `${key}=${value}`);
   }
 
   if (singleQuoted.test(content)) {
-    return content.replace(singleQuoted, `${key}='${value}'`);
+    return content.replace(singleQuoted, `${key}=${value}`);
   }
 
   if (bare.test(content)) {
@@ -148,7 +156,7 @@ function updateContent(content, { key, value }) {
   }
 
   const needsNewline = content.length > 0 && !content.endsWith("\n");
-  return `${content}${needsNewline ? "\n" : ""}${key}="${value}"\n`;
+  return `${content}${needsNewline ? "\n" : ""}${key}=${value}\n`;
 }
 
 async function applyEntries(filePath, entries) {

@@ -13,23 +13,35 @@
 > [!IMPORTANT]
 > Sau khi nhận cặp key mới, luôn đi hết checklist dưới đây **trước** khi bàn giao cho người khác để tránh lỗi 403/503.
 
-### 1. Nhận key từ DevOps và export vào shell
+### 1. Kiểm tra file `.env` ở repo root
 
-Đợt này đã cấp sẵn 2 key để test đồng bộ:
+File [`./.env`](.env) được commit cùng repo để Docker Compose tự động nạp khi build/run.
+Sau khi clone/pull lại, đảm bảo file đang chứa đúng cặp key do DevOps bàn giao:
 
 ```bash
-export PLACES_API_KEY="AIzaSyDGGWT-KId7wbuqbq9apUaXRUutjrJOkWI" # server proxy Places
-export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="AIzaSyCSEvFUuxU-eDiKIoOSCUpplHk-03JAbPo" # browser Maps SDK
+rg '^PLACES_API_KEY' .env
+rg '^NEXT_PUBLIC_GOOGLE_MAPS_API_KEY' .env
 ```
 
-> [!NOTE]
-> Nếu DevOps gửi key mới, chỉ cần thay chuỗi tương ứng rồi chạy tiếp các bước bên dưới. Không cần tự tạo thêm key mới.
+> [!TIP]
+> Hash nhanh để đối chiếu với thông tin DevOps gửi mà không lộ toàn bộ key:
+>
+> ```bash
+> printf '%s' "$(rg --only-matching --replace '$2' '^(PLACES_API_KEY)=(.*)$' .env)" | sha256sum
+> printf '%s' "$(rg --only-matching --replace '$2' '^(NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)=(.*)$' .env)" | sha256sum
+> ```
 
-### 2. Đồng bộ mọi file `.env`
+Nếu output rỗng hoặc sai, cập nhật lại từ nguồn chính và commit trước khi cho người khác pull code.
+
+### 2. Đồng bộ mọi file `.env` khi DevOps xoay key mới
 
 ```bash
 REPO_DIR=~/booking-app # sửa lại nếu bạn clone repo ở vị trí khác
 cd "$REPO_DIR"
+
+# Nhập key mới vào shell (dùng giá trị DevOps vừa gửi)
+export PLACES_API_KEY="<PLACES_API_KEY_MOI>"
+export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="<NEXT_PUBLIC_GOOGLE_MAPS_API_KEY_MOI>"
 
 # WEB_PORT = port Next.js dev thực tế (mặc định 3005, fallback 3000/3008)
 WEB_PORT=3005 pnpm apply:google-keys
@@ -39,7 +51,7 @@ pnpm check:google-keys
 unset PLACES_API_KEY NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ```
 
-- `apply:google-keys` tự sao chép `.env.example` nếu thiếu, cập nhật tất cả `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`/`GOOGLE_MAPS_REFERER` theo biến shell hiện tại.
+- `apply:google-keys` tự sao chép `.env.example` nếu thiếu, cập nhật tất cả `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`/`GOOGLE_MAPS_REFERER` theo biến shell hiện tại (bao gồm cả file gốc `.env`).
 - `check:google-keys` đảm bảo không còn placeholder và mọi file `.env` đều mang cùng giá trị với biến shell. Nếu muốn ngăn việc dùng lại key cũ, export thêm `GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"` trước khi chạy.
 
 Xác thực nhanh bằng grep (không in ra toàn bộ key):
@@ -179,9 +191,10 @@ Tham khảo thêm tại [`docs/jest-troubleshooting-vi.md`](docs/jest-troublesho
    cp apps/web/.env.example apps/web/.env
    cp apps/web/.env.local.example apps/web/.env.local
    cp apps/admin/.env.local.example apps/admin/.env.local
+   cp .env.example .env
    ```
 
-   Điền secret thật cho `PLACES_API_KEY` (server) và `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (browser). Docker Compose yêu cầu cả hai biến này, thiếu sẽ lỗi ngay.
+   Các file mẫu đã chứa đúng cặp key được DevOps bàn giao. `pnpm apply:google-keys` sẽ giúp đồng bộ mọi file khi key đổi.
 
 2. **Build container**
 
