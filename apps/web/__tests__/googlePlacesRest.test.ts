@@ -76,8 +76,13 @@ describe("googlePlacesRest circuit breaker", () => {
       .mockResolvedValue(
         createFetchResponse(403, {
           error: {
-            message:
-              "This API method requires billing to be enabled. Please enable billing on project then retry.",
+            message: "PERMISSION_DENIED",
+            details: [
+              {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                reason: "BILLING_DISABLED",
+              },
+            ],
           },
         }),
       );
@@ -87,13 +92,13 @@ describe("googlePlacesRest circuit breaker", () => {
       fetchAutocomplete({ input: "Ho Chi Minh" }),
     ).rejects.toMatchObject({
       message: expect.stringContaining("Google Places yêu cầu bật Billing"),
-      status: 503,
+      status: 403,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await expect(
       fetchAutocomplete({ input: "Ho Chi Minh" }),
-    ).rejects.toMatchObject({ status: 503 });
+    ).rejects.toMatchObject({ status: 403 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     advanceTo("2025-01-01T00:11:00.000Z");
@@ -122,15 +127,20 @@ describe("googlePlacesRest circuit breaker", () => {
       .mockResolvedValue(
         createFetchResponse(403, {
           error: {
-            message:
-              "This API method requires billing to be enabled. Please enable billing on project then retry.",
+            message: "Forbidden",
+            details: [
+              {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                reason: "BILLING_DISABLED",
+              },
+            ],
           },
         }),
       );
     global.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(fetchAutocomplete({ input: "Ha Noi" })).rejects.toMatchObject({
-      status: 503,
+      status: 403,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -138,7 +148,7 @@ describe("googlePlacesRest circuit breaker", () => {
 
     await expect(
       fetchPlaceDetails({ placeId: "abc" }),
-    ).rejects.toMatchObject({ status: 503 });
+    ).rejects.toMatchObject({ status: 403 });
     expect(fetchMock).not.toHaveBeenCalled();
 
     resetPlacesCircuitBreakerForTests();
@@ -179,6 +189,39 @@ describe("googlePlacesRest circuit breaker", () => {
     setPlacesKeyFileResolverForTests(null);
     resetPlacesKeyCacheForTests();
     resetPlacesCircuitBreakerForTests();
+  });
+
+  it("maps API key restriction reasons to a friendly message", async () => {
+    const {
+      fetchAutocomplete,
+      resetPlacesCircuitBreakerForTests,
+      resetPlacesKeyCacheForTests,
+    } = await importModule();
+
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(
+        createFetchResponse(403, {
+          error: {
+            message: "Forbidden",
+            details: [
+              {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                reason: "API_KEY_HTTP_REFERRER_BLOCKED",
+              },
+            ],
+          },
+        }),
+      );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(fetchAutocomplete({ input: "Hue" })).rejects.toMatchObject({
+      status: 403,
+      message: expect.stringContaining("Google Places key đang bị hạn chế"),
+    });
+
+    resetPlacesCircuitBreakerForTests();
+    resetPlacesKeyCacheForTests();
   });
 
   it("surfaces a MissingApiKeyError when env files and process vars do not contain a key", async () => {

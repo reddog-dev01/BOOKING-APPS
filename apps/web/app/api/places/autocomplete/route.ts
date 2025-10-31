@@ -137,21 +137,51 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    const baseLog = {
+      ts: new Date().toISOString(),
+      at: "places.autocomplete_failed",
+    };
+
     if (error instanceof MissingApiKeyError) {
+      console.warn(
+        JSON.stringify({
+          ...baseLog,
+          level: "warn",
+          kind: "missing_api_key",
+        }),
+      );
+
       return NextResponse.json(
         { error: { message: error.message } },
-        { status: 503 },
+        { status: 500 },
       );
     }
 
     if (error instanceof PlacesApiError) {
+      console.warn(
+        JSON.stringify({
+          ...baseLog,
+          level: "warn",
+          status: error.status,
+          body: error.details,
+        }),
+      );
+
       return NextResponse.json(
-        { error: { message: error.message } },
-        { status: Math.max(error.status, 400) },
+        { error: { message: error.message, detail: error.details } },
+        { status: error.status },
       );
     }
 
-    console.error("Google Places autocomplete proxy error", error);
+    console.error(
+      JSON.stringify({
+        ...baseLog,
+        level: "error",
+        kind: "unknown",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+
     return NextResponse.json(
       { error: { message: "Không thể gợi ý địa chỉ từ Google." } },
       { status: 502 },
