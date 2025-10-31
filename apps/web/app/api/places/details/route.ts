@@ -21,6 +21,45 @@ type DetailsPayload = {
 
 type ValidationResult<T> = { success: true; data: T } | { success: false; error: string };
 
+type GoogleErrorPayload = { error?: { code?: number | string } };
+
+const isErrorStatus = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 400 && value < 600;
+
+const coerceStatus = (value: unknown): number | null => {
+  if (isErrorStatus(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed) && parsed >= 400 && parsed < 600) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
+const extractStatusFromDetails = (details: unknown): number | null => {
+  const payload = details as GoogleErrorPayload | null;
+  return coerceStatus(payload?.error?.code);
+};
+
+const resolveErrorStatus = (error: PlacesApiError): number => {
+  const payloadStatus = extractStatusFromDetails(error.details);
+  if (payloadStatus) {
+    return payloadStatus;
+  }
+
+  const upstreamStatus = coerceStatus(error.status);
+  if (upstreamStatus) {
+    return upstreamStatus;
+  }
+
+  return 502;
+};
+
 function takeSlot(key: string): boolean {
   const now = Date.now();
   const current = rateBuckets.get(key);
@@ -135,9 +174,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (error instanceof PlacesApiError) {
+      const status = resolveErrorStatus(error);
       return NextResponse.json(
         { error: { message: error.message } },
-        { status: Math.max(error.status, 400) },
+        { status },
       );
     }
 
