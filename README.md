@@ -33,6 +33,9 @@ rg '^NEXT_PUBLIC_GOOGLE_MAPS_API_KEY' .env
 
 Nếu output rỗng hoặc sai, cập nhật lại từ nguồn chính và commit trước khi cho người khác pull code.
 
+> [!NOTE]
+> Để có hướng dẫn tuần tự xử lý lỗi `BILLING_DISABLED` hoặc 503 khi gọi `/api/places/autocomplete`, xem thêm runbook [`docs/places-troubleshooting-runbook.md`](./docs/places-troubleshooting-runbook.md).
+
 ### 2. Đồng bộ mọi file `.env` khi DevOps xoay key mới
 
 ```bash

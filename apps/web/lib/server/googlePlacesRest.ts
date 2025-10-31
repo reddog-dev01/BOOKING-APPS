@@ -16,6 +16,8 @@ const DEFAULT_LANGUAGE = "vi";
 const DEFAULT_REGION = "VN";
 const BILLING_CIRCUIT_TIMEOUT_MS = 10 * 60 * 1000;
 const GENERIC_CIRCUIT_TIMEOUT_MS = 60 * 1000;
+const BILLING_TROUBLESHOOTING_DOC = "docs/google-key-verification.md#smoke-test-proxy";
+const ENV_SYNC_DOC = "docs/google-key-verification.md#sync-env-files";
 const FALLBACK_KEY_ENV_KEYS = [
   "GOOGLE_PLACES_API_KEY",
   "GOOGLE_MAPS_API_KEY",
@@ -38,15 +40,25 @@ export class MissingApiKeyError extends Error {
   }
 }
 
+type PlacesApiErrorOptions = {
+  details?: unknown;
+  hints?: string[];
+  docsPath?: string;
+};
+
 export class PlacesApiError extends Error {
   readonly status: number;
   readonly details?: unknown;
+  readonly hints?: string[];
+  readonly docsPath?: string;
 
-  constructor(message: string, status: number, details?: unknown) {
+  constructor(message: string, status: number, options: PlacesApiErrorOptions = {}) {
     super(message);
     this.name = "PlacesApiError";
     this.status = status;
-    this.details = details;
+    this.details = options.details;
+    this.hints = options.hints;
+    this.docsPath = options.docsPath;
   }
 }
 
@@ -88,6 +100,8 @@ type CachedFailure = {
   status: number;
   message: string;
   details?: unknown;
+  hints?: string[];
+  docsPath?: string;
 };
 
 type PlacesKeyFileCandidate = { key: string; source: string };
@@ -119,6 +133,50 @@ const parseErrorBody = async (res: Response) => {
   } catch {
     return null;
   }
+};
+
+const GOOGLE_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
+
+const BILLING_DISABLED_REASONS = new Set(["BILLING_DISABLED"]);
+const API_KEY_RESTRICTION_REASONS = new Set([
+  "API_KEY_HTTP_REFERRER_BLOCKED",
+  "API_KEY_IP_ADDRESS_BLOCKED",
+  "API_KEY_INVALID",
+  "API_KEY_API_TARGET_BLOCKED",
+]);
+
+const extractErrorReasons = (payload: unknown): string[] => {
+  const details =
+    (payload as { error?: { details?: unknown } } | null)?.error?.details ?? null;
+  if (!Array.isArray(details)) {
+    return [];
+  }
+
+  const reasons: string[] = [];
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object") {
+      continue;
+    }
+
+    const errorInfoType = (detail as { [key: string]: unknown })["@type"];
+    if (errorInfoType !== GOOGLE_ERROR_INFO_TYPE) {
+      continue;
+    }
+
+    const reason = (detail as { reason?: unknown }).reason;
+    if (typeof reason !== "string") {
+      continue;
+    }
+
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    reasons.push(trimmed.toUpperCase());
+  }
+
+  return reasons;
 };
 
 const resolveReferer = (value?: string | null): string | undefined => {
@@ -247,7 +305,11 @@ const applyRefererOptions = (init: RequestInit, referer?: string): RequestInit =
 };
 
 const clonePlacesError = (entry: CachedFailure): PlacesApiError =>
-  new PlacesApiError(entry.message, entry.status, entry.details);
+  new PlacesApiError(entry.message, entry.status, {
+    details: entry.details,
+    hints: entry.hints,
+    docsPath: entry.docsPath,
+  });
 
 const resolveCachedFailure = (): PlacesApiError | null => {
   if (!cachedFailure) return null;
@@ -264,12 +326,15 @@ const rememberFailure = (
   message: string,
   details: unknown,
   ttl: number,
+  options?: { hints?: string[]; docsPath?: string },
 ) => {
   cachedFailure = {
     status,
     message,
     details,
     until: Date.now() + ttl,
+    hints: options?.hints,
+    docsPath: options?.docsPath,
   } satisfies CachedFailure;
 };
 
@@ -356,41 +421,79 @@ export async function fetchAutocomplete(
 
     const errorPayload = (errorBody as { error?: { message?: string } } | null)?.error;
     const originalMessage = errorPayload?.message;
+    const errorReasons = extractErrorReasons(errorBody);
     let message =
       originalMessage && originalMessage.length > 0
         ? originalMessage
         : `Places Autocomplete failed (HTTP ${response.status}).`;
 
     let circuitTtl: number | null = null;
-    let circuitStatus = Math.max(response.status, 400);
+    const hints: string[] = [];
+    let docsPath: string | undefined;
 
-    if (response.status === 403 && originalMessage) {
-      const normalized = originalMessage.toLowerCase();
+    if (response.status === 403) {
+      const normalized = originalMessage?.toLowerCase() ?? "";
+      const hasBillingReason = errorReasons.some((reason) =>
+        BILLING_DISABLED_REASONS.has(reason),
+      );
+      const hasRestrictionReason = errorReasons.some((reason) =>
+        API_KEY_RESTRICTION_REASONS.has(reason),
+      );
 
-      if (normalized.includes("billing") && normalized.includes("enable")) {
+      if (
+        hasBillingReason ||
+        (normalized.includes("billing") && normalized.includes("enable"))
+      ) {
         message =
           [
             "Google Places yêu cầu bật Billing cho dự án chứa API key.",
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
-        circuitStatus = 503;
-      } else if (normalized.includes("referer") || normalized.includes("ip")) {
+        hints.push(
+          "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
+          "Đợi 1-3 phút sau khi bật Billing rồi chạy lại curl trực tiếp tới https://places.googleapis.com/v1/places:autocomplete với header X-Goog-Api-Key để kiểm tra.",
+        );
+        docsPath = BILLING_TROUBLESHOOTING_DOC;
+      } else if (
+        hasRestrictionReason ||
+        normalized.includes("referer") ||
+        normalized.includes("ip")
+      ) {
         message =
           [
             "Google Places key đang bị hạn chế (IP hoặc HTTP referrer) và từ chối yêu cầu.",
             "Kiểm tra lại hạn mức trong Google Cloud Console.",
           ].join(" ");
         circuitTtl = GENERIC_CIRCUIT_TIMEOUT_MS;
+        hints.push(
+          "Kiểm tra danh sách IP/referrer được phép của key server trong Google Cloud Console → API Keys.",
+          "Đảm bảo biến môi trường PLACES_API_KEY tồn tại trong tiến trình Next.js (ví dụ apps/web/.env.local).",
+        );
+        docsPath = ENV_SYNC_DOC;
       }
     }
 
+    const normalizedHints = hints.length > 0 ? [...new Set(hints)] : undefined;
+    const errorDetails = errorBody ?? undefined;
+
     if (response.status === 403 && circuitTtl) {
-      rememberFailure(circuitStatus, message, errorBody ?? undefined, circuitTtl);
-      throw new PlacesApiError(message, circuitStatus, errorBody ?? undefined);
+      rememberFailure(response.status, message, errorDetails, circuitTtl, {
+        hints: normalizedHints,
+        docsPath,
+      });
+      throw new PlacesApiError(message, response.status, {
+        details: errorDetails,
+        hints: normalizedHints,
+        docsPath,
+      });
     }
 
-    throw new PlacesApiError(message, response.status, errorBody ?? undefined);
+    throw new PlacesApiError(message, response.status, {
+      details: errorDetails,
+      hints: normalizedHints,
+      docsPath,
+    });
   }
 
   const data = (await response.json()) as AutocompleteApiResponse;
@@ -462,41 +565,79 @@ export async function fetchPlaceDetails(
     });
     const errorPayload = (errorBody as { error?: { message?: string } } | null)?.error;
     const originalMessage = errorPayload?.message;
+    const errorReasons = extractErrorReasons(errorBody);
     let message =
       originalMessage && originalMessage.length > 0
         ? originalMessage
         : `Places Details failed (HTTP ${response.status}).`;
 
     let circuitTtl: number | null = null;
-    let circuitStatus = Math.max(response.status, 400);
+    const hints: string[] = [];
+    let docsPath: string | undefined;
 
-    if (response.status === 403 && originalMessage) {
-      const normalized = originalMessage.toLowerCase();
+    if (response.status === 403) {
+      const normalized = originalMessage?.toLowerCase() ?? "";
+      const hasBillingReason = errorReasons.some((reason) =>
+        BILLING_DISABLED_REASONS.has(reason),
+      );
+      const hasRestrictionReason = errorReasons.some((reason) =>
+        API_KEY_RESTRICTION_REASONS.has(reason),
+      );
 
-      if (normalized.includes("billing") && normalized.includes("enable")) {
+      if (
+        hasBillingReason ||
+        (normalized.includes("billing") && normalized.includes("enable"))
+      ) {
         message =
           [
             "Google Places yêu cầu bật Billing cho dự án chứa API key.",
             "Vào Google Cloud Console → Billing, liên kết dự án rồi thử lại.",
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
-        circuitStatus = 503;
-      } else if (normalized.includes("referer") || normalized.includes("ip")) {
+        hints.push(
+          "Bật Billing cho project chứa Places API key trong Google Cloud Console (Menu → Billing).",
+          "Đợi 1-3 phút sau khi bật Billing rồi chạy lại curl trực tiếp tới https://places.googleapis.com/v1/places:autocomplete với header X-Goog-Api-Key để kiểm tra.",
+        );
+        docsPath = BILLING_TROUBLESHOOTING_DOC;
+      } else if (
+        hasRestrictionReason ||
+        normalized.includes("referer") ||
+        normalized.includes("ip")
+      ) {
         message =
           [
             "Google Places key đang bị hạn chế (IP hoặc HTTP referrer) và từ chối yêu cầu.",
             "Kiểm tra lại hạn mức trong Google Cloud Console.",
           ].join(" ");
         circuitTtl = GENERIC_CIRCUIT_TIMEOUT_MS;
+        hints.push(
+          "Kiểm tra danh sách IP/referrer được phép của key server trong Google Cloud Console → API Keys.",
+          "Đảm bảo biến môi trường PLACES_API_KEY tồn tại trong tiến trình Next.js (ví dụ apps/web/.env.local).",
+        );
+        docsPath = ENV_SYNC_DOC;
       }
     }
 
+    const normalizedHints = hints.length > 0 ? [...new Set(hints)] : undefined;
+    const errorDetails = errorBody ?? undefined;
+
     if (response.status === 403 && circuitTtl) {
-      rememberFailure(circuitStatus, message, errorBody ?? undefined, circuitTtl);
-      throw new PlacesApiError(message, circuitStatus, errorBody ?? undefined);
+      rememberFailure(response.status, message, errorDetails, circuitTtl, {
+        hints: normalizedHints,
+        docsPath,
+      });
+      throw new PlacesApiError(message, response.status, {
+        details: errorDetails,
+        hints: normalizedHints,
+        docsPath,
+      });
     }
 
-    throw new PlacesApiError(message, response.status, errorBody ?? undefined);
+    throw new PlacesApiError(message, response.status, {
+      details: errorDetails,
+      hints: normalizedHints,
+      docsPath,
+    });
   }
 
   const data = (await response.json()) as DetailsApiResponse;
