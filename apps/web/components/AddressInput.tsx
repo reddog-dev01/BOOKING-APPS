@@ -29,8 +29,9 @@ const LANGUAGE_CODE = "vi";
 const MISSING_KEY_MESSAGE =
   "Thiếu Google Maps API key. Thiết lập PLACES_API_KEY cho server để kích hoạt gợi ý.";
 
-const HIGHLIGHT_CLASS_PRIMARY = "font-semibold text-brand-dark";
-const HIGHLIGHT_CLASS_SECONDARY = "font-semibold text-brand-dark";
+// Keep the highlight tone consistent with the booking form accent for a premium feel.
+const HIGHLIGHT_CLASS_PRIMARY = "font-semibold text-brand";
+const HIGHLIGHT_CLASS_SECONDARY = "font-semibold text-brand";
 
 const COUNTRY_SUFFIX_PATTERN = /,\s*(?:Việt Nam|Vietnam)$/i;
 const POSTAL_CODE_PATTERN = /(?:,\s*)?\b\d{5,6}\b(?:(?=,)|$)/g;
@@ -681,7 +682,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                 <li key={prediction.placeId} role="option" aria-selected={active}>
                   <button
                     type="button"
-                    className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
+                    className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] leading-6 transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
                       active ? "bg-brand/10" : ""
                     }`}
                     onMouseDown={(event) => {
@@ -695,11 +696,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                       <MapPin aria-hidden className="h-3.5 w-3.5" />
                     </span>
                     <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-sm text-gray-900">
+                      <span className="text-[15px] leading-6 font-medium tracking-tight text-slate-900">
                         {renderHighlightedText(mainText, query, HIGHLIGHT_CLASS_PRIMARY)}
                       </span>
                       {secondaryText && (
-                        <span className="text-xs text-gray-500">
+                        <span className="text-[13px] leading-5 text-slate-500">
                           {renderHighlightedText(
                             secondaryText,
                             query,
