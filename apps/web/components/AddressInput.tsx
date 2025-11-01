@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { MapPin } from "lucide-react";
 import type { PlacePrediction } from "../lib/googlePlacesTypes";
 
 type AddressValue = { text: string; lat?: number; lng?: number };
@@ -18,6 +19,7 @@ type AddressInputProps = {
   disabled?: boolean;
   inputClassName?: string;
   inputRef?: React.Ref<HTMLInputElement> | React.RefObject<HTMLInputElement | null>;
+  inputProps?: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "onKeyDown" | "onFocus" | "ref" | "disabled">;
   onChange: (v: AddressValue) => void;
 };
 
@@ -26,6 +28,9 @@ const COUNTRY_CODE = "VN";
 const LANGUAGE_CODE = "vi";
 const MISSING_KEY_MESSAGE =
   "Thiếu Google Maps API key. Thiết lập PLACES_API_KEY cho server để kích hoạt gợi ý.";
+
+const HIGHLIGHT_CLASS_PRIMARY = "font-semibold text-brand-dark";
+const HIGHLIGHT_CLASS_SECONDARY = "font-semibold text-brand-dark";
 
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
@@ -36,20 +41,73 @@ function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   }
 }
 
+function renderHighlightedText(
+  text: string,
+  query: string,
+  highlightClass: string,
+): React.ReactNode {
+  const trimmed = query.trim();
+  if (!trimmed) return text;
+
+  const segments: React.ReactNode[] = [];
+  const lowerText = text.toLocaleLowerCase();
+  const lowerQuery = trimmed.toLocaleLowerCase();
+  let lastIndex = 0;
+  let key = 0;
+
+  let matchIndex = lowerText.indexOf(lowerQuery, lastIndex);
+
+  while (matchIndex !== -1) {
+    if (matchIndex > lastIndex) {
+      segments.push(text.slice(lastIndex, matchIndex));
+    }
+
+    const endIndex = matchIndex + trimmed.length;
+    segments.push(
+      <span key={`highlight-${key++}-${matchIndex}`} className={highlightClass}>
+        {text.slice(matchIndex, endIndex)}
+      </span>,
+    );
+
+    lastIndex = endIndex;
+    matchIndex = lowerText.indexOf(lowerQuery, lastIndex);
+  }
+
+  if (lastIndex < text.length) {
+    segments.push(text.slice(lastIndex));
+  }
+
+  return segments.length > 0 ? segments : text;
+}
+
+type DropdownStyle = Pick<React.CSSProperties, "width" | "left">;
+
 const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
-  ({ value, placeholder, disabled, inputClassName, inputRef, onChange }, ref) => {
+  ({
+    value,
+    placeholder,
+    disabled,
+    inputClassName,
+    inputRef,
+    inputProps,
+    onChange,
+  }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
     const restSessionTokenRef = useRef<string | null>(null);
-    const latestQueryRef = useRef<string>("");
+    const dropdownHostRef = useRef<HTMLElement | null>(null);
+
+    const [query, setQuery] = useState(value);
 
     const [error, setError] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
     const [open, setOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(-1);
     const [apiUnavailableMessage, setApiUnavailableMessage] = useState<string | null>(null);
+    const [dropdownStyle, setDropdownStyle] = useState<DropdownStyle>({ left: 0 });
 
     const debounceRef = useRef<number | null>(null);
+    const latestQueryRef = useRef<string>("");
 
     const ensureRestSessionToken = useCallback(() => {
       if (!restSessionTokenRef.current) {
@@ -59,9 +117,72 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       return restSessionTokenRef.current;
     }, []);
 
+    const updateDropdownMetrics = useCallback(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const host =
+        dropdownHostRef.current ??
+        container.closest<HTMLElement>("[data-address-dropdown-parent]") ??
+        container;
+
+      dropdownHostRef.current = host;
+
+      const parentRect = host.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+
+      const next: DropdownStyle = {
+        width: parentRect.width,
+        left: parentRect.left - containerRect.left,
+      };
+
+      setDropdownStyle((prev) => {
+        if (prev.left === next.left && prev.width === next.width) {
+          return prev;
+        }
+        return next;
+      });
+    }, []);
+
     useEffect(() => {
       setExternalRef(inputRef as any, internalInputRef.current);
     }, [inputRef]);
+
+    useEffect(() => {
+      updateDropdownMetrics();
+
+      const container = containerRef.current;
+      const host = dropdownHostRef.current;
+      if (!container || !host) return;
+
+      if (typeof window !== "undefined" && "ResizeObserver" in window) {
+        const observer = new ResizeObserver(() => {
+          updateDropdownMetrics();
+        });
+        observer.observe(host);
+        if (host !== container) {
+          observer.observe(container);
+        }
+        return () => {
+          observer.disconnect();
+        };
+      }
+
+      const handleResize = () => {
+        updateDropdownMetrics();
+      };
+
+      window.addEventListener("resize", handleResize);
+      return () => {
+        window.removeEventListener("resize", handleResize);
+      };
+    }, [updateDropdownMetrics]);
+
+    useEffect(() => {
+      if (open) {
+        updateDropdownMetrics();
+      }
+    }, [open, updateDropdownMetrics]);
 
     const clearSuggestions = useCallback(() => {
       setSuggestions([]);
@@ -69,23 +190,21 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       setActiveIndex(-1);
     }, []);
 
+    const hideSuggestions = useCallback(() => {
+      setOpen(false);
+      setActiveIndex(-1);
+    }, []);
+
     const fetchPredictions = useCallback(
-      async (query: string) => {
-        const trimmed = query.trim();
-        latestQueryRef.current = trimmed;
-        if (!trimmed) {
+      async (trimmedQuery: string) => {
+        const normalized = trimmedQuery.trim();
+        latestQueryRef.current = normalized;
+
+        if (!normalized) {
           clearSuggestions();
           setError(null);
           return;
         }
-
-        if (apiUnavailableMessage) {
-          clearSuggestions();
-          setError(apiUnavailableMessage);
-          return;
-        }
-
-        setError(null);
 
         try {
           const token = ensureRestSessionToken();
@@ -93,7 +212,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              input: trimmed,
+              input: normalized,
               sessionToken: token ?? undefined,
               country: COUNTRY_CODE,
               languageCode: LANGUAGE_CODE,
@@ -127,7 +246,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
           const predictions = (payload as { predictions: PlacePrediction[] } | null)?.predictions;
 
-          if (latestQueryRef.current !== trimmed) {
+          if (latestQueryRef.current !== normalized) {
             return;
           }
 
@@ -146,31 +265,46 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           setError(message);
         }
       },
-      [apiUnavailableMessage, clearSuggestions, ensureRestSessionToken],
+      [clearSuggestions, ensureRestSessionToken, setApiUnavailableMessage],
     );
 
     const scheduleFetch = useCallback(
-      (query: string) => {
+      (rawQuery: string, options?: { immediate?: boolean }) => {
         if (debounceRef.current) {
           window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
         }
 
         if (apiUnavailableMessage) {
-          const trimmed = query.trim();
+          const trimmed = rawQuery.trim();
           clearSuggestions();
-          if (trimmed) {
-            setError(apiUnavailableMessage);
-          } else {
-            setError(null);
-          }
+          setError(trimmed ? apiUnavailableMessage : null);
           return;
         }
 
-        debounceRef.current = window.setTimeout(() => {
-          fetchPredictions(query).catch((err) => {
+        const trimmed = rawQuery.trim();
+
+        if (!trimmed) {
+          clearSuggestions();
+          setError(null);
+          return;
+        }
+
+        setError(null);
+        setOpen(true);
+        setActiveIndex(-1);
+
+        const run = () => {
+          fetchPredictions(trimmed).catch((err) => {
             console.error("Google Places prediction error", err);
           });
-        }, DEBOUNCE_MS);
+        };
+
+        if (options?.immediate) {
+          run();
+        } else {
+          debounceRef.current = window.setTimeout(run, DEBOUNCE_MS);
+        }
       },
       [apiUnavailableMessage, clearSuggestions, fetchPredictions],
     );
@@ -179,6 +313,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       return () => {
         if (debounceRef.current) {
           window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
         }
       };
     }, []);
@@ -187,14 +322,14 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       const handleClickOutside = (event: MouseEvent) => {
         if (!containerRef.current) return;
         if (!containerRef.current.contains(event.target as Node)) {
-          clearSuggestions();
+          hideSuggestions();
         }
       };
       document.addEventListener("mousedown", handleClickOutside);
       return () => {
         document.removeEventListener("mousedown", handleClickOutside);
       };
-    }, [clearSuggestions]);
+    }, [hideSuggestions]);
 
     const mergeRef = useCallback(
       (node: HTMLInputElement | null) => {
@@ -205,28 +340,24 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       [ref, inputRef],
     );
 
+    useEffect(() => {
+      const node = internalInputRef.current;
+      if (!node || node.value === value) return;
+      node.value = value;
+    }, [value]);
+
+    useEffect(() => {
+      setQuery((prev) => (prev === value ? prev : value));
+    }, [value]);
+
     const handleInputChange = useCallback(
       (event: React.ChangeEvent<HTMLInputElement>) => {
         const next = event.target.value;
         onChange({ text: next });
-
-        const trimmed = next.trim();
-        if (!trimmed) {
-          clearSuggestions();
-          setError(null);
-          return;
-        }
-
-        if (apiUnavailableMessage) {
-          clearSuggestions();
-          setError(apiUnavailableMessage);
-          return;
-        }
-
-        setError(null);
+        setQuery(next);
         scheduleFetch(next);
       },
-      [apiUnavailableMessage, clearSuggestions, onChange, scheduleFetch],
+      [onChange, scheduleFetch, setQuery],
     );
 
     const resolvePlaceDetails = useCallback(
@@ -270,25 +401,33 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             throw new Error(message);
           }
 
-          const details = (payload as { details?: {
-            formattedAddress?: string;
-            name?: string;
-            lat?: number;
-            lng?: number;
-          } } | null)?.details;
+          const details = (payload as {
+            details?: {
+              formattedAddress?: string;
+              name?: string;
+              lat?: number;
+              lng?: number;
+            };
+          } | null)?.details;
+
+          const resolvedText =
+            details?.formattedAddress ?? prediction.description ?? prediction.mainText;
 
           onChange({
-            text: details?.formattedAddress ?? prediction.description ?? prediction.mainText,
+            text: resolvedText,
             lat: details?.lat,
             lng: details?.lng,
           });
+          setQuery(resolvedText);
         } catch (err) {
           setError(
             err instanceof Error ? err.message : "Không thể lấy chi tiết địa điểm.",
           );
+          const fallbackText = prediction.description ?? prediction.mainText;
           onChange({
-            text: prediction.description ?? prediction.mainText,
+            text: fallbackText,
           });
+          setQuery(fallbackText);
         } finally {
           restSessionTokenRef.current = null;
         }
@@ -298,8 +437,13 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const selectPrediction = useCallback(
       (prediction: PlacePrediction) => {
+        if (debounceRef.current) {
+          window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
         clearSuggestions();
         const description = prediction.description ?? prediction.mainText;
+        setQuery(description);
         onChange({ text: description });
         if (internalInputRef.current) {
           internalInputRef.current.value = description;
@@ -308,7 +452,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           console.error("Google Places detail error", err);
         });
       },
-      [clearSuggestions, onChange, resolvePlaceDetails],
+      [clearSuggestions, onChange, resolvePlaceDetails, setQuery],
     );
 
     const handleKeyDown = useCallback(
@@ -329,25 +473,49 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             selectPrediction(suggestions[activeIndex]);
           }
         } else if (event.key === "Escape") {
-          clearSuggestions();
+          hideSuggestions();
         }
       },
-      [activeIndex, clearSuggestions, open, selectPrediction, suggestions],
+      [activeIndex, hideSuggestions, open, selectPrediction, suggestions],
     );
 
     const handleFocus = useCallback(
       (_event: FocusEvent<HTMLInputElement>) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return;
+        }
+
         if (suggestions.length > 0) {
           setOpen(true);
+          return;
         }
+
+        if (apiUnavailableMessage) {
+          setError(apiUnavailableMessage);
+          return;
+        }
+
+        scheduleFetch(value, { immediate: true });
       },
-      [suggestions.length],
+      [apiUnavailableMessage, scheduleFetch, suggestions.length, value],
     );
 
     const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
 
+    useEffect(() => {
+      setQuery((prev) => (prev === value ? prev : value));
+
+      if (typeof document !== "undefined") {
+        const node = internalInputRef.current;
+        if (node && node === document.activeElement && value.trim()) {
+          scheduleFetch(value, { immediate: true });
+        }
+      }
+    }, [scheduleFetch, value]);
+
     return (
-      <div ref={containerRef} className="relative">
+      <div ref={containerRef} className="relative w-full">
         <input
           ref={mergeRef}
           disabled={disabled}
@@ -361,12 +529,14 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           aria-autocomplete="list"
           aria-expanded={open}
           aria-activedescendant={highlightedId}
+          {...inputProps}
         />
 
         {open && suggestions.length > 0 && (
           <ul
             role="listbox"
-            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg"
+            className="absolute top-full z-50 mt-1 max-h-64 min-w-full overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+            style={dropdownStyle}
           >
             {suggestions.map((prediction, index) => {
               const active = index === activeIndex;
@@ -376,7 +546,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                 <li key={prediction.placeId} role="option" aria-selected={active}>
                   <button
                     type="button"
-                    className={`w-full px-3 py-2 text-left text-sm transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
+                    className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
                       active ? "bg-brand/10" : ""
                     }`}
                     onMouseDown={(event) => {
@@ -386,10 +556,23 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                     onMouseEnter={() => setActiveIndex(index)}
                     id={`suggestion-${index}`}
                   >
-                    <div className="font-medium text-gray-900">{mainText}</div>
-                    {secondaryText && (
-                      <div className="text-xs text-gray-500">{secondaryText}</div>
-                    )}
+                    <span className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-brand/10 text-brand">
+                      <MapPin aria-hidden className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-sm text-gray-900">
+                        {renderHighlightedText(mainText, query, HIGHLIGHT_CLASS_PRIMARY)}
+                      </span>
+                      {secondaryText && (
+                        <span className="text-xs text-gray-500">
+                          {renderHighlightedText(
+                            secondaryText,
+                            query,
+                            HIGHLIGHT_CLASS_SECONDARY,
+                          )}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 </li>
               );
@@ -409,5 +592,5 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
 AddressInput.displayName = "AddressInput";
 
-export type { AddressInputProps };
+export type { AddressInputProps, AddressValue };
 export default AddressInput;

@@ -34,7 +34,7 @@ import type {
   DirectionDto,
 } from "../lib/types";
 
-import AddressInput from "./AddressInput";
+import AddressInput, { type AddressValue } from "./AddressInput";
 import { AIRPORTS } from "../lib/airports";
 
 /* ================= Hook & Portal ================= */
@@ -79,7 +79,7 @@ function Portal({ children }: { children: ReactNode }) {
 type TripType = "airport" | "road";
 type Vehicle = { id: number; name: string; img: string; alt: string };
 
-type Stop = { id: string; text: string };
+type Stop = { id: string; text: string; lat?: number; lng?: number };
 const genId = () =>
   (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
 
@@ -98,9 +98,10 @@ const RADIUS = "rounded-xl";
 const CARD = `w-full ${RADIUS} border border-gray-300 bg-white shadow-sm ` + RING;
 const CARD_BTN = CARD + " px-3 py-2.5 text-left min-w-0";
 const CARD_MINH = "min-h-[56px]";
-const INPUT_GROUP = CARD + " p-0 flex items-stretch min-w-0";
+const INPUT_GROUP = CARD + " p-0 flex items-stretch min-w-0 overflow-hidden";
 const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3";
-const INPUT_RIGHT = "shrink-0 grid place-items-center w-12 border-l border-gray-300";
+const INPUT_RIGHT =
+  "shrink-0 grid place-items-center w-12 border-l border-gray-300 rounded-r-xl transition-colors";
 
 /* ================= Consts & helpers ================= */
 const NOIBAI = "Sân bay Nội Bài";
@@ -1153,8 +1154,12 @@ export default function BookingForm() {
     return n === null ? WAIT_ERR_MSG : "";
   }, [submitted, roundTrip, waitHours]);
 
-  const addStop = () => setStops((arr) => [...arr, { id: genId(), text: "" }]);
-  const updateStop = (i: number, v: string) => setStops((arr) => arr.map((s, idx) => (idx === i ? { ...s, text: v } : s)));
+  const addStop = () =>
+    setStops((arr) => [...arr, { id: genId(), text: "", lat: undefined, lng: undefined }]);
+  const updateStop = (i: number, v: AddressValue) =>
+    setStops((arr) =>
+      arr.map((s, idx) => (idx === i ? { ...s, text: v.text, lat: v.lat, lng: v.lng } : s)),
+    );
   const removeStop = (i: number) => setStops((arr) => arr.filter((_, idx) => idx !== i));
 
   const swap = () => {
@@ -1410,6 +1415,7 @@ export default function BookingForm() {
             ref={fromBoxRef}
             tabIndex={-1}
             className={`${INPUT_GROUP} relative`}
+            data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center text-brand">
               <CircleDot aria-hidden className="h-5 w-5" />
@@ -1456,17 +1462,21 @@ export default function BookingForm() {
             const errId = `stopErr-${s.id}`;
             return (
               <div key={s.id} className="relative w-full">
-                <div className={INPUT_GROUP}>
-                  <input
-                    ref={setStopRef(i)}
-                    className="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
-                    placeholder={`Điểm dừng #${i + 1}`}
-                    value={s.text}
-                    onChange={(e) => updateStop(i, e.target.value)}
-                    aria-label={`Điểm dừng ${i + 1}`}
-                    aria-invalid={showErr || undefined}
-                    aria-describedby={showErr ? errId : undefined}
-                  />
+                <div className={`${INPUT_GROUP} relative`} data-address-dropdown-parent>
+                  <div className="relative flex-1 min-w-0">
+                    <AddressInput
+                      value={s.text}
+                      placeholder={`Điểm dừng #${i + 1}`}
+                      inputClassName="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
+                      inputRef={setStopRef(i)}
+                      onChange={(v) => updateStop(i, v)}
+                      inputProps={{
+                        "aria-label": `Điểm dừng ${i + 1}`,
+                        "aria-invalid": showErr || undefined,
+                        "aria-describedby": showErr ? errId : undefined,
+                      }}
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -1502,6 +1512,7 @@ export default function BookingForm() {
             ref={toBoxRef}
             tabIndex={-1}
             className={`${INPUT_GROUP} relative`}
+            data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
               <MapPin aria-hidden className="h-5 w-5 text-red-600" />
