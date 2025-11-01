@@ -99,7 +99,12 @@ const CARD = `w-full ${RADIUS} border border-gray-300 bg-white shadow-sm ` + RIN
 const CARD_BTN = CARD + " px-3 py-2.5 text-left min-w-0";
 const CARD_MINH = "min-h-[56px]";
 const INPUT_GROUP = CARD + " p-0 flex items-stretch min-w-0 overflow-hidden";
-const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3";
+// Shared typography keeps address inputs modern and ensures copy fits comfortably inside the card.
+const INPUT_TEXT_STYLE =
+  "text-[15px] leading-6 font-medium tracking-tight text-slate-900 placeholder:text-slate-400 placeholder:font-normal";
+const INPUT_FIELD = `w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3 ${INPUT_TEXT_STYLE}`;
+const INPUT_FIELD_COMPACT =
+  `w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3 ${INPUT_TEXT_STYLE}`;
 const INPUT_RIGHT =
   "shrink-0 grid place-items-center w-12 border-l border-gray-300 rounded-r-xl transition-colors";
 
@@ -1414,7 +1419,7 @@ export default function BookingForm() {
           <div
             ref={fromBoxRef}
             tabIndex={-1}
-            className={`${INPUT_GROUP} relative`}
+            className={`${INPUT_GROUP} relative overflow-visible`}
             data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center text-brand">
@@ -1462,12 +1467,15 @@ export default function BookingForm() {
             const errId = `stopErr-${s.id}`;
             return (
               <div key={s.id} className="relative w-full">
-                <div className={`${INPUT_GROUP} relative`} data-address-dropdown-parent>
+                <div
+                  className={`${INPUT_GROUP} relative overflow-visible`}
+                  data-address-dropdown-parent
+                >
                   <div className="relative flex-1 min-w-0">
                     <AddressInput
                       value={s.text}
                       placeholder={`Điểm dừng #${i + 1}`}
-                      inputClassName="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
+                      inputClassName={INPUT_FIELD_COMPACT}
                       inputRef={setStopRef(i)}
                       onChange={(v) => updateStop(i, v)}
                       inputProps={{
@@ -1511,7 +1519,7 @@ export default function BookingForm() {
           <div
             ref={toBoxRef}
             tabIndex={-1}
-            className={`${INPUT_GROUP} relative`}
+            className={`${INPUT_GROUP} relative overflow-visible`}
             data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
