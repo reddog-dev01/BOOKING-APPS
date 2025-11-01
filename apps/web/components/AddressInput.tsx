@@ -172,11 +172,16 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         updateDropdownMetrics();
       };
 
-      const maybeWindow = globalThis as {
+      if (typeof window === "undefined") {
+        return undefined;
+      }
+
+      const maybeWindow = window as unknown as {
         addEventListener?: (type: string, listener: () => void) => void;
         removeEventListener?: (type: string, listener: () => void) => void;
       };
 
+      // Cast keeps DOM-less TypeScript builds happy while still binding in browsers.
       maybeWindow.addEventListener?.("resize", handleResize);
       return () => {
         maybeWindow.removeEventListener?.("resize", handleResize);
