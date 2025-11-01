@@ -359,8 +359,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         }
 
         setError(null);
+        scheduleFetch(next);
       },
-      [apiUnavailableMessage, clearSuggestions, onChange],
+      [apiUnavailableMessage, clearSuggestions, onChange, scheduleFetch],
     );
 
     const resolvePlaceDetails = useCallback(
