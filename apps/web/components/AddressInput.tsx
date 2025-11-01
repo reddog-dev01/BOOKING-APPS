@@ -32,6 +32,60 @@ const MISSING_KEY_MESSAGE =
 const HIGHLIGHT_CLASS_PRIMARY = "font-semibold text-brand-dark";
 const HIGHLIGHT_CLASS_SECONDARY = "font-semibold text-brand-dark";
 
+const COUNTRY_SUFFIX_PATTERN = /,\s*(?:Việt Nam|Vietnam)$/i;
+const POSTAL_CODE_PATTERN = /(?:,\s*)?\b\d{5,6}\b(?:(?=,)|$)/g;
+
+function cleanPlaceText(fragment?: string | null): string {
+  if (!fragment) return "";
+
+  let normalized = fragment.trim();
+
+  if (!normalized) return "";
+
+  normalized = normalized.replace(COUNTRY_SUFFIX_PATTERN, "");
+  normalized = normalized.replace(POSTAL_CODE_PATTERN, (match, offset, original) => {
+    const before = original.slice(0, offset);
+    const after = original.slice(offset + match.length);
+
+    const hasCommaBefore = /,\s*$/.test(before);
+    const hasCommaAfter = /^\s*,/.test(after);
+
+    if (hasCommaBefore && hasCommaAfter) {
+      return ",";
+    }
+
+    return "";
+  });
+
+  normalized = normalized.replace(/,\s*,/g, ", ");
+  normalized = normalized.replace(/\s+,/g, ", ");
+  normalized = normalized.replace(/\s{2,}/g, " ");
+  normalized = normalized.replace(/,\s*$/, "");
+
+  return normalized.trim();
+}
+
+function normalizePrediction(prediction: PlacePrediction): PlacePrediction {
+  const cleanedDescription = cleanPlaceText(prediction.description);
+  const cleanedMain = cleanPlaceText(prediction.mainText);
+  const cleanedSecondary = cleanPlaceText(prediction.secondaryText);
+
+  const description = cleanedDescription || prediction.description;
+  const mainText = cleanedMain || prediction.mainText;
+  const secondaryTextCandidate = cleanedSecondary || prediction.secondaryText;
+  const secondaryText =
+    secondaryTextCandidate && secondaryTextCandidate !== mainText
+      ? secondaryTextCandidate
+      : undefined;
+
+  return {
+    ...prediction,
+    description,
+    mainText,
+    secondaryText,
+  };
+}
+
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
   if (typeof ref === "function") {
@@ -96,6 +150,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const internalInputRef = useRef<HTMLInputElement | null>(null);
     const restSessionTokenRef = useRef<string | null>(null);
     const dropdownHostRef = useRef<HTMLElement | null>(null);
+    const lastPredictionsRef = useRef<PlacePrediction[]>([]);
+    const lastSelectedDescriptionRef = useRef<string | null>(null);
+    const lastUserQueryRef = useRef<string>(value);
 
     const [query, setQuery] = useState(value);
 
@@ -262,14 +319,18 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
           if (!predictions || predictions.length === 0) {
             clearSuggestions();
+            lastPredictionsRef.current = [];
             return;
           }
 
-          setSuggestions(predictions);
+          const normalizedPredictions = predictions.map(normalizePrediction);
+          lastPredictionsRef.current = normalizedPredictions;
+          setSuggestions(normalizedPredictions);
           setOpen(true);
           setActiveIndex(-1);
         } catch (err) {
           clearSuggestions();
+          lastPredictionsRef.current = [];
           const message =
             err instanceof Error ? err.message : "Không thể gợi ý địa chỉ từ Google.";
           setError(message);
@@ -296,6 +357,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
         if (!trimmed) {
           clearSuggestions();
+          lastPredictionsRef.current = [];
           setError(null);
           return;
         }
@@ -352,11 +414,20 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     useEffect(() => {
       const node = internalInputRef.current;
-      if (!node || node.value === value) return;
-      node.value = value;
-    }, [value]);
+      if (node && node.value !== value) {
+        node.value = value;
+      }
 
-    useEffect(() => {
+      const trimmedValue = value.trim();
+      if (lastSelectedDescriptionRef.current && trimmedValue === lastSelectedDescriptionRef.current) {
+        return;
+      }
+
+      if (!trimmedValue) {
+        lastSelectedDescriptionRef.current = null;
+        lastUserQueryRef.current = "";
+      }
+
       setQuery((prev) => (prev === value ? prev : value));
     }, [value]);
 
@@ -365,6 +436,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         const next = event.target.value;
         onChange({ text: next });
         setQuery(next);
+        lastUserQueryRef.current = next;
+        lastSelectedDescriptionRef.current = null;
+        lastPredictionsRef.current = [];
         scheduleFetch(next);
       },
       [onChange, scheduleFetch, setQuery],
@@ -420,24 +494,33 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             };
           } | null)?.details;
 
-          const resolvedText =
+          const resolvedTextRaw =
             details?.formattedAddress ?? prediction.description ?? prediction.mainText;
+          const resolvedText = cleanPlaceText(resolvedTextRaw) || resolvedTextRaw;
+          const highlightQuery =
+            lastUserQueryRef.current.trim() || cleanPlaceText(prediction.mainText) || resolvedText;
 
+          lastSelectedDescriptionRef.current = resolvedText;
           onChange({
             text: resolvedText,
             lat: details?.lat,
             lng: details?.lng,
           });
-          setQuery(resolvedText);
+          setQuery(highlightQuery);
         } catch (err) {
           setError(
             err instanceof Error ? err.message : "Không thể lấy chi tiết địa điểm.",
           );
-          const fallbackText = prediction.description ?? prediction.mainText;
+          const fallbackRaw = prediction.description ?? prediction.mainText;
+          const fallbackText = cleanPlaceText(fallbackRaw) || fallbackRaw;
+          const highlightQuery =
+            lastUserQueryRef.current.trim() || cleanPlaceText(prediction.mainText) || fallbackText;
+
+          lastSelectedDescriptionRef.current = fallbackText;
           onChange({
             text: fallbackText,
           });
-          setQuery(fallbackText);
+          setQuery(highlightQuery);
         } finally {
           restSessionTokenRef.current = null;
         }
@@ -451,18 +534,27 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           window.clearTimeout(debounceRef.current);
           debounceRef.current = null;
         }
-        clearSuggestions();
         const description = prediction.description ?? prediction.mainText;
-        setQuery(description);
-        onChange({ text: description });
+        const sanitizedDescription = cleanPlaceText(description) || description;
+        const highlightQuery =
+          lastUserQueryRef.current.trim() || cleanPlaceText(prediction.mainText) || sanitizedDescription;
+
+        if (suggestions.length > 0) {
+          lastPredictionsRef.current = [...suggestions];
+        }
+
+        lastSelectedDescriptionRef.current = sanitizedDescription;
+        clearSuggestions();
+        setQuery(highlightQuery);
+        onChange({ text: sanitizedDescription });
         if (internalInputRef.current) {
-          internalInputRef.current.value = description;
+          internalInputRef.current.value = sanitizedDescription;
         }
         resolvePlaceDetails(prediction).catch((err) => {
           console.error("Google Places detail error", err);
         });
       },
-      [clearSuggestions, onChange, resolvePlaceDetails, setQuery],
+      [clearSuggestions, onChange, resolvePlaceDetails, setQuery, suggestions],
     );
 
     const handleKeyDown = useCallback(
@@ -506,7 +598,20 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           return;
         }
 
-        scheduleFetch(value, { immediate: true });
+        const lastSelected = lastSelectedDescriptionRef.current;
+        const lastManualQuery = lastUserQueryRef.current.trim();
+
+        if (lastSelected && trimmed === lastSelected) {
+          if (lastPredictionsRef.current.length > 0) {
+            setSuggestions([...lastPredictionsRef.current]);
+            setActiveIndex(-1);
+            setOpen(true);
+          }
+          scheduleFetch(lastManualQuery || trimmed, { immediate: true });
+          return;
+        }
+
+        scheduleFetch(trimmed, { immediate: true });
       },
       [apiUnavailableMessage, scheduleFetch, suggestions.length, value],
     );
@@ -514,12 +619,16 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
 
     useEffect(() => {
-      setQuery((prev) => (prev === value ? prev : value));
-
       if (typeof document !== "undefined") {
         const node = internalInputRef.current;
         if (node && node === document.activeElement && value.trim()) {
-          scheduleFetch(value, { immediate: true });
+          const lastSelected = lastSelectedDescriptionRef.current;
+          const lastManualQuery = lastUserQueryRef.current.trim();
+          const trimmedValue = value.trim();
+          const nextQuery =
+            lastSelected && trimmedValue === lastSelected ? lastManualQuery || trimmedValue : trimmedValue;
+
+          scheduleFetch(nextQuery, { immediate: true });
         }
       }
     }, [scheduleFetch, value]);
