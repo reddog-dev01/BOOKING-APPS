@@ -110,6 +110,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const requestIdRef = useRef(0);
     const skipNextFetchRef = useRef(false);
     const hasMountedRef = useRef(false);
+    const manualChangeRef = useRef(false);
 
     const ensureRestSessionToken = useCallback(() => {
       if (!restSessionTokenRef.current) {
@@ -362,28 +363,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         const next = event.target.value;
         onChange({ text: next });
         setQuery(next);
-
-        const trimmed = next.trim();
-        if (!trimmed) {
-          requestIdRef.current += 1;
-          if (debounceRef.current) {
-            window.clearTimeout(debounceRef.current);
-            debounceRef.current = null;
-          }
-          clearSuggestions();
-          setError(null);
-          return;
-        }
-
-        if (apiUnavailableMessage) {
-          clearSuggestions();
-          setError(apiUnavailableMessage);
-          return;
-        }
-
-        setError(null);
+        skipNextFetchRef.current = false;
+        manualChangeRef.current = true;
+        scheduleFetch(next);
       },
-      [apiUnavailableMessage, clearSuggestions, onChange, setQuery],
+      [onChange, scheduleFetch, setQuery],
     );
 
     const resolvePlaceDetails = useCallback(
@@ -549,7 +533,12 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         return;
       }
 
-      scheduleFetch(query);
+      if (manualChangeRef.current) {
+        manualChangeRef.current = false;
+        return;
+      }
+
+      scheduleFetch(query, { immediate: true });
     }, [query, scheduleFetch]);
 
     return (
@@ -599,13 +588,13 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                     </span>
                     <span className="flex min-w-0 flex-col gap-0.5">
                       <span className="text-sm text-gray-900">
-                        {renderHighlightedText(mainText, value, HIGHLIGHT_CLASS_PRIMARY)}
+                        {renderHighlightedText(mainText, query, HIGHLIGHT_CLASS_PRIMARY)}
                       </span>
                       {secondaryText && (
                         <span className="text-xs text-gray-500">
                           {renderHighlightedText(
                             secondaryText,
-                            value,
+                            query,
                             HIGHLIGHT_CLASS_SECONDARY,
                           )}
                         </span>
