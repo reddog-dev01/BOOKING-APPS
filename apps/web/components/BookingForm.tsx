@@ -98,9 +98,10 @@ const RADIUS = "rounded-xl";
 const CARD = `w-full ${RADIUS} border border-gray-300 bg-white shadow-sm ` + RING;
 const CARD_BTN = CARD + " px-3 py-2.5 text-left min-w-0";
 const CARD_MINH = "min-h-[56px]";
-const INPUT_GROUP = CARD + " p-0 flex items-stretch min-w-0";
+const INPUT_GROUP = CARD + " p-0 flex items-stretch min-w-0 overflow-hidden";
 const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3";
-const INPUT_RIGHT = "shrink-0 grid place-items-center w-12 border-l border-gray-300";
+const INPUT_RIGHT =
+  "shrink-0 grid place-items-center w-12 border-l border-gray-300 rounded-r-xl transition-colors";
 
 /* ================= Consts & helpers ================= */
 const NOIBAI = "Sân bay Nội Bài";

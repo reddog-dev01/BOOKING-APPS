@@ -106,6 +106,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const [dropdownStyle, setDropdownStyle] = useState<DropdownStyle>({ left: 0 });
 
     const debounceRef = useRef<number | null>(null);
+    const previousValueRef = useRef(value);
+    const skipNextFetchRef = useRef(false);
 
     const ensureRestSessionToken = useCallback(() => {
       if (!restSessionTokenRef.current) {
@@ -342,10 +344,13 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
         const trimmed = next.trim();
         if (!trimmed) {
+          latestQueryRef.current = "";
           clearSuggestions();
           setError(null);
           return;
         }
+
+        latestQueryRef.current = trimmed;
 
         if (apiUnavailableMessage) {
           clearSuggestions();
@@ -354,9 +359,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         }
 
         setError(null);
-        scheduleFetch(next);
       },
-      [apiUnavailableMessage, clearSuggestions, onChange, scheduleFetch],
+      [apiUnavailableMessage, clearSuggestions, onChange],
     );
 
     const resolvePlaceDetails = useCallback(
@@ -428,6 +432,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const selectPrediction = useCallback(
       (prediction: PlacePrediction) => {
+        skipNextFetchRef.current = true;
         clearSuggestions();
         const description = prediction.description ?? prediction.mainText;
         onChange({ text: description });
@@ -467,12 +472,60 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const handleFocus = useCallback(
       (_event: FocusEvent<HTMLInputElement>) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return;
+        }
+
         if (suggestions.length > 0) {
           setOpen(true);
+          return;
         }
+
+        if (apiUnavailableMessage) {
+          setError(apiUnavailableMessage);
+          return;
+        }
+
+        latestQueryRef.current = trimmed;
+        scheduleFetch(value);
       },
-      [suggestions.length],
+      [apiUnavailableMessage, scheduleFetch, suggestions.length, value],
     );
+
+    useEffect(() => {
+      if (previousValueRef.current === value) {
+        return;
+      }
+
+      previousValueRef.current = value;
+
+      const trimmed = value.trim();
+      latestQueryRef.current = trimmed;
+
+      if (!trimmed) {
+        clearSuggestions();
+        setError(null);
+        skipNextFetchRef.current = false;
+        return;
+      }
+
+      if (apiUnavailableMessage) {
+        clearSuggestions();
+        setError(apiUnavailableMessage);
+        skipNextFetchRef.current = false;
+        return;
+      }
+
+      setError(null);
+
+      if (skipNextFetchRef.current) {
+        skipNextFetchRef.current = false;
+        return;
+      }
+
+      scheduleFetch(value);
+    }, [apiUnavailableMessage, clearSuggestions, scheduleFetch, value]);
 
     const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
 
