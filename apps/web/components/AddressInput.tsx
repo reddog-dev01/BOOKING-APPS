@@ -79,18 +79,22 @@ function renderHighlightedText(
   return segments.length > 0 ? segments : text;
 }
 
+type DropdownStyle = Pick<React.CSSProperties, "width" | "left">;
+
 const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
   ({ value, placeholder, disabled, inputClassName, inputRef, onChange }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
     const restSessionTokenRef = useRef<string | null>(null);
     const latestQueryRef = useRef<string>("");
+    const dropdownHostRef = useRef<HTMLElement | null>(null);
 
     const [error, setError] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
     const [open, setOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(-1);
     const [apiUnavailableMessage, setApiUnavailableMessage] = useState<string | null>(null);
+    const [dropdownStyle, setDropdownStyle] = useState<DropdownStyle>({ left: 0 });
 
     const debounceRef = useRef<number | null>(null);
 
@@ -102,9 +106,72 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       return restSessionTokenRef.current;
     }, []);
 
+    const updateDropdownMetrics = useCallback(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const host =
+        dropdownHostRef.current ??
+        container.closest<HTMLElement>("[data-address-dropdown-parent]") ??
+        container;
+
+      dropdownHostRef.current = host;
+
+      const parentRect = host.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+
+      const next: DropdownStyle = {
+        width: parentRect.width,
+        left: parentRect.left - containerRect.left,
+      };
+
+      setDropdownStyle((prev) => {
+        if (prev.left === next.left && prev.width === next.width) {
+          return prev;
+        }
+        return next;
+      });
+    }, []);
+
     useEffect(() => {
       setExternalRef(inputRef as any, internalInputRef.current);
     }, [inputRef]);
+
+    useEffect(() => {
+      updateDropdownMetrics();
+
+      const container = containerRef.current;
+      const host = dropdownHostRef.current;
+      if (!container || !host) return;
+
+      if (typeof window !== "undefined" && "ResizeObserver" in window) {
+        const observer = new ResizeObserver(() => {
+          updateDropdownMetrics();
+        });
+        observer.observe(host);
+        if (host !== container) {
+          observer.observe(container);
+        }
+        return () => {
+          observer.disconnect();
+        };
+      }
+
+      const handleResize = () => {
+        updateDropdownMetrics();
+      };
+
+      window.addEventListener("resize", handleResize);
+      return () => {
+        window.removeEventListener("resize", handleResize);
+      };
+    }, [updateDropdownMetrics]);
+
+    useEffect(() => {
+      if (open) {
+        updateDropdownMetrics();
+      }
+    }, [open, updateDropdownMetrics]);
 
     const clearSuggestions = useCallback(() => {
       setSuggestions([]);
@@ -414,7 +481,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         {open && suggestions.length > 0 && (
           <ul
             role="listbox"
-            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 min-w-full overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+            className="absolute top-full z-50 mt-1 max-h-64 min-w-full overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+            style={dropdownStyle}
           >
             {suggestions.map((prediction, index) => {
               const active = index === activeIndex;

@@ -1410,6 +1410,7 @@ export default function BookingForm() {
             ref={fromBoxRef}
             tabIndex={-1}
             className={`${INPUT_GROUP} relative`}
+            data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center text-brand">
               <CircleDot aria-hidden className="h-5 w-5" />
@@ -1502,6 +1503,7 @@ export default function BookingForm() {
             ref={toBoxRef}
             tabIndex={-1}
             className={`${INPUT_GROUP} relative`}
+            data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
               <MapPin aria-hidden className="h-5 w-5 text-red-600" />
