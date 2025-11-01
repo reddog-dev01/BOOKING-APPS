@@ -10,6 +10,7 @@ import React, {
   ReactNode,
   useLayoutEffect,
   useCallback,
+  useId,
 } from "react";
 import {
   CircleDot,
@@ -22,6 +23,8 @@ import {
   CalendarClock,
   Info,
   X,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
@@ -99,9 +102,28 @@ const CARD = `w-full ${RADIUS} border border-gray-300 bg-white shadow-sm ` + RIN
 const CARD_BTN = CARD + " px-3 py-2.5 text-left min-w-0";
 const CARD_MINH = "min-h-[56px]";
 const INPUT_GROUP = CARD + " p-0 flex items-stretch min-w-0 overflow-hidden";
-const INPUT_FIELD = "w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3";
+// Shared typography keeps address inputs modern and ensures copy fits comfortably inside the card.
+const INPUT_TEXT_STYLE =
+  "text-[15px] leading-6 font-medium tracking-tight text-slate-900 placeholder:text-slate-400 placeholder:font-normal";
+const INPUT_FIELD = `w-full bg-transparent border-0 outline-none focus:ring-0 px-10 py-3 ${INPUT_TEXT_STYLE}`;
+const INPUT_FIELD_COMPACT =
+  `w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3 ${INPUT_TEXT_STYLE}`;
 const INPUT_RIGHT =
   "shrink-0 grid place-items-center w-12 border-l border-gray-300 rounded-r-xl transition-colors";
+
+const VI_ADDRESS_COLLATOR =
+  typeof Intl !== "undefined" && typeof Intl.Collator === "function"
+    ? new Intl.Collator("vi", { sensitivity: "base", usage: "search", ignorePunctuation: true })
+    : null;
+
+const addressesMatch = (a: string, b: string) => {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (VI_ADDRESS_COLLATOR) {
+    return VI_ADDRESS_COLLATOR.compare(a, b) === 0;
+  }
+  return a.localeCompare(b, undefined, { sensitivity: "base" }) === 0;
+};
 
 /* ================= Consts & helpers ================= */
 const NOIBAI = "Sân bay Nội Bài";
@@ -1120,6 +1142,11 @@ export default function BookingForm() {
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [lastDtoUsedForQuote, setLastDtoUsedForQuote] = useState<QuoteRequestDto | null>(null);
 
+  const fromErrorMessageId = useId();
+  const toErrorMessageId = useId();
+  const sameRouteMessageId = useId();
+  const routeStatusMessageId = useId();
+
   // Refs
   const stopRefs = useRef<(HTMLInputElement | null)[]>([]);
   const setStopRef = (i: number): React.RefCallback<HTMLInputElement> => (el) => {
@@ -1145,8 +1172,14 @@ export default function BookingForm() {
   };
 
   // Lỗi inline
+  const trimmedFrom = from.trim();
+  const trimmedTo = to.trim();
+  const sameRoute = trimmedFrom && trimmedTo ? addressesMatch(trimmedFrom, trimmedTo) : false;
   const fromErr = submitted && !from.trim() ? "Xin vui lòng nhập Điểm đi." : "";
   const toErr = submitted && !to.trim() ? "Xin vui lòng nhập Điểm đến." : "";
+  const sameRouteWarning = sameRoute
+    ? "Quý khách đang để điểm đi và điểm đến trùng nhau."
+    : "";
   const startAtErr = submitted && !startAt ? "Xin vui lòng chọn Thời gian đi." : "";
   const waitErr = useMemo(() => {
     if (!submitted || !roundTrip) return "";
@@ -1183,6 +1216,82 @@ export default function BookingForm() {
     if (n === null) return 0;
     return calcWaitFee(n);
   }, [roundTrip, waitHours]);
+
+  const hasFromCoordinates =
+    typeof fromLat === "number" && Number.isFinite(fromLat) &&
+    typeof fromLng === "number" && Number.isFinite(fromLng);
+  const hasToCoordinates =
+    typeof toLat === "number" && Number.isFinite(toLat) &&
+    typeof toLng === "number" && Number.isFinite(toLng);
+  const routeReady = hasFromCoordinates && hasToCoordinates;
+
+  const routeStatus = useMemo(() => {
+    if (routeReady) {
+      return {
+        tone: "success" as const,
+        title: "Sẵn sàng tính quãng đường",
+        body:
+          "Đã xác thực tọa độ cho cả điểm đi và điểm đến. Nhấn \"Kiểm Tra Giá\" để xem khoảng cách và chi phí chính xác.",
+      };
+    }
+
+    if (!trimmedFrom && !trimmedTo) {
+      return {
+        tone: "neutral" as const,
+        title: "Nhập địa chỉ để hệ thống tính km",
+        body:
+          "Vui lòng nhập điểm đi và điểm đến, sau đó chọn gợi ý có biểu tượng ghim để hệ thống tự động định vị.",
+      };
+    }
+
+    const missingLabels: string[] = [];
+    if (!hasFromCoordinates && trimmedFrom) missingLabels.push("điểm đi");
+    if (!hasToCoordinates && trimmedTo) missingLabels.push("điểm đến");
+
+    const body = missingLabels.length
+      ? `Chưa xác định được tọa độ cho ${missingLabels.join(" và ")}. Hãy chọn địa chỉ từ gợi ý để hệ thống tính km.`
+      : "Chọn địa chỉ từ gợi ý để hệ thống định vị và tính quãng đường chính xác.";
+
+    return {
+      tone: "warning" as const,
+      title: "Chưa sẵn sàng tính quãng đường",
+      body,
+    };
+  }, [routeReady, trimmedFrom, trimmedTo, hasFromCoordinates, hasToCoordinates]);
+
+  const fromDescribedBy = [
+    fromErr ? fromErrorMessageId : null,
+    sameRoute ? sameRouteMessageId : null,
+    routeStatusMessageId,
+  ]
+    .filter(Boolean)
+    .join(" ") || undefined;
+  const toDescribedBy = [
+    toErr ? toErrorMessageId : null,
+    sameRoute ? sameRouteMessageId : null,
+    routeStatusMessageId,
+  ]
+    .filter(Boolean)
+    .join(" ") || undefined;
+  const routeStatusVisual = (() => {
+    switch (routeStatus.tone) {
+      case "success":
+        return {
+          container: "border-emerald-200 bg-emerald-50 text-emerald-700",
+          icon: <CheckCircle2 aria-hidden className="h-4 w-4 text-emerald-600" />,
+        } as const;
+      case "warning":
+        return {
+          container: "border-amber-200 bg-amber-50 text-amber-700",
+          icon: <AlertTriangle aria-hidden className="h-4 w-4 text-amber-500" />,
+        } as const;
+      default:
+        return {
+          container: "border-slate-200 bg-slate-50 text-slate-600",
+          icon: <Info aria-hidden className="h-4 w-4 text-slate-500" />,
+        } as const;
+    }
+  })();
 
   // Đổi loại chuyến → ràng buộc
   const onChangeTripType = (t: TripType) => {
@@ -1244,6 +1353,7 @@ export default function BookingForm() {
     const errs: string[] = [];
     if (!from.trim()) errs.push("from");
     if (!to.trim()) errs.push("to");
+    if (sameRoute) errs.push("sameRoute");
     if (!startAt) errs.push("startAt");
     if (stops.some((s) => !s.text.trim())) errs.push("stops");
     if (tripType === "airport") {
@@ -1281,6 +1391,7 @@ export default function BookingForm() {
     if (errs.length) {
       if (errs.includes("from")) return scrollAndFocus(fromBoxRef.current, fromInputRef.current);
       if (errs.includes("to")) return scrollAndFocus(toBoxRef.current, toInputRef.current);
+      if (errs.includes("sameRoute")) return scrollAndFocus(toBoxRef.current, toInputRef.current);
       if (errs.includes("startAt")) return scrollAndFocus(dtBtnRef.current, dtBtnRef.current);
       if (errs.includes("waitHours")) return scrollAndFocus(waitRef.current, waitRef.current);
       if (errs.includes("nbRule")) return scrollAndFocus(fromBoxRef.current, fromInputRef.current);
@@ -1414,7 +1525,7 @@ export default function BookingForm() {
           <div
             ref={fromBoxRef}
             tabIndex={-1}
-            className={`${INPUT_GROUP} relative`}
+            className={`${INPUT_GROUP} relative overflow-visible`}
             data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center text-brand">
@@ -1427,6 +1538,10 @@ export default function BookingForm() {
                 disabled={tripType === "airport" && airportSide === "from"}
                 inputClassName={INPUT_FIELD}
                 inputRef={fromInputRef}
+                inputProps={{
+                  "aria-invalid": fromErr || sameRoute ? true : undefined,
+                  "aria-describedby": fromDescribedBy,
+                }}
                 onChange={(v: { text: string; lat?: number; lng?: number }) => {
                   setFrom(v.text);
                   setFromLat(v.lat);
@@ -1450,7 +1565,16 @@ export default function BookingForm() {
               <Plus className="h-5 w-5 text-rose-500" aria-hidden />
             </button>
           </div>
-          {fromErr && <p className="text-[12px] text-rose-600 mt-1" role="alert" aria-live="polite">{fromErr}</p>}
+          {fromErr && (
+            <p
+              id={fromErrorMessageId}
+              className="text-[12px] text-rose-600 mt-1"
+              role="alert"
+              aria-live="polite"
+            >
+              {fromErr}
+            </p>
+          )}
         </div>
       </div>
 
@@ -1462,12 +1586,15 @@ export default function BookingForm() {
             const errId = `stopErr-${s.id}`;
             return (
               <div key={s.id} className="relative w-full">
-                <div className={`${INPUT_GROUP} relative`} data-address-dropdown-parent>
+                <div
+                  className={`${INPUT_GROUP} relative overflow-visible`}
+                  data-address-dropdown-parent
+                >
                   <div className="relative flex-1 min-w-0">
                     <AddressInput
                       value={s.text}
                       placeholder={`Điểm dừng #${i + 1}`}
-                      inputClassName="w-full bg-transparent border-0 outline-none focus:ring-0 px-3 py-3"
+                      inputClassName={INPUT_FIELD_COMPACT}
                       inputRef={setStopRef(i)}
                       onChange={(v) => updateStop(i, v)}
                       inputProps={{
@@ -1511,7 +1638,7 @@ export default function BookingForm() {
           <div
             ref={toBoxRef}
             tabIndex={-1}
-            className={`${INPUT_GROUP} relative`}
+            className={`${INPUT_GROUP} relative overflow-visible`}
             data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
@@ -1524,6 +1651,10 @@ export default function BookingForm() {
                 disabled={tripType === "airport" && airportSide === "to"}
                 inputClassName={INPUT_FIELD}
                 inputRef={toInputRef}
+                inputProps={{
+                  "aria-invalid": toErr || sameRoute ? true : undefined,
+                  "aria-describedby": toDescribedBy,
+                }}
                 onChange={(v: { text: string; lat?: number; lng?: number }) => {
                   setTo(v.text);
                   setToLat(v.lat);
@@ -1547,8 +1678,41 @@ export default function BookingForm() {
               <Repeat2 className="h-5 w-5 text-brand" aria-hidden />
             </button>
           </div>
-          {toErr && <p className="text-[12px] text-rose-600 mt-1" role="alert" aria-live="polite">{toErr}</p>}
+          {toErr && (
+            <p
+              id={toErrorMessageId}
+              className="text-[12px] text-rose-600 mt-1"
+              role="alert"
+              aria-live="polite"
+            >
+              {toErr}
+            </p>
+          )}
+          {sameRouteWarning && (
+            <p
+              id={sameRouteMessageId}
+              className="mt-1 flex items-start gap-2 text-[12px] text-amber-700"
+              role="alert"
+              aria-live="assertive"
+            >
+              <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 text-amber-500" />
+              <span>{sameRouteWarning}</span>
+            </p>
+          )}
         </div>
+      </div>
+
+      <div
+        id={routeStatusMessageId}
+        className={`mt-3 flex items-start gap-3 rounded-xl border px-3 py-3 text-[13px] leading-5 ${routeStatusVisual.container}`}
+        role="status"
+        aria-live="polite"
+      >
+        <span className="mt-0.5">{routeStatusVisual.icon}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block font-semibold text-[13px] leading-5">{routeStatus.title}</span>
+          <span className="block text-[12px] leading-5 text-current">{routeStatus.body}</span>
+        </span>
       </div>
 
       {/* Switches row */}
