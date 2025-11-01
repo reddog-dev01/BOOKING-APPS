@@ -95,8 +95,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
     const restSessionTokenRef = useRef<string | null>(null);
-    const latestQueryRef = useRef<string>("");
     const dropdownHostRef = useRef<HTMLElement | null>(null);
+
+    const [query, setQuery] = useState(value);
 
     const [error, setError] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
@@ -106,8 +107,9 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const [dropdownStyle, setDropdownStyle] = useState<DropdownStyle>({ left: 0 });
 
     const debounceRef = useRef<number | null>(null);
-    const previousValueRef = useRef(value);
+    const requestIdRef = useRef(0);
     const skipNextFetchRef = useRef(false);
+    const hasMountedRef = useRef(false);
 
     const ensureRestSessionToken = useCallback(() => {
       if (!restSessionTokenRef.current) {
@@ -196,22 +198,12 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     }, []);
 
     const fetchPredictions = useCallback(
-      async (query: string) => {
-        const trimmed = query.trim();
-        latestQueryRef.current = trimmed;
-        if (!trimmed) {
+      async (trimmedQuery: string, requestId: number) => {
+        if (!trimmedQuery) {
           clearSuggestions();
           setError(null);
           return;
         }
-
-        if (apiUnavailableMessage) {
-          clearSuggestions();
-          setError(apiUnavailableMessage);
-          return;
-        }
-
-        setError(null);
 
         try {
           const token = ensureRestSessionToken();
@@ -219,7 +211,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              input: trimmed,
+              input: trimmedQuery,
               sessionToken: token ?? undefined,
               country: COUNTRY_CODE,
               languageCode: LANGUAGE_CODE,
@@ -251,11 +243,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             throw new Error(message);
           }
 
-          const predictions = (payload as { predictions: PlacePrediction[] } | null)?.predictions;
-
-          if (latestQueryRef.current !== trimmed) {
+          if (requestId !== requestIdRef.current) {
             return;
           }
+
+          const predictions = (payload as { predictions: PlacePrediction[] } | null)?.predictions;
 
           if (!predictions || predictions.length === 0) {
             clearSuggestions();
@@ -266,37 +258,60 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           setOpen(true);
           setActiveIndex(-1);
         } catch (err) {
+          if (requestId !== requestIdRef.current) {
+            return;
+          }
+
           clearSuggestions();
           const message =
             err instanceof Error ? err.message : "Không thể gợi ý địa chỉ từ Google.";
           setError(message);
         }
       },
-      [apiUnavailableMessage, clearSuggestions, ensureRestSessionToken],
+      [clearSuggestions, ensureRestSessionToken, setApiUnavailableMessage],
     );
 
     const scheduleFetch = useCallback(
-      (query: string) => {
+      (rawQuery: string, options?: { immediate?: boolean }) => {
         if (debounceRef.current) {
           window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
         }
 
-        if (apiUnavailableMessage) {
-          const trimmed = query.trim();
+        const trimmed = rawQuery.trim();
+
+        if (!trimmed) {
+          requestIdRef.current += 1;
           clearSuggestions();
-          if (trimmed) {
-            setError(apiUnavailableMessage);
-          } else {
-            setError(null);
-          }
+          setError(null);
           return;
         }
 
-        debounceRef.current = window.setTimeout(() => {
-          fetchPredictions(query).catch((err) => {
+        if (apiUnavailableMessage) {
+          requestIdRef.current += 1;
+          clearSuggestions();
+          setError(apiUnavailableMessage);
+          return;
+        }
+
+        setError(null);
+        setOpen(true);
+        setActiveIndex(-1);
+
+        const nextRequestId = requestIdRef.current + 1;
+        requestIdRef.current = nextRequestId;
+
+        const run = () => {
+          fetchPredictions(trimmed, nextRequestId).catch((err) => {
             console.error("Google Places prediction error", err);
           });
-        }, DEBOUNCE_MS);
+        };
+
+        if (options?.immediate) {
+          run();
+        } else {
+          debounceRef.current = window.setTimeout(run, DEBOUNCE_MS);
+        }
       },
       [apiUnavailableMessage, clearSuggestions, fetchPredictions],
     );
@@ -305,6 +320,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       return () => {
         if (debounceRef.current) {
           window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
         }
       };
     }, []);
@@ -337,20 +353,27 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       node.value = value;
     }, [value]);
 
+    useEffect(() => {
+      setQuery((prev) => (prev === value ? prev : value));
+    }, [value]);
+
     const handleInputChange = useCallback(
       (event: React.ChangeEvent<HTMLInputElement>) => {
         const next = event.target.value;
         onChange({ text: next });
+        setQuery(next);
 
         const trimmed = next.trim();
         if (!trimmed) {
-          latestQueryRef.current = "";
+          requestIdRef.current += 1;
+          if (debounceRef.current) {
+            window.clearTimeout(debounceRef.current);
+            debounceRef.current = null;
+          }
           clearSuggestions();
           setError(null);
           return;
         }
-
-        latestQueryRef.current = trimmed;
 
         if (apiUnavailableMessage) {
           clearSuggestions();
@@ -359,9 +382,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         }
 
         setError(null);
-        scheduleFetch(next);
       },
-      [apiUnavailableMessage, clearSuggestions, onChange, scheduleFetch],
+      [apiUnavailableMessage, clearSuggestions, onChange, setQuery],
     );
 
     const resolvePlaceDetails = useCallback(
@@ -405,15 +427,23 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             throw new Error(message);
           }
 
-          const details = (payload as { details?: {
-            formattedAddress?: string;
-            name?: string;
-            lat?: number;
-            lng?: number;
-          } } | null)?.details;
+          const details = (payload as {
+            details?: {
+              formattedAddress?: string;
+              name?: string;
+              lat?: number;
+              lng?: number;
+            };
+          } | null)?.details;
 
+          const resolvedText =
+            details?.formattedAddress ?? prediction.description ?? prediction.mainText;
+
+          skipNextFetchRef.current = true;
+          requestIdRef.current += 1;
+          setQuery(resolvedText);
           onChange({
-            text: details?.formattedAddress ?? prediction.description ?? prediction.mainText,
+            text: resolvedText,
             lat: details?.lat,
             lng: details?.lng,
           });
@@ -421,21 +451,31 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           setError(
             err instanceof Error ? err.message : "Không thể lấy chi tiết địa điểm.",
           );
+          const fallbackText = prediction.description ?? prediction.mainText;
+          skipNextFetchRef.current = true;
+          requestIdRef.current += 1;
+          setQuery(fallbackText);
           onChange({
-            text: prediction.description ?? prediction.mainText,
+            text: fallbackText,
           });
         } finally {
           restSessionTokenRef.current = null;
         }
       },
-      [ensureRestSessionToken, onChange],
+      [ensureRestSessionToken, onChange, setQuery],
     );
 
     const selectPrediction = useCallback(
       (prediction: PlacePrediction) => {
         skipNextFetchRef.current = true;
+        requestIdRef.current += 1;
+        if (debounceRef.current) {
+          window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
         clearSuggestions();
         const description = prediction.description ?? prediction.mainText;
+        setQuery(description);
         onChange({ text: description });
         if (internalInputRef.current) {
           internalInputRef.current.value = description;
@@ -444,7 +484,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           console.error("Google Places detail error", err);
         });
       },
-      [clearSuggestions, onChange, resolvePlaceDetails],
+      [clearSuggestions, onChange, resolvePlaceDetails, setQuery],
     );
 
     const handleKeyDown = useCallback(
@@ -488,47 +528,29 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           return;
         }
 
-        latestQueryRef.current = trimmed;
-        scheduleFetch(value);
+        scheduleFetch(value, { immediate: true });
       },
       [apiUnavailableMessage, scheduleFetch, suggestions.length, value],
     );
 
+    const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
+
     useEffect(() => {
-      if (previousValueRef.current === value) {
+      if (!hasMountedRef.current) {
+        hasMountedRef.current = true;
+        if (query.trim()) {
+          scheduleFetch(query, { immediate: true });
+        }
         return;
       }
-
-      previousValueRef.current = value;
-
-      const trimmed = value.trim();
-      latestQueryRef.current = trimmed;
-
-      if (!trimmed) {
-        clearSuggestions();
-        setError(null);
-        skipNextFetchRef.current = false;
-        return;
-      }
-
-      if (apiUnavailableMessage) {
-        clearSuggestions();
-        setError(apiUnavailableMessage);
-        skipNextFetchRef.current = false;
-        return;
-      }
-
-      setError(null);
 
       if (skipNextFetchRef.current) {
         skipNextFetchRef.current = false;
         return;
       }
 
-      scheduleFetch(value);
-    }, [apiUnavailableMessage, clearSuggestions, scheduleFetch, value]);
-
-    const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
+      scheduleFetch(query);
+    }, [query, scheduleFetch]);
 
     return (
       <div ref={containerRef} className="relative w-full">
