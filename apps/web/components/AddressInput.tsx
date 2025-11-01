@@ -19,6 +19,7 @@ type AddressInputProps = {
   disabled?: boolean;
   inputClassName?: string;
   inputRef?: React.Ref<HTMLInputElement> | React.RefObject<HTMLInputElement | null>;
+  inputProps?: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "onKeyDown" | "onFocus" | "ref" | "disabled">;
   onChange: (v: AddressValue) => void;
 };
 
@@ -82,7 +83,15 @@ function renderHighlightedText(
 type DropdownStyle = Pick<React.CSSProperties, "width" | "left">;
 
 const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
-  ({ value, placeholder, disabled, inputClassName, inputRef, onChange }, ref) => {
+  ({
+    value,
+    placeholder,
+    disabled,
+    inputClassName,
+    inputRef,
+    inputProps,
+    onChange,
+  }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const internalInputRef = useRef<HTMLInputElement | null>(null);
     const restSessionTokenRef = useRef<string | null>(null);
@@ -320,6 +329,12 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       [ref, inputRef],
     );
 
+    useEffect(() => {
+      const node = internalInputRef.current;
+      if (!node || node.value === value) return;
+      node.value = value;
+    }, [value]);
+
     const handleInputChange = useCallback(
       (event: React.ChangeEvent<HTMLInputElement>) => {
         const next = event.target.value;
@@ -476,6 +491,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           aria-autocomplete="list"
           aria-expanded={open}
           aria-activedescendant={highlightedId}
+          {...inputProps}
         />
 
         {open && suggestions.length > 0 && (
@@ -538,5 +554,5 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
 AddressInput.displayName = "AddressInput";
 
-export type { AddressInputProps };
+export type { AddressInputProps, AddressValue };
 export default AddressInput;
