@@ -172,9 +172,14 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         updateDropdownMetrics();
       };
 
-      window.addEventListener("resize", handleResize);
+      const maybeWindow = globalThis as {
+        addEventListener?: (type: string, listener: () => void) => void;
+        removeEventListener?: (type: string, listener: () => void) => void;
+      };
+
+      maybeWindow.addEventListener?.("resize", handleResize);
       return () => {
-        window.removeEventListener("resize", handleResize);
+        maybeWindow.removeEventListener?.("resize", handleResize);
       };
     }, [updateDropdownMetrics]);
 
