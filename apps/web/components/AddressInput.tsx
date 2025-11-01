@@ -152,7 +152,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const dropdownHostRef = useRef<HTMLElement | null>(null);
     const lastPredictionsRef = useRef<PlacePrediction[]>([]);
     const lastSelectedDescriptionRef = useRef<string | null>(null);
-    const lastUserQueryRef = useRef<string>(value);
+    const lastUserQueryRef = useRef<string>(""); // tracks manual typing to decide when to revive suggestions
 
     const [query, setQuery] = useState(value);
 
@@ -536,16 +536,12 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         }
         const description = prediction.description ?? prediction.mainText;
         const sanitizedDescription = cleanPlaceText(description) || description;
-        const highlightQuery =
-          lastUserQueryRef.current.trim() || cleanPlaceText(prediction.mainText) || sanitizedDescription;
-
-        if (suggestions.length > 0) {
-          lastPredictionsRef.current = [...suggestions];
-        }
 
         lastSelectedDescriptionRef.current = sanitizedDescription;
+        lastUserQueryRef.current = ""; // selection committed, no pending manual query
+        lastPredictionsRef.current = [];
         clearSuggestions();
-        setQuery(highlightQuery);
+        setQuery(sanitizedDescription);
         onChange({ text: sanitizedDescription });
         if (internalInputRef.current) {
           internalInputRef.current.value = sanitizedDescription;
@@ -584,12 +580,15 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const handleFocus = useCallback(
       (_event: FocusEvent<HTMLInputElement>) => {
         const trimmed = value.trim();
-        if (!trimmed) {
+        const lastManualQuery = lastUserQueryRef.current.trim();
+        const lastSelected = lastSelectedDescriptionRef.current;
+
+        if (!lastManualQuery) {
+          // nothing typed recently → keep the field calm on refocus
           return;
         }
 
-        if (suggestions.length > 0) {
-          setOpen(true);
+        if (lastSelected && trimmed === lastSelected && lastManualQuery === lastSelected.trim()) {
           return;
         }
 
@@ -598,20 +597,20 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           return;
         }
 
-        const lastSelected = lastSelectedDescriptionRef.current;
-        const lastManualQuery = lastUserQueryRef.current.trim();
+        if (suggestions.length > 0) {
+          setOpen(true);
+        } else if (lastPredictionsRef.current.length > 0) {
+          setSuggestions([...lastPredictionsRef.current]);
+          setActiveIndex(-1);
+          setOpen(true);
+        }
 
-        if (lastSelected && trimmed === lastSelected) {
-          if (lastPredictionsRef.current.length > 0) {
-            setSuggestions([...lastPredictionsRef.current]);
-            setActiveIndex(-1);
-            setOpen(true);
-          }
-          scheduleFetch(lastManualQuery || trimmed, { immediate: true });
+        const queryForFetch = lastManualQuery || trimmed;
+        if (!queryForFetch) {
           return;
         }
 
-        scheduleFetch(trimmed, { immediate: true });
+        scheduleFetch(queryForFetch, { immediate: true });
       },
       [apiUnavailableMessage, scheduleFetch, suggestions.length, value],
     );
@@ -619,18 +618,35 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
 
     useEffect(() => {
-      if (typeof document !== "undefined") {
-        const node = internalInputRef.current;
-        if (node && node === document.activeElement && value.trim()) {
-          const lastSelected = lastSelectedDescriptionRef.current;
-          const lastManualQuery = lastUserQueryRef.current.trim();
-          const trimmedValue = value.trim();
-          const nextQuery =
-            lastSelected && trimmedValue === lastSelected ? lastManualQuery || trimmedValue : trimmedValue;
+      if (typeof document === "undefined") return;
 
-          scheduleFetch(nextQuery, { immediate: true });
-        }
+      const node = internalInputRef.current;
+      if (!node || node !== document.activeElement) {
+        return;
       }
+
+      const trimmedValue = value.trim();
+      if (!trimmedValue) {
+        return;
+      }
+
+      const lastSelected = lastSelectedDescriptionRef.current;
+      const lastManualQuery = lastUserQueryRef.current.trim();
+
+      if (!lastManualQuery) {
+        return;
+      }
+
+      if (lastSelected && trimmedValue === lastSelected && lastManualQuery === lastSelected.trim()) {
+        return;
+      }
+
+      const queryForFetch = lastManualQuery || trimmedValue;
+      if (!queryForFetch) {
+        return;
+      }
+
+      scheduleFetch(queryForFetch, { immediate: true });
     }, [scheduleFetch, value]);
 
     return (
