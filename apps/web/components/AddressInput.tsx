@@ -107,10 +107,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const [dropdownStyle, setDropdownStyle] = useState<DropdownStyle>({ left: 0 });
 
     const debounceRef = useRef<number | null>(null);
-    const requestIdRef = useRef(0);
-    const skipNextFetchRef = useRef(false);
-    const hasMountedRef = useRef(false);
-    const manualChangeRef = useRef(false);
+    const latestQueryRef = useRef<string>("");
 
     const ensureRestSessionToken = useCallback(() => {
       if (!restSessionTokenRef.current) {
@@ -199,8 +196,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     }, []);
 
     const fetchPredictions = useCallback(
-      async (trimmedQuery: string, requestId: number) => {
-        if (!trimmedQuery) {
+      async (trimmedQuery: string) => {
+        const normalized = trimmedQuery.trim();
+        latestQueryRef.current = normalized;
+
+        if (!normalized) {
           clearSuggestions();
           setError(null);
           return;
@@ -212,7 +212,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              input: trimmedQuery,
+              input: normalized,
               sessionToken: token ?? undefined,
               country: COUNTRY_CODE,
               languageCode: LANGUAGE_CODE,
@@ -244,11 +244,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             throw new Error(message);
           }
 
-          if (requestId !== requestIdRef.current) {
+          const predictions = (payload as { predictions: PlacePrediction[] } | null)?.predictions;
+
+          if (latestQueryRef.current !== normalized) {
             return;
           }
-
-          const predictions = (payload as { predictions: PlacePrediction[] } | null)?.predictions;
 
           if (!predictions || predictions.length === 0) {
             clearSuggestions();
@@ -259,10 +259,6 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           setOpen(true);
           setActiveIndex(-1);
         } catch (err) {
-          if (requestId !== requestIdRef.current) {
-            return;
-          }
-
           clearSuggestions();
           const message =
             err instanceof Error ? err.message : "Không thể gợi ý địa chỉ từ Google.";
@@ -279,19 +275,18 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           debounceRef.current = null;
         }
 
-        const trimmed = rawQuery.trim();
-
-        if (!trimmed) {
-          requestIdRef.current += 1;
+        if (apiUnavailableMessage) {
+          const trimmed = rawQuery.trim();
           clearSuggestions();
-          setError(null);
+          setError(trimmed ? apiUnavailableMessage : null);
           return;
         }
 
-        if (apiUnavailableMessage) {
-          requestIdRef.current += 1;
+        const trimmed = rawQuery.trim();
+
+        if (!trimmed) {
           clearSuggestions();
-          setError(apiUnavailableMessage);
+          setError(null);
           return;
         }
 
@@ -299,11 +294,8 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         setOpen(true);
         setActiveIndex(-1);
 
-        const nextRequestId = requestIdRef.current + 1;
-        requestIdRef.current = nextRequestId;
-
         const run = () => {
-          fetchPredictions(trimmed, nextRequestId).catch((err) => {
+          fetchPredictions(trimmed).catch((err) => {
             console.error("Google Places prediction error", err);
           });
         };
@@ -363,8 +355,6 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         const next = event.target.value;
         onChange({ text: next });
         setQuery(next);
-        skipNextFetchRef.current = false;
-        manualChangeRef.current = true;
         scheduleFetch(next);
       },
       [onChange, scheduleFetch, setQuery],
@@ -423,36 +413,30 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
           const resolvedText =
             details?.formattedAddress ?? prediction.description ?? prediction.mainText;
 
-          skipNextFetchRef.current = true;
-          requestIdRef.current += 1;
-          setQuery(resolvedText);
           onChange({
             text: resolvedText,
             lat: details?.lat,
             lng: details?.lng,
           });
+          setQuery(resolvedText);
         } catch (err) {
           setError(
             err instanceof Error ? err.message : "Không thể lấy chi tiết địa điểm.",
           );
           const fallbackText = prediction.description ?? prediction.mainText;
-          skipNextFetchRef.current = true;
-          requestIdRef.current += 1;
-          setQuery(fallbackText);
           onChange({
             text: fallbackText,
           });
+          setQuery(fallbackText);
         } finally {
           restSessionTokenRef.current = null;
         }
       },
-      [ensureRestSessionToken, onChange, setQuery],
+      [ensureRestSessionToken, onChange],
     );
 
     const selectPrediction = useCallback(
       (prediction: PlacePrediction) => {
-        skipNextFetchRef.current = true;
-        requestIdRef.current += 1;
         if (debounceRef.current) {
           window.clearTimeout(debounceRef.current);
           debounceRef.current = null;
@@ -520,26 +504,15 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
 
     useEffect(() => {
-      if (!hasMountedRef.current) {
-        hasMountedRef.current = true;
-        if (query.trim()) {
-          scheduleFetch(query, { immediate: true });
+      setQuery((prev) => (prev === value ? prev : value));
+
+      if (typeof document !== "undefined") {
+        const node = internalInputRef.current;
+        if (node && node === document.activeElement && value.trim()) {
+          scheduleFetch(value, { immediate: true });
         }
-        return;
       }
-
-      if (skipNextFetchRef.current) {
-        skipNextFetchRef.current = false;
-        return;
-      }
-
-      if (manualChangeRef.current) {
-        manualChangeRef.current = false;
-        return;
-      }
-
-      scheduleFetch(query, { immediate: true });
-    }, [query, scheduleFetch]);
+    }, [scheduleFetch, value]);
 
     return (
       <div ref={containerRef} className="relative w-full">
