@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { MapPin } from "lucide-react";
 import type { PlacePrediction } from "../lib/googlePlacesTypes";
 
 type AddressValue = { text: string; lat?: number; lng?: number };
@@ -27,6 +28,9 @@ const LANGUAGE_CODE = "vi";
 const MISSING_KEY_MESSAGE =
   "Thiếu Google Maps API key. Thiết lập PLACES_API_KEY cho server để kích hoạt gợi ý.";
 
+const HIGHLIGHT_CLASS_PRIMARY = "font-semibold text-brand-dark";
+const HIGHLIGHT_CLASS_SECONDARY = "font-semibold text-brand-dark";
+
 function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   if (!ref) return;
   if (typeof ref === "function") {
@@ -34,6 +38,45 @@ function setExternalRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
   } else {
     (ref as React.MutableRefObject<T | null>).current = value;
   }
+}
+
+function renderHighlightedText(
+  text: string,
+  query: string,
+  highlightClass: string,
+): React.ReactNode {
+  const trimmed = query.trim();
+  if (!trimmed) return text;
+
+  const segments: React.ReactNode[] = [];
+  const lowerText = text.toLocaleLowerCase();
+  const lowerQuery = trimmed.toLocaleLowerCase();
+  let lastIndex = 0;
+  let key = 0;
+
+  let matchIndex = lowerText.indexOf(lowerQuery, lastIndex);
+
+  while (matchIndex !== -1) {
+    if (matchIndex > lastIndex) {
+      segments.push(text.slice(lastIndex, matchIndex));
+    }
+
+    const endIndex = matchIndex + trimmed.length;
+    segments.push(
+      <span key={`highlight-${key++}-${matchIndex}`} className={highlightClass}>
+        {text.slice(matchIndex, endIndex)}
+      </span>,
+    );
+
+    lastIndex = endIndex;
+    matchIndex = lowerText.indexOf(lowerQuery, lastIndex);
+  }
+
+  if (lastIndex < text.length) {
+    segments.push(text.slice(lastIndex));
+  }
+
+  return segments.length > 0 ? segments : text;
 }
 
 const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
@@ -65,6 +108,11 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
 
     const clearSuggestions = useCallback(() => {
       setSuggestions([]);
+      setOpen(false);
+      setActiveIndex(-1);
+    }, []);
+
+    const hideSuggestions = useCallback(() => {
       setOpen(false);
       setActiveIndex(-1);
     }, []);
@@ -187,14 +235,14 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
       const handleClickOutside = (event: MouseEvent) => {
         if (!containerRef.current) return;
         if (!containerRef.current.contains(event.target as Node)) {
-          clearSuggestions();
+          hideSuggestions();
         }
       };
       document.addEventListener("mousedown", handleClickOutside);
       return () => {
         document.removeEventListener("mousedown", handleClickOutside);
       };
-    }, [clearSuggestions]);
+    }, [hideSuggestions]);
 
     const mergeRef = useCallback(
       (node: HTMLInputElement | null) => {
@@ -329,10 +377,10 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
             selectPrediction(suggestions[activeIndex]);
           }
         } else if (event.key === "Escape") {
-          clearSuggestions();
+          hideSuggestions();
         }
       },
-      [activeIndex, clearSuggestions, open, selectPrediction, suggestions],
+      [activeIndex, hideSuggestions, open, selectPrediction, suggestions],
     );
 
     const handleFocus = useCallback(
@@ -347,7 +395,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
     const highlightedId = activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined;
 
     return (
-      <div ref={containerRef} className="relative">
+      <div ref={containerRef} className="relative w-full">
         <input
           ref={mergeRef}
           disabled={disabled}
@@ -366,7 +414,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
         {open && suggestions.length > 0 && (
           <ul
             role="listbox"
-            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg"
+            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 min-w-full overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
           >
             {suggestions.map((prediction, index) => {
               const active = index === activeIndex;
@@ -376,7 +424,7 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                 <li key={prediction.placeId} role="option" aria-selected={active}>
                   <button
                     type="button"
-                    className={`w-full px-3 py-2 text-left text-sm transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
+                    className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-brand/10 focus:bg-brand/10 focus:outline-none ${
                       active ? "bg-brand/10" : ""
                     }`}
                     onMouseDown={(event) => {
@@ -386,10 +434,23 @@ const AddressInput = React.forwardRef<HTMLInputElement, AddressInputProps>(
                     onMouseEnter={() => setActiveIndex(index)}
                     id={`suggestion-${index}`}
                   >
-                    <div className="font-medium text-gray-900">{mainText}</div>
-                    {secondaryText && (
-                      <div className="text-xs text-gray-500">{secondaryText}</div>
-                    )}
+                    <span className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-brand/10 text-brand">
+                      <MapPin aria-hidden className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-sm text-gray-900">
+                        {renderHighlightedText(mainText, value, HIGHLIGHT_CLASS_PRIMARY)}
+                      </span>
+                      {secondaryText && (
+                        <span className="text-xs text-gray-500">
+                          {renderHighlightedText(
+                            secondaryText,
+                            value,
+                            HIGHLIGHT_CLASS_SECONDARY,
+                          )}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 </li>
               );
