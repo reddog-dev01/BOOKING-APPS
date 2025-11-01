@@ -1414,7 +1414,7 @@ export default function BookingForm() {
           <div
             ref={fromBoxRef}
             tabIndex={-1}
-            className={`${INPUT_GROUP} relative`}
+            className={`${INPUT_GROUP} relative overflow-visible`}
             data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center text-brand">
@@ -1462,7 +1462,10 @@ export default function BookingForm() {
             const errId = `stopErr-${s.id}`;
             return (
               <div key={s.id} className="relative w-full">
-                <div className={`${INPUT_GROUP} relative`} data-address-dropdown-parent>
+                <div
+                  className={`${INPUT_GROUP} relative overflow-visible`}
+                  data-address-dropdown-parent
+                >
                   <div className="relative flex-1 min-w-0">
                     <AddressInput
                       value={s.text}
@@ -1511,7 +1514,7 @@ export default function BookingForm() {
           <div
             ref={toBoxRef}
             tabIndex={-1}
-            className={`${INPUT_GROUP} relative`}
+            className={`${INPUT_GROUP} relative overflow-visible`}
             data-address-dropdown-parent
           >
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
