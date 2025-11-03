@@ -65,6 +65,8 @@ async function bootstrap() {
     'http://127.0.0.1:3005',
     'http://localhost:3007',
     'http://127.0.0.1:3007',
+    'http://localhost:3008',
+    'http://127.0.0.1:3008',
   ];
 
   const allowedOrigins = new Set(
