@@ -3,13 +3,13 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import compress from '@fastify/compress';
-import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import type { FastifyInstance } from 'fastify';
 
 import { AppModule } from './app.module';
 import { PrismaService } from './infra/prisma/prisma.service';
 import { RateLimitMiddleware } from './common/rate-limit/rate-limit.middleware';
+import corsPlugin from './plugins/cors';
 
 function parseCsv(input: string | undefined, fallback: string[]): string[] {
   if (!input) {
@@ -59,57 +59,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
   const fastify = app.getHttpAdapter().getInstance() as FastifyInstance; // Reuse Fastify logger for infra-level events.
 
-  const devHosts = ['localhost', '127.0.0.1'];
-  const devPorts = [port, 3000, 3005, 3007, 3008];
-  const devProtocols = ['http', 'https'];
-  const defaultOrigins = devProtocols.flatMap((protocol) =>
-    devHosts.flatMap((host) =>
-      devPorts.map((devPort) => `${protocol}://${host}:${devPort}`),
-    ),
-  );
-
-  const normalizeOrigin = (origin: string | undefined) => {
-    if (!origin) {
-      return undefined;
-    }
-    try {
-      const url = new URL(origin);
-      const normalized = `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ''}`;
-      return normalized.toLowerCase();
-    } catch {
-      return origin.replace(/\/$/, '').toLowerCase();
-    }
-  };
-
-  const allowedOrigins = new Set(
-    parseCsv(process.env.CORS_ORIGINS, defaultOrigins)
-      .map((value) => normalizeOrigin(value))
-      .filter((value): value is string => Boolean(value)),
-  );
-  const allowAllOrigins = allowedOrigins.has('*');
-
-  await app.register(cors, {
-    origin: (origin, callback) => {
-      const normalized = normalizeOrigin(origin);
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-      if (allowAllOrigins) {
-        callback(null, true);
-        return;
-      }
-      if (normalized && allowedOrigins.has(normalized)) {
-        callback(null, origin); // Mirror trusted origin verbatim so browsers accept credentialed responses.
-        return;
-      }
-      fastify.log.warn({ origin, normalized }, 'blocked CORS origin');
-      callback(null, false);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-  });
+  await app.register(corsPlugin);
 
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(compress);
