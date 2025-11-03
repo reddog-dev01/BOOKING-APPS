@@ -57,6 +57,7 @@ async function bootstrap() {
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
+  const fastify = app.getHttpAdapter().getInstance() as FastifyInstance; // Reuse Fastify logger for infra-level events.
 
   const defaultOrigins = [
     `http://localhost:${port}`,
@@ -93,13 +94,20 @@ async function bootstrap() {
   await app.register(cors, {
     origin: (origin, callback) => {
       const normalized = normalizeOrigin(origin);
-      if (!origin || (normalized && allowedOrigins.has(normalized))) {
+      if (!origin) {
         callback(null, true);
         return;
       }
+      if (normalized && allowedOrigins.has(normalized)) {
+        callback(null, origin);
+        return;
+      }
+      fastify.log.warn({ origin }, 'blocked CORS origin');
       callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });
@@ -115,7 +123,6 @@ async function bootstrap() {
     allowList: new Set(parseCsv(process.env.RL_ALLOWLIST, [])),
   });
 
-  const fastify = app.getHttpAdapter().getInstance() as FastifyInstance;
   fastify.addHook('onRequest', async (request, reply) => {
     const result = rateLimiter.consume(request);
     if (!result.allowed) {
