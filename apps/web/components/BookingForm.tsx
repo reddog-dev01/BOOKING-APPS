@@ -1327,6 +1327,12 @@ export default function BookingForm() {
     try {
       setQuoting(true);
       const q = await fetchQuote(dto, { timeoutMs: 10_000 });
+      const computedDistance = q.meta?.computed?.distanceKm;
+      console.info("[booking] Quote distance snapshot", {
+        requestedDistanceKm: dto.distanceKm ?? null,
+        resolvedDistanceKm: q.distanceKm,
+        computedDistanceKm: typeof computedDistance === "number" ? computedDistance : null,
+      });
       setQuote(q);
       setLastDtoUsedForQuote(dto);
       setShowConfirm(true);
@@ -1668,7 +1674,7 @@ export default function BookingForm() {
         onClose={() => setShowConfirm(false)}
         onConfirm={handleConfirm}
         submitting={submitBooking || quoting}
-        price={quote?.totalVnd ?? priceTotalFallback}
+        price={quote?.total ?? quote?.totalVnd ?? priceTotalFallback}
         route={routeStr}
         timeLabel={prettyTime(startAt)}
       />
