@@ -69,6 +69,23 @@ const readAllowedOrigins = () => {
 export const corsPlugin = fp(async (fastify: FastifyInstance) => {
   const { wildcard, origins } = readAllowedOrigins();
 
+  const evaluateOrigin = (rawOrigin: string | undefined) => {
+    if (!rawOrigin) {
+      return { allowed: true, normalized: undefined };
+    }
+
+    if (wildcard) {
+      return { allowed: true, normalized: undefined };
+    }
+
+    const normalized = normalizeOrigin(rawOrigin);
+    if (normalized && origins.has(normalized)) {
+      return { allowed: true, normalized };
+    }
+
+    return { allowed: false, normalized };
+  };
+
   const snapshot = Array.from(origins.values()).sort();
   fastify.log.debug({ wildcard, origins: snapshot }, 'configured CORS origins');
 
@@ -79,37 +96,68 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
     preflight: true,
     strictPreflight: true,
     origin: (requestOrigin, callback) => {
-      if (!requestOrigin) {
-        callback(null, true);
-        return;
-      }
-
-      const normalized = normalizeOrigin(requestOrigin);
-      const allowed =
-        wildcard || (normalized !== undefined && origins.has(normalized));
+      const { allowed, normalized } = evaluateOrigin(requestOrigin);
 
       if (allowed) {
-        callback(null, requestOrigin); // Mirror the caller for credentialed requests.
+        callback(null, true); // Fastify will mirror the caller, enabling credentials.
         return;
       }
 
-      fastify.log.warn({ origin: requestOrigin, normalized }, 'blocked CORS origin');
-      callback(null, false);
+      fastify.log.warn(
+        { origin: requestOrigin, normalized },
+        'blocked CORS origin',
+      );
+      callback(new Error('CORS_ORIGIN_BLOCKED'), false);
     },
   });
+
+  const previousErrorHandler = fastify.errorHandler?.bind(fastify);
+
+  fastify.setErrorHandler((error, request, reply) => {
+    if (error?.message === 'CORS_ORIGIN_BLOCKED' || error?.code === 'FST_CORS_ERROR') {
+      const origin = request.headers.origin as string | undefined;
+      const { normalized } = evaluateOrigin(origin);
+      fastify.log.warn(
+        { origin, normalized },
+        'blocked request by CORS policy',
+      );
+
+      reply
+        .code(403)
+        .header('Content-Type', 'application/json')
+        .header('Vary', 'Origin')
+        .send({
+          error: 'CORS_ORIGIN_BLOCKED',
+          message: 'Origin is not allowed to access this resource.',
+        });
+      return;
+    }
+
+    if (previousErrorHandler) {
+      previousErrorHandler(error, request, reply);
+      return;
+    }
+
+    reply.send(error);
+  });
+
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (request.method === 'OPTIONS') {
+      return;
+    }
+
     const origin = request.headers.origin as string | undefined;
-    if (!origin) {
+    const { allowed, normalized } = evaluateOrigin(origin);
+
+    if (!origin || allowed) {
       return;
     }
 
-    const normalized = normalizeOrigin(origin);
-    const allowed = wildcard || (normalized !== undefined && origins.has(normalized));
-    if (allowed) {
-      return;
-    }
+    fastify.log.warn(
+      { origin, normalized },
+      'blocked request by CORS policy',
+    );
 
-    fastify.log.warn({ origin, normalized }, 'blocked request by CORS policy');
     reply
       .code(403)
       .header('Content-Type', 'application/json')
