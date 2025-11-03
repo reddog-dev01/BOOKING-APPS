@@ -1,6 +1,12 @@
 import fp from 'fastify-plugin';
 import cors from '@fastify/cors';
-import type { FastifyInstance } from 'fastify';
+import type {
+  FastifyError,
+  FastifyErrorHandler,
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+} from 'fastify';
 
 const LOCALHOST_PORT_START = 3000;
 const LOCALHOST_PORT_END = 3008;
@@ -69,15 +75,17 @@ const readAllowedOrigins = () => {
 export const corsPlugin = fp(async (fastify: FastifyInstance) => {
   const { wildcard, origins } = readAllowedOrigins();
 
+  const snapshot = Array.from(origins.values()).sort();
+  fastify.log.debug({ wildcard, origins: snapshot }, 'configured CORS origins');
+
   const evaluateOrigin = (requestOrigin: string | undefined) => {
     if (!requestOrigin) {
-      return { allowed: true } as const;
+      return { allowed: true, normalized: undefined } as const;
     }
 
     if (wildcard) {
       return {
         allowed: true,
-        reflect: requestOrigin,
         normalized: normalizeOrigin(requestOrigin),
       } as const;
     }
@@ -86,12 +94,34 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
     if (normalized && origins.has(normalized)) {
       return {
         allowed: true,
-        reflect: requestOrigin,
         normalized,
       } as const;
     }
 
     return { allowed: false, normalized } as const;
+  };
+
+  const createCorsBlockedError = (
+    origin: string | undefined,
+    normalized: string | undefined,
+  ): FastifyError & {
+    code: string;
+    origin?: string;
+    normalizedOrigin?: string;
+  } => {
+    const error = new Error('Origin is not allowed by CORS policy') as FastifyError & {
+      code: string;
+      origin?: string;
+      normalizedOrigin?: string;
+    };
+    error.code = 'CORS_ORIGIN_BLOCKED';
+    if (origin) {
+      error.origin = origin;
+    }
+    if (normalized) {
+      error.normalizedOrigin = normalized;
+    }
+    return error;
   };
 
   await fastify.register(cors, {
@@ -108,38 +138,45 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
         return;
       }
 
-      if (result.allowed && result.reflect) {
-        callback(null, result.reflect);
+      if (result.allowed) {
+        callback(null, true); // Reflect the caller when trusted.
         return;
       }
 
       fastify.log.warn({ origin: requestOrigin, normalized: result.normalized }, 'blocked CORS origin');
-      callback(null, false); // Deny CORS preflight cleanly (Fastify replies 403/400 without throwing).
+      callback(createCorsBlockedError(requestOrigin, result.normalized), false);
     },
   });
 
-  // Block disallowed origins early so actual handlers don't run for rejected callers.
-  fastify.addHook('onRequest', async (request, reply) => {
-    const origin = request.headers.origin;
-    if (!origin) {
+  const previousErrorHandler: FastifyErrorHandler<FastifyInstance> | null =
+    // Fastify sets a default error handler; capture it so we can delegate.
+    (fastify as unknown as { errorHandler: FastifyErrorHandler<FastifyInstance> | null }).errorHandler ?? null;
+
+  fastify.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
+    const code = error?.code;
+    if (code === 'CORS_ORIGIN_BLOCKED' || error?.message === 'Not allowed by CORS') {
+      const origin = request.headers.origin as string | undefined;
+      const normalized = normalizeOrigin(origin);
+
+      fastify.log.warn({ origin, normalized }, 'blocked request by CORS policy');
+
+      reply
+        .code(403)
+        .header('Content-Type', 'application/json')
+        .header('Vary', 'Origin')
+        .send({
+          error: 'CORS_ORIGIN_BLOCKED',
+          message: 'Origin is not allowed to access this resource.',
+        });
       return;
     }
 
-    const result = evaluateOrigin(origin);
-    if (result.allowed) {
+    if (previousErrorHandler) {
+      previousErrorHandler.call(fastify, error, request, reply);
       return;
     }
 
-    fastify.log.warn({ origin, normalized: result.normalized }, 'blocked request by CORS policy');
-    reply
-      .code(403)
-      .header('Content-Type', 'application/json')
-      .header('Vary', 'Origin')
-      .send({
-        error: 'CORS_ORIGIN_BLOCKED',
-        message: 'Origin is not allowed to access this resource.',
-      });
-    return reply;
+    reply.send(error);
   });
 });
 

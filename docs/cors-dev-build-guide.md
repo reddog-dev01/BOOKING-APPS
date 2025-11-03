@@ -8,7 +8,7 @@ This guide explains how the API enforces CORS for localhost development and how 
 
 ## CORS architecture
 
-- `apps/api/src/plugins/cors.ts` is a Fastify plugin that normalises origins, mirrors trusted callers, and blocks the rest with a `403` via an `onRequest` guard.
+- `apps/api/src/plugins/cors.ts` is a Fastify plugin that normalises origins, mirrors trusted callers, and blocks the rest with a dedicated error handler that returns a JSON `403` without surfacing framework `500`s.
 - The allow-list is seeded with `http/https://localhost|127.0.0.1:3000-3008` and can be extended via `CORS_ORIGINS`.
 - Setting `CORS_ORIGINS=*` opts into wildcard behaviour (credentials still work because we echo the request origin).
 - Blocked origins trigger structured log entries (`blocked CORS origin`, `blocked request by CORS policy`) to aid debugging and observability.
@@ -83,8 +83,15 @@ curl -i -X OPTIONS 'http://127.0.0.1:3006/pricing/quote' \
 
 A `204` response with `Access-Control-Allow-Origin: http://localhost:3008` confirms the configuration.
 
+> ℹ️ `/pricing/quote` only accepts `POST` requests. Opening the endpoint in a browser (GET) will return a `404`, which is expected.
+
 ## Observability
 
 - Track Fastify logs for `blocked CORS origin` and `blocked request by CORS policy`.
 - Target ≥ 99.5% success for `OPTIONS` requests hitting `/pricing/quote`.
 - Add alerts on spikes of `403 CORS_ORIGIN_BLOCKED` responses from expected origins.
+
+## Troubleshooting
+
+- If the browser still reports `Not allowed by CORS`, inspect the API logs for the `blocked request by CORS policy` entry. Confirm the offending origin is included in `CORS_ORIGINS` (comma-separated, no spaces) or falls within the localhost defaults.
+- When running `pnpm --filter api dev`, ensure Prisma engines were generated beforehand (see build matrix above); otherwise, `pnpm exec prisma generate` will fail and the Fastify server will never start.
