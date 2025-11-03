@@ -1,0 +1,96 @@
+services:
+  db:
+    image: postgres:16
+    container_name: booking-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: booking
+    ports:
+      - "5432:5432"          # dev only
+    volumes:
+      - pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: booking-api
+    env_file:
+      - ./apps/api/.env
+    environment:
+      PORT: ${API_CONTAINER_PORT:-3006}
+      DATABASE_URL: ${API_DATABASE_URL:-postgresql://booking:secret@db:5432/booking?schema=public}
+      PLACES_API_KEY: ${PLACES_API_KEY:?Set PLACES_API_KEY (see README "Lộ trình tạo mới hai key Google")}
+    ports:
+      - "3006:3006"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/api-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3006}
+        INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3006}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:?Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY before building}
+        NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
+        NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
+    container_name: booking-web
+    env_file:
+      - ./apps/api/.env
+      - ./apps/web/.env
+      - ./apps/web/.env.local
+    environment:
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://api:3006}
+      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://api:3006}
+      PLACES_API_KEY: ${PLACES_API_KEY:?Set PLACES_API_KEY (see README "Lộ trình tạo mới hai key Google")}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:?Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY before running}
+      NEXT_PUBLIC_QUOTE_PATH: ${NEXT_PUBLIC_QUOTE_PATH:-/pricing/quote}
+      NEXT_PUBLIC_BOOKINGS_PATH: ${NEXT_PUBLIC_BOOKINGS_PATH:-/bookings}
+      PORT: 3000
+    ports:
+      - "3005:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  caddy:
+    image: caddy:2.7
+    container_name: booking-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+volumes:
+  pg:
+  caddy_data:
+  caddy_config:

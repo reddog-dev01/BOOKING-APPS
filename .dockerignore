@@ -1,0 +1,19 @@
+# Exclude local artifacts and dependencies from Docker build contexts
+node_modules
+**/node_modules
+.pnpm-store
+.pnpm
+
+# Framework build outputs
+**/.next
+**/.output
+**/dist
+**/build
+
+# Tests, logs, and editor settings
+coverage
+*.log
+.git
+.gitignore
+.vscode
+.idea
