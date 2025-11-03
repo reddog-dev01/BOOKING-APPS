@@ -61,6 +61,8 @@ async function bootstrap() {
   const defaultOrigins = [
     `http://localhost:${port}`,
     `http://127.0.0.1:${port}`,
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
     'http://localhost:3005',
     'http://127.0.0.1:3005',
     'http://localhost:3007',
@@ -69,13 +71,29 @@ async function bootstrap() {
     'http://127.0.0.1:3008',
   ];
 
+  const normalizeOrigin = (origin: string | undefined) => {
+    if (!origin) {
+      return undefined;
+    }
+    try {
+      const url = new URL(origin);
+      const normalized = `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ''}`;
+      return normalized.toLowerCase();
+    } catch {
+      return origin.replace(/\/$/, '').toLowerCase();
+    }
+  };
+
   const allowedOrigins = new Set(
-    parseCsv(process.env.CORS_ORIGINS, defaultOrigins),
+    parseCsv(process.env.CORS_ORIGINS, defaultOrigins)
+      .map((value) => normalizeOrigin(value))
+      .filter((value): value is string => Boolean(value)),
   );
 
   await app.register(cors, {
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.has(origin)) {
+      const normalized = normalizeOrigin(origin);
+      if (!origin || (normalized && allowedOrigins.has(normalized))) {
         callback(null, true);
         return;
       }
