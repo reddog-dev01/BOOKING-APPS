@@ -8,10 +8,10 @@ This guide explains how the API enforces CORS for localhost development and how 
 
 ## CORS architecture
 
-- `apps/api/src/plugins/cors.ts` is a Fastify plugin that normalises origins, mirrors trusted callers, and blocks the rest with a `403`.
+- `apps/api/src/plugins/cors.ts` is a Fastify plugin that normalises origins, mirrors trusted callers, and blocks the rest with a `403` via an `onRequest` guard.
 - The allow-list is seeded with `http/https://localhost|127.0.0.1:3000-3008` and can be extended via `CORS_ORIGINS`.
 - Setting `CORS_ORIGINS=*` opts into wildcard behaviour (credentials still work because we echo the request origin).
-- Blocked origins trigger a structured log entry (`CORS origin rejected`) to aid debugging and observability.
+- Blocked origins trigger structured log entries (`blocked CORS origin`, `blocked request by CORS policy`) to aid debugging and observability.
 
 ## Build matrix when Prisma engines cannot be downloaded
 
@@ -85,6 +85,6 @@ A `204` response with `Access-Control-Allow-Origin: http://localhost:3008` confi
 
 ## Observability
 
-- Track Fastify logs for `CORS origin rejected`.
+- Track Fastify logs for `blocked CORS origin` and `blocked request by CORS policy`.
 - Target ≥ 99.5% success for `OPTIONS` requests hitting `/pricing/quote`.
 - Add alerts on spikes of `403 CORS_ORIGIN_BLOCKED` responses from expected origins.

@@ -114,23 +114,32 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
       }
 
       fastify.log.warn({ origin: requestOrigin, normalized: result.normalized }, 'blocked CORS origin');
-      callback(new Error('CORS_ORIGIN_REJECTED'), false);
+      callback(null, false); // Deny CORS preflight cleanly (Fastify replies 403/400 without throwing).
     },
-    errorHandler: (error, request, reply) => {
-      if (error?.message === 'CORS_ORIGIN_REJECTED') {
-        reply
-          .code(403)
-          .header('Content-Type', 'application/json')
-          .header('Vary', 'Origin')
-          .send({
-            error: 'CORS_ORIGIN_BLOCKED',
-            message: 'Origin is not allowed to access this resource.',
-          });
-        return;
-      }
+  });
 
-      reply.send(error);
-    },
+  // Block disallowed origins early so actual handlers don't run for rejected callers.
+  fastify.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin;
+    if (!origin) {
+      return;
+    }
+
+    const result = evaluateOrigin(origin);
+    if (result.allowed) {
+      return;
+    }
+
+    fastify.log.warn({ origin, normalized: result.normalized }, 'blocked request by CORS policy');
+    reply
+      .code(403)
+      .header('Content-Type', 'application/json')
+      .header('Vary', 'Origin')
+      .send({
+        error: 'CORS_ORIGIN_BLOCKED',
+        message: 'Origin is not allowed to access this resource.',
+      });
+    return reply;
   });
 });
 
