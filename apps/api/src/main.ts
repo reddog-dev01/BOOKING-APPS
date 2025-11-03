@@ -99,7 +99,7 @@ async function bootstrap() {
         return;
       }
       if (normalized && allowedOrigins.has(normalized)) {
-        callback(null, origin);
+        callback(null, true); // Mirror the requesting origin when trusted so credentialed requests succeed.
         return;
       }
       fastify.log.warn({ origin }, 'blocked CORS origin');
