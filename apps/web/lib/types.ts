@@ -37,10 +37,24 @@ export type QuoteRequestDto = {
 };
 
 export type QuoteResponse = {
-  id?: string; // nếu BE có sinh id cho quote
-  currency?: "VND";
-  totalVnd: number; // tổng tiền (đã gồm VAT nếu withVat = true)
-  // có thể bổ sung breakdown nếu BE trả về
+  id: string;
+  vehicleTypeId: number;
+  basePrice: number;
+  distanceKm: number;
+  timeMinutes: number;
+  vatPct: number;
+  vatAmount: number;
+  total: number; // tổng tiền từ BE
+  totalVnd?: number; // giữ tương thích ngược nếu BE đổi field
+  currency: "VND";
+  expiresAt: string;
+  meta?: {
+    computed?: {
+      distanceKm?: number;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
 };
 
 export type CreateBookingRequestDto = QuoteRequestDto & {
