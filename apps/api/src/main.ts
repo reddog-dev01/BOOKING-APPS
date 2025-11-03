@@ -59,18 +59,14 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
   const fastify = app.getHttpAdapter().getInstance() as FastifyInstance; // Reuse Fastify logger for infra-level events.
 
-  const defaultOrigins = [
-    `http://localhost:${port}`,
-    `http://127.0.0.1:${port}`,
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:3005',
-    'http://127.0.0.1:3005',
-    'http://localhost:3007',
-    'http://127.0.0.1:3007',
-    'http://localhost:3008',
-    'http://127.0.0.1:3008',
-  ];
+  const devHosts = ['localhost', '127.0.0.1'];
+  const devPorts = [port, 3000, 3005, 3007, 3008];
+  const devProtocols = ['http', 'https'];
+  const defaultOrigins = devProtocols.flatMap((protocol) =>
+    devHosts.flatMap((host) =>
+      devPorts.map((devPort) => `${protocol}://${host}:${devPort}`),
+    ),
+  );
 
   const normalizeOrigin = (origin: string | undefined) => {
     if (!origin) {
@@ -90,6 +86,7 @@ async function bootstrap() {
       .map((value) => normalizeOrigin(value))
       .filter((value): value is string => Boolean(value)),
   );
+  const allowAllOrigins = allowedOrigins.has('*');
 
   await app.register(cors, {
     origin: (origin, callback) => {
@@ -98,12 +95,16 @@ async function bootstrap() {
         callback(null, true);
         return;
       }
-      if (normalized && allowedOrigins.has(normalized)) {
-        callback(null, true); // Mirror the requesting origin when trusted so credentialed requests succeed.
+      if (allowAllOrigins) {
+        callback(null, true);
         return;
       }
-      fastify.log.warn({ origin }, 'blocked CORS origin');
-      callback(new Error('Not allowed by CORS'), false);
+      if (normalized && allowedOrigins.has(normalized)) {
+        callback(null, origin); // Mirror trusted origin verbatim so browsers accept credentialed responses.
+        return;
+      }
+      fastify.log.warn({ origin, normalized }, 'blocked CORS origin');
+      callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
