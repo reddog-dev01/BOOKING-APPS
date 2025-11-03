@@ -37,36 +37,53 @@ const buildDevOrigins = (): string[] => {
   return entries;
 };
 
-const readConfiguredOrigins = (): Set<string> => {
+type CorsAllowConfig = {
+  allowAll: boolean;
+  allowList: Set<string>;
+};
+
+const readConfiguredOrigins = (): CorsAllowConfig => {
   const allowList = new Set<string>(buildDevOrigins().map((value) => normalizeOrigin(value)));
 
-  const extra = (process.env.CORS_ORIGINS ?? '')
+  const extraValues = (process.env.CORS_ORIGINS ?? '')
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
 
-  for (const value of extra) {
+  let allowAll = false;
+
+  for (const value of extraValues) {
+    if (value === '*') {
+      allowAll = true; // Explicit wildcard configured via CORS_ORIGINS="*".
+      continue;
+    }
+
     const normalized = normalizeOrigin(value);
     if (normalized) {
       allowList.add(normalized);
     }
   }
 
-  return allowList;
+  return { allowAll, allowList };
 };
 
-const isAllowedOrigin = (origin?: string | null, allowList?: Set<string>): boolean => {
+const isAllowedOrigin = (origin: string | undefined | null, config: CorsAllowConfig): boolean => {
   if (!origin) {
     return true; // Non-browser clients have no Origin header.
   }
 
-  return allowList.has(normalizeOrigin(origin));
+  if (config.allowAll) {
+    return true;
+  }
+
+  return config.allowList.has(normalizeOrigin(origin));
 };
 
-const registerOnRequestGuard = (
-  app: FastifyInstance,
-  allowList: Set<string>,
-) => {
+const registerOnRequestGuard = (app: FastifyInstance, config: CorsAllowConfig) => {
+  if (config.allowAll) {
+    return; // Wildcard mode mirrors Fastify's internal CORS decision.
+  }
+
   app.addHook('onRequest', (request: FastifyRequest, reply: FastifyReply, done) => {
     if (request.method === 'OPTIONS') {
       done();
@@ -74,7 +91,7 @@ const registerOnRequestGuard = (
     }
 
     const origin = request.headers.origin as string | undefined;
-    if (!isAllowedOrigin(origin, allowList)) {
+    if (!isAllowedOrigin(origin, config)) {
       app.log.warn({ origin }, 'blocked request by CORS policy');
       reply
         .code(403)
@@ -92,8 +109,14 @@ const registerOnRequestGuard = (
 };
 
 export default fp(async (app) => {
-  const allowList = readConfiguredOrigins();
-  app.log.debug({ origins: Array.from(allowList.values()) }, 'configured CORS allow-list');
+  const allowConfig = readConfiguredOrigins();
+  app.log.debug(
+    {
+      wildcard: allowConfig.allowAll,
+      origins: Array.from(allowConfig.allowList.values()),
+    },
+    'configured CORS allow-list',
+  );
 
   await app.register(cors, {
     credentials: true, // Allow cookies/headers in dev environments.
@@ -101,15 +124,10 @@ export default fp(async (app) => {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     origin(origin, callback) {
-      const allowed = isAllowedOrigin(origin, allowList);
-      if (!allowed) {
-        callback(null, false);
-        return;
-      }
-
-      callback(null, origin ?? true);
+      const allowed = isAllowedOrigin(origin, allowConfig);
+      callback(null, allowed);
     },
   });
 
-  registerOnRequestGuard(app, allowList);
+  registerOnRequestGuard(app, allowConfig);
 });

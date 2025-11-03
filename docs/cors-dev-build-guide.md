@@ -42,10 +42,14 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
       "overrides": {
         "prisma": "6.18.0",
         "@prisma/client": "6.18.0",
-        "@nestjs/testing": "^11.0.0",
-        "@nestjs/throttler": "^6.0.0"
+        "@nestjs/testing": "^11.1.8",
+        "@nestjs/throttler": "^6.4.0"
       },
-      "ignoredBuiltDependencies": ["@nestjs/core"],
+      "ignoredBuiltDependencies": [
+        "@nestjs/core",
+        "@scarf/scarf",
+        "unrs-resolver"
+      ],
       "onlyBuiltDependencies": [
         "@prisma/client",
         "@prisma/engines",
@@ -57,7 +61,8 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
   }
   ```
 
-  > Cấu hình này giúp mọi môi trường (dev/CI/Docker) tự bật postinstall cần thiết và ép version NestJS thống nhất.
+  > Cấu hình này giúp mọi môi trường (dev/CI/Docker) tự bật postinstall cần thiết, ép version NestJS thống nhất và dập tắt cảnh báo build scripts không cần thiết.
+  > Ví dụ: pnpm sẽ không còn cảnh báo `Ignored build scripts` đối với `@scarf/scarf` hay `unrs-resolver`.
 
 - [ ] **Đồng bộ phụ thuộc Prisma**
 

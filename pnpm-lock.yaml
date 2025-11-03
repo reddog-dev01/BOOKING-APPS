@@ -8,8 +8,8 @@ settings:
 overrides:
   prisma: 6.18.0
   '@prisma/client': 6.18.0
-  '@nestjs/testing': ^11.0.0
-  '@nestjs/throttler': ^6.0.0
+  '@nestjs/testing': ^11.1.8
+  '@nestjs/throttler': ^6.4.0
 
 importers:
 
