@@ -69,21 +69,25 @@ const readAllowedOrigins = () => {
 export const corsPlugin = fp(async (fastify: FastifyInstance) => {
   const { wildcard, origins } = readAllowedOrigins();
 
-  const evaluateOrigin = (rawOrigin: string | undefined) => {
+  type OriginDecision =
+    | { allowed: true; normalized: string | undefined; reflect: true | string }
+    | { allowed: false; normalized: string | undefined; reflect: undefined };
+
+  const evaluateOrigin = (rawOrigin: string | undefined): OriginDecision => {
     if (!rawOrigin) {
-      return { allowed: true, normalized: undefined };
+      return { allowed: true, reflect: true, normalized: undefined };
     }
 
     if (wildcard) {
-      return { allowed: true, normalized: undefined };
+      return { allowed: true, reflect: rawOrigin, normalized: undefined };
     }
 
     const normalized = normalizeOrigin(rawOrigin);
     if (normalized && origins.has(normalized)) {
-      return { allowed: true, normalized };
+      return { allowed: true, reflect: rawOrigin, normalized };
     }
 
-    return { allowed: false, normalized };
+    return { allowed: false, reflect: undefined, normalized };
   };
 
   const snapshot = Array.from(origins.values()).sort();
@@ -96,10 +100,10 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
     preflight: true,
     strictPreflight: true,
     origin: (requestOrigin, callback) => {
-      const { allowed, normalized } = evaluateOrigin(requestOrigin);
+      const { allowed, reflect, normalized } = evaluateOrigin(requestOrigin);
 
       if (allowed) {
-        callback(null, true); // Fastify will mirror the caller, enabling credentials.
+        callback(null, reflect ?? true);
         return;
       }
 
@@ -107,14 +111,14 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
         { origin: requestOrigin, normalized },
         'blocked CORS origin',
       );
-      callback(new Error('CORS_ORIGIN_BLOCKED'), false);
+      callback(null, false);
     },
   });
 
   const previousErrorHandler = fastify.errorHandler?.bind(fastify);
 
   fastify.setErrorHandler((error, request, reply) => {
-    if (error?.message === 'CORS_ORIGIN_BLOCKED' || error?.code === 'FST_CORS_ERROR') {
+    if (error?.code === 'FST_CORS_ERROR') {
       const origin = request.headers.origin as string | undefined;
       const { normalized } = evaluateOrigin(origin);
       fastify.log.warn(
@@ -142,10 +146,6 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
   });
 
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.method === 'OPTIONS') {
-      return;
-    }
-
     const origin = request.headers.origin as string | undefined;
     const { allowed, normalized } = evaluateOrigin(origin);
 
