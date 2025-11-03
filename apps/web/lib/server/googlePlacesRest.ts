@@ -121,6 +121,50 @@ const parseErrorBody = async (res: Response) => {
   }
 };
 
+const GOOGLE_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
+
+const BILLING_DISABLED_REASONS = new Set(["BILLING_DISABLED"]);
+const API_KEY_RESTRICTION_REASONS = new Set([
+  "API_KEY_HTTP_REFERRER_BLOCKED",
+  "API_KEY_IP_ADDRESS_BLOCKED",
+  "API_KEY_INVALID",
+  "API_KEY_API_TARGET_BLOCKED",
+]);
+
+const extractErrorReasons = (payload: unknown): string[] => {
+  const details =
+    (payload as { error?: { details?: unknown } } | null)?.error?.details ?? null;
+  if (!Array.isArray(details)) {
+    return [];
+  }
+
+  const reasons: string[] = [];
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object") {
+      continue;
+    }
+
+    const errorInfoType = (detail as { [key: string]: unknown })["@type"];
+    if (errorInfoType !== GOOGLE_ERROR_INFO_TYPE) {
+      continue;
+    }
+
+    const reason = (detail as { reason?: unknown }).reason;
+    if (typeof reason !== "string") {
+      continue;
+    }
+
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    reasons.push(trimmed.toUpperCase());
+  }
+
+  return reasons;
+};
+
 const resolveReferer = (value?: string | null): string | undefined => {
   const candidate = value?.trim();
   return candidate && candidate.length > 0 ? candidate : undefined;
@@ -356,6 +400,7 @@ export async function fetchAutocomplete(
 
     const errorPayload = (errorBody as { error?: { message?: string } } | null)?.error;
     const originalMessage = errorPayload?.message;
+    const errorReasons = extractErrorReasons(errorBody);
     let message =
       originalMessage && originalMessage.length > 0
         ? originalMessage
@@ -364,10 +409,19 @@ export async function fetchAutocomplete(
     let circuitTtl: number | null = null;
     let circuitStatus = Math.max(response.status, 400);
 
-    if (response.status === 403 && originalMessage) {
-      const normalized = originalMessage.toLowerCase();
+    if (response.status === 403) {
+      const normalized = originalMessage?.toLowerCase() ?? "";
+      const hasBillingReason = errorReasons.some((reason) =>
+        BILLING_DISABLED_REASONS.has(reason),
+      );
+      const hasRestrictionReason = errorReasons.some((reason) =>
+        API_KEY_RESTRICTION_REASONS.has(reason),
+      );
 
-      if (normalized.includes("billing") && normalized.includes("enable")) {
+      if (
+        hasBillingReason ||
+        (normalized.includes("billing") && normalized.includes("enable"))
+      ) {
         message =
           [
             "Google Places yêu cầu bật Billing cho dự án chứa API key.",
@@ -375,7 +429,11 @@ export async function fetchAutocomplete(
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
         circuitStatus = 503;
-      } else if (normalized.includes("referer") || normalized.includes("ip")) {
+      } else if (
+        hasRestrictionReason ||
+        normalized.includes("referer") ||
+        normalized.includes("ip")
+      ) {
         message =
           [
             "Google Places key đang bị hạn chế (IP hoặc HTTP referrer) và từ chối yêu cầu.",
@@ -462,6 +520,7 @@ export async function fetchPlaceDetails(
     });
     const errorPayload = (errorBody as { error?: { message?: string } } | null)?.error;
     const originalMessage = errorPayload?.message;
+    const errorReasons = extractErrorReasons(errorBody);
     let message =
       originalMessage && originalMessage.length > 0
         ? originalMessage
@@ -470,10 +529,19 @@ export async function fetchPlaceDetails(
     let circuitTtl: number | null = null;
     let circuitStatus = Math.max(response.status, 400);
 
-    if (response.status === 403 && originalMessage) {
-      const normalized = originalMessage.toLowerCase();
+    if (response.status === 403) {
+      const normalized = originalMessage?.toLowerCase() ?? "";
+      const hasBillingReason = errorReasons.some((reason) =>
+        BILLING_DISABLED_REASONS.has(reason),
+      );
+      const hasRestrictionReason = errorReasons.some((reason) =>
+        API_KEY_RESTRICTION_REASONS.has(reason),
+      );
 
-      if (normalized.includes("billing") && normalized.includes("enable")) {
+      if (
+        hasBillingReason ||
+        (normalized.includes("billing") && normalized.includes("enable"))
+      ) {
         message =
           [
             "Google Places yêu cầu bật Billing cho dự án chứa API key.",
@@ -481,7 +549,11 @@ export async function fetchPlaceDetails(
           ].join(" ");
         circuitTtl = BILLING_CIRCUIT_TIMEOUT_MS;
         circuitStatus = 503;
-      } else if (normalized.includes("referer") || normalized.includes("ip")) {
+      } else if (
+        hasRestrictionReason ||
+        normalized.includes("referer") ||
+        normalized.includes("ip")
+      ) {
         message =
           [
             "Google Places key đang bị hạn chế (IP hoặc HTTP referrer) và từ chối yêu cầu.",
