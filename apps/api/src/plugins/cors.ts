@@ -1,12 +1,6 @@
 import fp from 'fastify-plugin';
 import cors from '@fastify/cors';
-import type {
-  FastifyError,
-  FastifyErrorHandler,
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-} from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 const LOCALHOST_PORT_START = 3000;
 const LOCALHOST_PORT_END = 3008;
@@ -78,52 +72,6 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
   const snapshot = Array.from(origins.values()).sort();
   fastify.log.debug({ wildcard, origins: snapshot }, 'configured CORS origins');
 
-  const evaluateOrigin = (requestOrigin: string | undefined) => {
-    if (!requestOrigin) {
-      return { allowed: true, normalized: undefined } as const;
-    }
-
-    if (wildcard) {
-      return {
-        allowed: true,
-        normalized: normalizeOrigin(requestOrigin),
-      } as const;
-    }
-
-    const normalized = normalizeOrigin(requestOrigin);
-    if (normalized && origins.has(normalized)) {
-      return {
-        allowed: true,
-        normalized,
-      } as const;
-    }
-
-    return { allowed: false, normalized } as const;
-  };
-
-  const createCorsBlockedError = (
-    origin: string | undefined,
-    normalized: string | undefined,
-  ): FastifyError & {
-    code: string;
-    origin?: string;
-    normalizedOrigin?: string;
-  } => {
-    const error = new Error('Origin is not allowed by CORS policy') as FastifyError & {
-      code: string;
-      origin?: string;
-      normalizedOrigin?: string;
-    };
-    error.code = 'CORS_ORIGIN_BLOCKED';
-    if (origin) {
-      error.origin = origin;
-    }
-    if (normalized) {
-      error.normalizedOrigin = normalized;
-    }
-    return error;
-  };
-
   await fastify.register(cors, {
     credentials: true, // Required so browsers send cookies/headers in dev.
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -131,52 +79,47 @@ export const corsPlugin = fp(async (fastify: FastifyInstance) => {
     preflight: true,
     strictPreflight: true,
     origin: (requestOrigin, callback) => {
-      const result = evaluateOrigin(requestOrigin);
-
       if (!requestOrigin) {
         callback(null, true);
         return;
       }
 
-      if (result.allowed) {
-        callback(null, true); // Reflect the caller when trusted.
+      const normalized = normalizeOrigin(requestOrigin);
+      const allowed =
+        wildcard || (normalized !== undefined && origins.has(normalized));
+
+      if (allowed) {
+        callback(null, requestOrigin); // Mirror the caller for credentialed requests.
         return;
       }
 
-      fastify.log.warn({ origin: requestOrigin, normalized: result.normalized }, 'blocked CORS origin');
-      callback(createCorsBlockedError(requestOrigin, result.normalized), false);
+      fastify.log.warn({ origin: requestOrigin, normalized }, 'blocked CORS origin');
+      callback(null, false);
     },
   });
-
-  const previousErrorHandler: FastifyErrorHandler<FastifyInstance> | null =
-    // Fastify sets a default error handler; capture it so we can delegate.
-    (fastify as unknown as { errorHandler: FastifyErrorHandler<FastifyInstance> | null }).errorHandler ?? null;
-
-  fastify.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
-    const code = error?.code;
-    if (code === 'CORS_ORIGIN_BLOCKED' || error?.message === 'Not allowed by CORS') {
-      const origin = request.headers.origin as string | undefined;
-      const normalized = normalizeOrigin(origin);
-
-      fastify.log.warn({ origin, normalized }, 'blocked request by CORS policy');
-
-      reply
-        .code(403)
-        .header('Content-Type', 'application/json')
-        .header('Vary', 'Origin')
-        .send({
-          error: 'CORS_ORIGIN_BLOCKED',
-          message: 'Origin is not allowed to access this resource.',
-        });
+  fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
+    const origin = request.headers.origin as string | undefined;
+    if (!origin) {
       return;
     }
 
-    if (previousErrorHandler) {
-      previousErrorHandler.call(fastify, error, request, reply);
+    const normalized = normalizeOrigin(origin);
+    const allowed = wildcard || (normalized !== undefined && origins.has(normalized));
+    if (allowed) {
       return;
     }
 
-    reply.send(error);
+    fastify.log.warn({ origin, normalized }, 'blocked request by CORS policy');
+    reply
+      .code(403)
+      .header('Content-Type', 'application/json')
+      .header('Vary', 'Origin')
+      .send({
+        error: 'CORS_ORIGIN_BLOCKED',
+        message: 'Origin is not allowed to access this resource.',
+      });
+
+    return reply;
   });
 });
 

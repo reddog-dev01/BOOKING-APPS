@@ -8,7 +8,7 @@ This guide explains how the API enforces CORS for localhost development and how 
 
 ## CORS architecture
 
-- `apps/api/src/plugins/cors.ts` is a Fastify plugin that normalises origins, mirrors trusted callers, and blocks the rest with a dedicated error handler that returns a JSON `403` without surfacing framework `500`s.
+- `apps/api/src/plugins/cors.ts` is a Fastify plugin that normalises origins, mirrors trusted callers, and blocks the rest with an `onRequest` guard that returns a JSON `403` without surfacing framework `500`s.
 - The allow-list is seeded with `http/https://localhost|127.0.0.1:3000-3008` and can be extended via `CORS_ORIGINS`.
 - Setting `CORS_ORIGINS=*` opts into wildcard behaviour (credentials still work because we echo the request origin).
 - Blocked origins trigger structured log entries (`blocked CORS origin`, `blocked request by CORS policy`) to aid debugging and observability.
