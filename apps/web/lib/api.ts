@@ -67,12 +67,16 @@ export async function fetchQuote(
   dto: QuoteRequestDto,
   opts: FetchOpts = {},
 ): Promise<QuoteResponse> {
-  return fetchJson<QuoteResponse>(`${API_BASE}/pricing/quote`, {
+  const response = await fetchJson<QuoteResponse>(`${API_BASE}/pricing/quote`, {
     method: "POST",
     body: JSON.stringify(dto),
     headers: opts.headers,
     timeoutMs: opts.timeoutMs ?? 10000,
   });
+  return {
+    ...response,
+    totalVnd: response.totalVnd ?? response.total,
+  };
 }
 
 /** Tạo booking */
