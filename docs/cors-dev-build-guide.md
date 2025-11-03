@@ -13,7 +13,7 @@ Tài liệu này đóng vai trò “runbook” cho đội DevOps & Backend khi v
 
 - Ứng dụng API chạy bằng Fastify + NestJS, sử dụng Prisma làm ORM. Code chính nằm ở `apps/api`.
 - Plugin CORS tại `apps/api/src/plugins/cors.ts` chuẩn hóa mọi `Origin`, đối chiếu với allow-list rồi phản chiếu lại origin hợp lệ (giữ được cookie/session). Origin bị chặn sẽ tạo lỗi có mã `CORS_ORIGIN_BLOCKED` và trả JSON `403`.
-- Allow-list mặc định: mọi tổ hợp `http|https://localhost|127.0.0.1:3000-3008`. Có thể mở rộng qua biến môi trường `CORS_ORIGINS` (CSV). Đặt `CORS_ORIGINS=*` để bật wildcard có chủ đích.
+- Allow-list mặc định: mọi tổ hợp `http|https://localhost|127.0.0.1:3000-3008`. Có thể mở rộng qua biến môi trường `CORS_ORIGINS` (CSV hoặc `*`).
 - Prisma Client/engines phải được generate **trước khi** `tsc` chạy; nếu thiếu, mọi lệnh `pnpm --filter api dev|build` đều lỗi vì không tìm thấy binary.
 
 ## 2. Chuẩn bị bắt buộc (áp dụng cho mọi lộ trình)
@@ -28,8 +28,9 @@ Tài liệu này đóng vai trò “runbook” cho đội DevOps & Backend khi v
 - [ ] Generate Prisma Client trước build (đảm bảo runner offline vẫn dùng artefact mới nhất):
 
   ```bash
-  pnpm --filter api exec prisma generate \
-    --schema apps/api/prisma/schema.prisma
+  pnpm -w prisma:generate
+  # hoặc khi cần override schema thủ công:
+  pnpm exec prisma generate --schema packages/db/prisma/schema.prisma
   ```
 
 - [ ] Kiểm tra scripts trong `apps/api/package.json`:
@@ -37,8 +38,9 @@ Tài liệu này đóng vai trò “runbook” cho đội DevOps & Backend khi v
   ```json
   {
     "scripts": {
-      "prebuild": "prisma generate --schema prisma/schema.prisma",
-      "build": "tsc -p tsconfig.build.json",
+      "prisma:generate": "pnpm -w prisma:generate",
+      "prebuild": "pnpm run prisma:generate",
+      "build": "pnpm exec tsc -p tsconfig.build.json",
       "start": "node dist/main.js",
       "start:prod": "NODE_ENV=production node dist/main.js"
     }
@@ -71,16 +73,18 @@ RUN corepack enable
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/api/tsconfig*.json apps/api/
-COPY apps/api/prisma apps/api/prisma
-# Nếu API dùng shared packages, copy thêm `packages/*`
+COPY packages/db/prisma packages/db/prisma
+# Nếu API dùng shared packages, copy thêm các thư mục con cần thiết trong `packages/`
 
 RUN pnpm install --frozen-lockfile
 
 # Generate Prisma client ở stage có Internet
-RUN pnpm --filter api exec prisma generate --schema apps/api/prisma/schema.prisma
+RUN pnpm -w prisma:generate
 
 # Copy code nguồn rồi build
 COPY apps/api apps/api
+# Copy source code (điều chỉnh để chỉ mang theo thư viện thực sự cần cho API)
+COPY packages packages
 RUN pnpm --filter api build
 
 FROM node:20-alpine AS runtime
@@ -93,7 +97,7 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
-COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 
 EXPOSE 8080
 CMD ["node", "apps/api/dist/main.js"]
@@ -167,7 +171,7 @@ docker compose up -d api
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm --filter api exec prisma generate --schema apps/api/prisma/schema.prisma
+pnpm -w prisma:generate
 pnpm --filter api build
 
 CORS_ORIGINS="http://localhost:3000,http://localhost:3001,http://localhost:3008" \
