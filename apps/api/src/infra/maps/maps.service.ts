@@ -1,4 +1,4 @@
-import { HttpException, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 
 import { apiBase, getMapsKey, hasMapsKey } from './map.util';
 import type { DrivingDistanceResult } from './types';
@@ -28,27 +28,58 @@ export class GoogleMapsService {
     from: { lat: number; lng: number },
     to: { lat: number; lng: number },
   ): Promise<DrivingDistanceResult> {
-    const providers: Array<() => Promise<DrivingDistanceResult>> = [];
+    const providers: Array<{
+      name: DrivingDistanceResult['provider'];
+      resolver: () => Promise<DrivingDistanceResult>;
+    }> = [];
 
     if (hasMapsKey()) {
-      providers.push(() => this.lookupGoogleDirections(from, to));
+      providers.push({ name: 'google', resolver: () => this.lookupGoogleDirections(from, to) });
     }
-    providers.push(() => this.lookupOsrmRoute(from, to));
+    providers.push({ name: 'osrm', resolver: () => this.lookupOsrmRoute(from, to) });
 
-    for (const resolver of providers) {
+    let lastError: unknown;
+    let lastProvider: DrivingDistanceResult['provider'] | undefined;
+
+    for (const { resolver, name } of providers) {
       try {
         const result = await resolver();
-        if (result.meters > 0) {
+        if (Number.isFinite(result.meters) && result.meters > 0) {
           return result;
         }
+        this.logger.warn('Driving distance provider returned non-positive result', {
+          provider: name,
+          meters: result.meters,
+        });
+        lastProvider = name;
       } catch (error) {
+        lastError = error;
+        lastProvider = name;
         this.logger.warn('Driving distance provider failed', {
+          provider: name,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
 
-    return { meters: 0, km: 0, provider: 'osrm', raw: null };
+    this.logger.error('All driving distance providers failed', {
+      providers: providers.map(({ name }) => name),
+      lastProvider: lastProvider ?? null,
+      lastError: lastError instanceof Error ? lastError.message : lastError ?? null,
+    });
+
+    throw new HttpException(
+      {
+        error: 'DRIVING_DISTANCE_UNAVAILABLE',
+        message: 'No routing provider returned a valid driving distance',
+        details: {
+          providers: providers.map(({ name }) => name),
+          lastProvider: lastProvider ?? null,
+          ...(lastError instanceof Error ? { cause: lastError.message } : {}),
+        },
+      },
+      HttpStatus.BAD_GATEWAY,
+    );
   }
 
   private async lookupGoogleDirections(
@@ -68,6 +99,9 @@ export class GoogleMapsService {
       + `&key=${enc(key)}`;
 
     const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`Google Directions HTTP ${resp.status}`);
+    }
     const json = await resp.json();
     const status = json?.status;
     if (status !== 'OK') {
@@ -75,11 +109,10 @@ export class GoogleMapsService {
         status,
         errorMessage: json?.error_message,
       });
-      return { meters: 0, km: 0, provider: 'google', raw: json };
+      return this.toResult('google', 0, json);
     }
     const meters = json?.routes?.[0]?.legs?.[0]?.distance?.value ?? 0;
-    const km = Math.round((meters / 1000) * 100) / 100;
-    return { meters, km, provider: 'google', raw: json };
+    return this.toResult('google', meters, json);
   }
 
   private async lookupOsrmRoute(
@@ -95,17 +128,28 @@ export class GoogleMapsService {
     });
     if (!resp.ok) {
       this.logger.warn('OSRM request failed', { status: resp.status, statusText: resp.statusText });
-      return { meters: 0, km: 0, provider: 'osrm', raw: { status: resp.status } };
+      return this.toResult('osrm', 0, { status: resp.status });
     }
 
     const json = await resp.json();
     if (json?.code !== 'Ok') {
       this.logger.warn('OSRM response not OK', { code: json?.code });
-      return { meters: 0, km: 0, provider: 'osrm', raw: json };
+      return this.toResult('osrm', 0, json);
     }
 
     const meters = json?.routes?.[0]?.distance ?? 0;
-    const km = Math.round((meters / 1000) * 100) / 100;
-    return { meters, km, provider: 'osrm', raw: json };
+    return this.toResult('osrm', meters, json);
+  }
+
+  private toResult(
+    provider: DrivingDistanceResult['provider'],
+    meters: number,
+    raw: unknown,
+  ): DrivingDistanceResult {
+    const sanitizedMeters = Number.isFinite(meters) && meters > 0 ? meters : 0;
+    const km = sanitizedMeters > 0
+      ? Math.round((sanitizedMeters / 1000) * 100) / 100
+      : 0;
+    return { meters: sanitizedMeters, km, provider, raw };
   }
 }
