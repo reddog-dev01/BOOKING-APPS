@@ -1,83 +1,54 @@
-# Runbook triển khai CORS & Prisma cho apps/api (Tiếng Việt)
+# Runbook triển khai apps/api với CORS & Prisma
 
 _Cập nhật lần cuối: 2025-11-03 (Asia/Bangkok)_
 
-Tài liệu này đóng vai trò runbook chuẩn cho đội DevOps/Backend khi build và triển khai API Fastify (`apps/api`). Mục tiêu:
+Runbook này rút gọn theo đúng luồng build → release → vận hành cho service `apps/api` (NestJS + Fastify + Prisma). Mỗi mục là checklist copy/paste, có đủ smoke test và rollback. Giá trị mặc định:
 
-- Giải thích kiến trúc plugin CORS mới và biến môi trường điều khiển.
-- Chuẩn hóa quy trình cài đặt/generate Prisma để tránh lỗi `prisma engine not found`.
-- Cung cấp ba lộ trình triển khai phổ biến (Helm/Kubernetes, Docker Compose, Node trực tiếp) với bước lệnh rõ ràng.
-- Đưa ra checklist smoke test, rollback, giám sát, bảo mật và tối ưu chi phí.
-
----
-
-## 1️⃣ Kiến trúc tổng quan
-
-- `apps/api` là service NestJS chạy trên Fastify; ORM dùng Prisma. Monorepo quản lý bằng pnpm.
-- Plugin CORS (`apps/api/src/plugins/cors.ts`) chuẩn hóa `Origin`, so sánh với allow-list localhost (http, host `localhost|127.0.0.1`, port 3000–3008) và các origin bổ sung từ `CORS_ORIGINS` (CSV). `origin()` **không ném lỗi** – chỉ trả `true/false` để Fastify preflight không trả `500`. `onRequest` chặn request thật và trả JSON `403 CORS_ORIGIN_BLOCKED` để log/alert rõ ràng.
-- Origin hợp lệ được phản chiếu lại (giữ cookie/session); origin bị chặn tạo lỗi `CORS_ORIGIN_BLOCKED`, trả JSON `403` và log cảnh báo.
-- Prisma Client/engines phải được generate **trước** mọi lệnh `pnpm --filter api build|dev`. Thiếu client ➜ build/dev fail.
+| Thành phần | Giá trị chuẩn |
+| --- | --- |
+| Cổng service | `3006` |
+| CORS allow-list nội bộ | `http://localhost:3000,http://localhost:3001,http://localhost:3008` |
+| Prisma schema | `packages/db/prisma/schema.prisma` |
+| Docker base image | `node:20-alpine` |
 
 ---
 
-## 2️⃣ Chuẩn bị bắt buộc (mọi lộ trình)
+## 1️⃣ Kiến trúc & nguyên tắc
 
-Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trước đó đã cài, cứ chạy lại các lệnh dưới để đồng bộ; pnpm sẽ bỏ qua phần đã có.
+- Fastify bootstrap qua `apps/api/src/main.ts`, mount plugin `apps/api/src/plugins/cors.ts`. Plugin chỉ **allow** origin nằm trong allow-list mặc định + giá trị CSV ở biến `CORS_ORIGINS`. Callback `origin()` trả `true/false` để preflight không crash; middleware `onRequest` trả JSON `403 CORS_ORIGIN_BLOCKED` với log cảnh báo.
+- Prisma Client phải được generate trước khi build hoặc start. Thiếu thư mục `node_modules/.prisma` ➜ lỗi `Prisma engine not found`.
+- Monorepo sử dụng pnpm. Bất kỳ runner nào cũng phải bật `PNPM_ALLOW_SCRIPTS` để cho phép Prisma/sharp biên dịch.
+- Nguyên tắc vận hành: least-privilege, origin nào không nằm trong danh sách là bị chặn; secrets không nằm trong repo.
 
-- [ ] **Làm sạch cache & bật build scripts cho pnpm**
+---
+
+## 2️⃣ Chuẩn bị môi trường (chạy 1 lần mỗi runner)
+
+Thực thi tại `/workspace/BOOKING-APPS`.
+
+- [ ] **Làm sạch và cài deps**
 
   ```bash
-  find . -type d -name node_modules -prune -exec rm -rf {} +
+  find . -type d -name node_modules -prune -exec rm -rf {} +      # Reset cache cũ
   export PNPM_ALLOW_SCRIPTS="@prisma/client @prisma/engines prisma sharp @tailwindcss/oxide"
   pnpm install --frozen-lockfile
   ```
 
-  > Nếu đã lỡ `pnpm approve-builds` mà không chọn gì, pnpm đánh dấu "ignored". Thiết lập biến môi trường trước `pnpm install` để Prisma/sharp build lại đầy đủ.
-
-- [ ] **Ghi nhớ cấu hình trong `package.json`**
-
-  ```json
-  {
-    "pnpm": {
-      "overrides": {
-        "@nestjs/testing": "^11.0.0",
-        "@nestjs/throttler": "^6.0.0"
-      },
-      "onlyBuiltDependencies": [
-        "@prisma/client",
-        "@prisma/engines",
-        "prisma",
-        "sharp",
-        "@tailwindcss/oxide"
-      ]
-    }
-  }
-  ```
-
-  > Cấu hình này giúp mọi môi trường (dev/CI/Docker) tự bật postinstall cần thiết và luôn ép version NestJS đồng bộ 11.x/6.x.
-  > Từ nay không cần chạy `pnpm approve-builds` thủ công, miễn là các package cần build đã có trong `onlyBuiltDependencies`.
-
-- [ ] **Đồng bộ phụ thuộc Prisma**
+- [ ] **Bảo đảm dependency Prisma** (chỉ cần nếu repo mới clone)
 
   ```bash
-  pnpm add -wD prisma                             # Cài Prisma CLI ở workspace (devDependency)
-  pnpm --filter api add @prisma/client            # Bổ sung Prisma Client cho apps/api
-  pnpm install --frozen-lockfile                  # Đồng bộ node_modules sau khi thêm package
+  pnpm add -wD prisma
+  pnpm --filter api add @prisma/client
+  pnpm install --frozen-lockfile
   ```
 
-  > Nếu thấy cảnh báo `node_modules is present`, xoá thư mục `node_modules` rồi chạy lại `pnpm install --frozen-lockfile` để sạch cache: `rm -rf node_modules && pnpm install --frozen-lockfile`.
-
-- [ ] **Generate Prisma Client trước build**
+- [ ] **Generate Prisma Client**
 
   ```bash
-  pnpm -w prisma:generate                         # Dùng schema mặc định ở packages/db/prisma
-  # Hoặc generate thủ công với schema cụ thể:
-  pnpm exec prisma generate --schema packages/db/prisma/schema.prisma
+  pnpm -w prisma:generate
   ```
 
-  > Các runner offline nên cache thư mục `node_modules/.prisma` và `apps/api/node_modules/@prisma/client` để tránh phải tải engine lại.
-
-- [ ] **Kiểm tra scripts trong `apps/api/package.json`**
+- [ ] **Kiểm tra scripts quan trọng** (`apps/api/package.json`)
 
   ```json
   {
@@ -85,140 +56,127 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
       "prisma:generate": "pnpm -w prisma:generate",
       "prebuild": "pnpm run prisma:generate",
       "build": "pnpm exec tsc -p tsconfig.build.json",
-      "start": "node dist/main.js",
       "start:prod": "NODE_ENV=production node dist/main.js"
     }
   }
   ```
 
-  > Nếu pipeline tự chạy `pnpm -w prisma:generate` trước, có thể bỏ `prebuild`; tuy nhiên giữ cả hai để tránh sót bước.
-
-- [ ] **Khai báo biến môi trường** (ví dụ `.env`, values.yaml hoặc docker-compose):
+- [ ] **Thiết lập biến môi trường mặc định**
 
   ```env
   NODE_ENV=production
-  PORT=8080
+  PORT=3006
   CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3008
   ```
 
 ---
 
-## 3️⃣ Lộ trình build & redeploy (chọn 1)
+## 3️⃣ Build & phát hành (chọn một lộ trình)
 
-### 3.1 Kubernetes/Helm (khuyến nghị production)
+### 3.1 Docker multi-stage (dùng chung cho Helm & Compose)
 
-1. **Tạo Dockerfile đa stage** (`apps/api/Dockerfile`):
+```dockerfile
+# apps/api/Dockerfile
+# syntax=docker/dockerfile:1.7
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN corepack enable
 
-   ```bash
-   cat <<'DOCKERFILE' > apps/api/Dockerfile
-   # syntax=docker/dockerfile:1.7
-   FROM node:20-alpine AS builder
-   WORKDIR /app
-   RUN corepack enable
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/api/tsconfig*.json apps/api/
+COPY packages/db/prisma packages/db/prisma
+COPY packages packages
 
-   # Sao chép metadata để tối ưu cache pnpm
-   COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-   COPY apps/api/package.json apps/api/package.json
-   COPY apps/api/tsconfig*.json apps/api/
-   COPY packages/db/prisma packages/db/prisma
-   COPY packages packages
+ENV PNPM_ALLOW_SCRIPTS="@prisma/client @prisma/engines prisma sharp @tailwindcss/oxide"
+RUN pnpm install --frozen-lockfile
+RUN pnpm -w prisma:generate
 
-   ENV PNPM_ALLOW_SCRIPTS="@prisma/client @prisma/engines prisma sharp @tailwindcss/oxide"
-   RUN pnpm install --frozen-lockfile
+COPY apps/api apps/api
+RUN pnpm --filter api build
 
-   # Generate Prisma Client tại stage có Internet
-   RUN pnpm -w prisma:generate
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3006 \
+    PRISMA_SKIP_POSTINSTALL_GENERATE=1
 
-   # Sao chép mã nguồn API và build
-   COPY apps/api apps/api
-   RUN pnpm --filter api build
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 
-   FROM node:20-alpine AS runtime
-   WORKDIR /app
-   ENV NODE_ENV=production \
-       PORT=8080 \
-       PRISMA_SKIP_POSTINSTALL_GENERATE=1
+EXPOSE 3006
+CMD ["node", "apps/api/dist/main.js"]
+```
 
-   COPY --from=builder /app/node_modules ./node_modules
-   COPY --from=builder /app/apps/api/dist ./apps/api/dist
-   COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
-   COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
+- [ ] Build & push image
 
-   EXPOSE 8080
-   CMD ["node", "apps/api/dist/main.js"]
-   DOCKERFILE
-   ```
+  ```bash
+  docker build -f apps/api/Dockerfile -t ghcr.io/<org>/<api-name>:<git-sha> .
+  docker push ghcr.io/<org>/<api-name>:<git-sha>
+  ```
 
-2. **Build & push image**
+### 3.2 Triển khai bằng Helm (production)
 
-   ```bash
-   docker build -f apps/api/Dockerfile -t ghcr.io/<org>/<api-name>:<git-sha> .
-   docker push ghcr.io/<org>/<api-name>:<git-sha>
-   ```
+- [ ] Cập nhật `charts/api/values.yaml`
 
-3. **Cập nhật Helm values** (ví dụ `charts/api/values.yaml`):
+  ```yaml
+  image:
+    repository: ghcr.io/<org>/<api-name>
+    tag: "<git-sha>"
 
-   ```yaml
-   image:
-     repository: ghcr.io/<org>/<api-name>
-     tag: "<git-sha>"
+  env:
+    - name: NODE_ENV
+      value: production
+    - name: PORT
+      value: "3006"
+    - name: CORS_ORIGINS
+      value: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
 
-   env:
-     - name: NODE_ENV
-       value: production
-     - name: PORT
-       value: "8080"
-     - name: CORS_ORIGINS
-       value: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
+  service:
+    port: 3006
 
-   service:
-     port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  ```
 
-   resources:
-     requests:
-       cpu: 100m
-       memory: 128Mi
-     limits:
-       cpu: 500m
-       memory: 512Mi
-   ```
+- [ ] Rollout
 
-4. **Triển khai/rolling update**
+  ```bash
+  helm upgrade --install api charts/api -f charts/api/values.yaml
+  # hoặc
+  kubectl rollout restart deploy/api
+  ```
 
-   ```bash
-   helm upgrade --install api charts/api -f charts/api/values.yaml
-   # hoặc
-   kubectl rollout restart deploy/api
-   ```
+### 3.3 Docker Compose (staging/dev)
 
-### 3.2 Docker Compose (staging/dev)
+```yaml
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3006"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
+    ports:
+      - "3006:3006"
+    restart: unless-stopped
+```
 
-1. **Đảm bảo dùng cùng Dockerfile ở trên.**
-2. **docker-compose.yml** (ví dụ):
+```bash
+docker compose build api
+docker compose up -d api
+```
 
-   ```yaml
-   services:
-     api:
-       build:
-         context: .
-         dockerfile: apps/api/Dockerfile
-       environment:
-         NODE_ENV: production
-         PORT: "8080"
-         CORS_ORIGINS: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
-       ports:
-         - "8080:8080"
-       restart: unless-stopped
-   ```
-
-3. **Build & chạy**
-
-   ```bash
-   docker compose build api
-   docker compose up -d api
-   ```
-
-### 3.3 Chạy trực tiếp bằng Node (dev/runner CI)
+### 3.4 Chạy trực tiếp (CI runner / debug)
 
 ```bash
 export PNPM_ALLOW_SCRIPTS="@prisma/client @prisma/engines prisma sharp @tailwindcss/oxide"
@@ -227,87 +185,111 @@ pnpm -w prisma:generate
 pnpm --filter api build
 
 CORS_ORIGINS="http://localhost:3000,http://localhost:3001,http://localhost:3008" \
-PORT=8080 \
+PORT=3006 \
 NODE_ENV=production \
 pnpm --filter api start:prod
 ```
 
 ---
 
-## 4️⃣ Smoke test CORS
+## 4️⃣ Smoke test & kiểm chứng
 
-```bash
-curl -i -X OPTIONS "http://127.0.0.1:3006/pricing/quote" \
-  -H "Origin: http://localhost:3008" \
-  -H "Access-Control-Request-Method: POST"
-```
+- [ ] **Preflight OPTIONS**
 
-Kỳ vọng tối thiểu:
+  ```bash
+  curl -i -X OPTIONS "http://127.0.0.1:3006/pricing/quote" \
+    -H "Origin: http://localhost:3008" \
+    -H "Access-Control-Request-Method: POST"
+  ```
 
-- HTTP `204` (hoặc `200` nếu tắt `strictPreflight`).
-- Header `Access-Control-Allow-Origin: http://localhost:3008`.
-- Header `Access-Control-Allow-Credentials: true`.
+  Kỳ vọng: HTTP 204/200, header `Access-Control-Allow-Origin` đúng origin, có `Access-Control-Allow-Credentials: true`. GET vào endpoint này trả 404 là đúng thiết kế.
 
-> `/pricing/quote` chỉ hỗ trợ `POST`. Nếu gọi `GET`, Fastify trả `404 (Cannot GET /pricing/quote)` — không phải lỗi CORS.
+- [ ] **POST quote thực tế**
+
+  ```bash
+  now=$(date -Iseconds)
+  curl -i "http://127.0.0.1:3006/pricing/quote" \
+    -H "Origin: http://localhost:3008" \
+    -H "content-type: application/json" \
+    --data @- <<JSON
+  {
+    "tripType": "AIRPORT",
+    "airportCode": "HAN",
+    "direction": "IN",
+    "vehicleTypeId": 1,
+    "startAt": "$now",
+    "roundTrip": false,
+    "withVat": true,
+    "vatPct": 10,
+    "fromText": "Noi Bai",
+    "toText": "Hoan Kiem",
+    "fromLat": 21.214,
+    "fromLng": 105.806,
+    "toLat": 21.033,
+    "toLng": 105.851
+  }
+  JSON
+  ```
+
+  Bắt buộc có `direction` (`IN|OUT`) khi `tripType=AIRPORT`, thiếu sẽ nhận 400 với thông báo validation. Với `tripType=ROAD`, đổi sang `routeCode` và trường tương ứng.
 
 ---
 
-## 5️⃣ Rollback plan
+## 5️⃣ Rollback nhanh
 
-- [ ] **Helm/Kubernetes**: `helm rollback api <revision>` hoặc `kubectl rollout undo deploy/api`.
-- [ ] **Docker Compose**: `docker compose down api && docker compose up -d api` với tag image ổn định.
-- [ ] **Node trực tiếp**: `git checkout <commit_cũ>`, chạy lại bước build và `pnpm --filter api start:prod`.
-- [ ] Sau rollback, lặp lại smoke test ở mục 4 để xác nhận hành vi.
+- [ ] **Helm**: `helm rollback api <revision>` hoặc `kubectl rollout undo deploy/api`.
+- [ ] **Compose**: chỉnh tag image về bản ổn định rồi `docker compose up -d api`.
+- [ ] **Node trực tiếp**: `git checkout <commit_cu>`, chạy lại bước build + start.
+- [ ] **Bắt buộc** chạy lại smoke test mục 4 sau rollback.
 
 ---
 
 ## 6️⃣ Monitor & alert
 
-- [ ] Theo dõi log `blocked CORS origin` và `blocked request by CORS policy`; nếu origin hợp lệ vẫn xuất hiện, rà soát `CORS_ORIGINS`.
-- [ ] Thiết lập SLO ≥ 99.5% cho `OPTIONS /pricing/quote`. Metric gợi ý: `http_requests_total{route="/pricing/quote",method="OPTIONS"}`.
-- [ ] Alert khi tỷ lệ `403 CORS_ORIGIN_BLOCKED` > 1% trong 5 phút.
-- [ ] Ghi log có `request-id`/`correlation-id` để dễ truy vết (khuyến nghị OpenTelemetry/structured logging).
+- [ ] Log structured hai trường hợp: `blocked CORS origin`, `blocked request by CORS policy`.
+- [ ] Metric Prometheus đề xuất: `http_requests_total{route="/pricing/quote",method="OPTIONS"}` với SLO ≥ 99.5% thành công.
+- [ ] Alert nếu `403 CORS_ORIGIN_BLOCKED` > 1% trong 5 phút.
+- [ ] Đính kèm `request-id`/`trace-id` trong log để correlating request; khuyến nghị bật OpenTelemetry.
 
 ---
 
 ## 7️⃣ Security checklist
 
-- [ ] CORS ở chế độ least-privilege; cập nhật `CORS_ORIGINS` đúng allow-list được duyệt.
-- [ ] Không commit secret; dùng Secret Manager/K8s Secret/Compose env file.
-- [ ] Bật HTTPS ở production (ingress/controller). Tham khảo [Fastify HTTPS](https://fastify.dev/docs/latest/Guides/HTTPS/) _(checked: 2025-11-03, Asia/Bangkok)_.
-- [ ] Prisma migration chỉ chạy có kiểm soát; tránh migration tự động ở runtime.
-- [ ] Bảo vệ pipeline: runner cần quyền đọc repo, push image; hạn chế IAM tối thiểu.
+- [ ] Allow-list origin thật; tuyệt đối không để `*` ở production.
+- [ ] Secret đặt trong Secret Manager/K8s Secret/Compose env file, không commit.
+- [ ] Bật HTTPS tại ingress/controller (tham khảo [Fastify HTTPS](https://fastify.dev/docs/latest/Guides/HTTPS/) — checked: 2025-11-03, Asia/Bangkok).
+- [ ] Prisma migration chạy có kiểm soát, không tự động lúc container start.
+- [ ] Runner CI chỉ có quyền cần thiết (pull repo, push image), không cấp quyền cluster production nếu không cần.
 
 ---
 
 ## 8️⃣ Cost notes
 
-- Không phát sinh workload mới; chi phí chủ yếu nằm ở container chạy API hiện hữu.
-- Multi-stage Dockerfile giảm kích thước image ➜ tiết kiệm băng thông lưu trữ.
-- Cache `.prisma` và pnpm store giúp rút ngắn CI, giảm chi phí thời gian chạy runner.
+- Multi-stage Dockerfile giữ image nhỏ, tiết kiệm storage/bandwidth.
+- Cache `node_modules/.prisma` và pnpm store trên CI để giảm thời gian runner.
+- Không có workload bổ sung ngoài service hiện có.
 
 ---
 
-## 9️⃣ Xử lý sự cố nhanh
+## 9️⃣ Xử lý sự cố
 
-- `pnpm --filter api build` báo thiếu Prisma engine ➜ kiểm tra lại mục 2 (đã cài CLI + chạy generate chưa). Với runner không Internet, copy thư mục `.prisma` từ artefact build hoặc dùng mirror qua `PRISMA_ENGINES_MIRROR` (tham khảo [Prisma docs](https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/configuring-prisma-client-environment#using-a-custom-engine-binary), checked: 2025-11-03).
-- Khi tạo Dockerfile, **đừng** dán trực tiếp vào shell (tránh lỗi `FROM: command not found`). Dùng `cat <<'DOCKERFILE' > apps/api/Dockerfile` như hướng dẫn.
-- Nếu thấy cảnh báo peer dependency (`@nestjs/core` vs `@nestjs/throttler`), kiểm tra phiên bản thực tế; cảnh báo không chặn build nhưng cần ghi nhận khi nâng cấp NestJS.
-- Tuyệt đối không `throw` trong callback `origin` của `@fastify/cors`; trả `false` để preflight phản hồi `403` thay vì `500`.
-- Sau khi thay đổi `CORS_ORIGINS`, luôn redeploy service và chạy lại smoke test.
-
----
-
-##  🔟 Checklist cuối cùng trước khi triển khai
-
-- [ ] Đã chạy `pnpm add -wD prisma` & `pnpm --filter api add @prisma/client` và `pnpm install --frozen-lockfile`.
-- [ ] Đã generate Prisma Client (`pnpm -w prisma:generate`).
-- [ ] Đã build (`pnpm --filter api build`) thành công trên runner có Prisma engine.
-- [ ] Đã tạo/cập nhật artefact (Docker image hoặc dist + node_modules/.prisma).
-- [ ] Đã cấu hình `CORS_ORIGINS` đúng môi trường.
-- [ ] Đã deploy và chạy smoke test (mục 4).
-- [ ] Đã cập nhật giám sát/log cảnh báo.
+- Thiếu Prisma engine ➜ chạy lại mục 2 (generate + copy `.prisma` vào artefact nếu runner offline). Tham khảo [Prisma docs](https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/configuring-prisma-client-environment#using-a-custom-engine-binary) _(checked: 2025-11-03, Asia/Bangkok)._
+- Dockerfile lỗi `FROM: command not found` ➜ tạo file bằng heredoc như ví dụ, không paste trực tiếp vào shell.
+- Cảnh báo peer dependency NestJS ➜ kiểm tra version thực tế; cảnh báo không chặn build nhưng cần note trước khi nâng cấp.
+- Sau khi đổi `CORS_ORIGINS`, luôn redeploy và chạy lại smoke test mục 4.
 
 ---
 
-> Ghi chú: Tài liệu này chuẩn hóa mọi bước triển khai CORS + Prisma cho API. Mọi pull request thay đổi CORS hoặc pipeline build phải cập nhật lại runbook để tránh drift.
+## 🔟 Checklist cuối cùng trước khi deploy
+
+- [ ] `pnpm add -wD prisma` & `pnpm --filter api add @prisma/client` (nếu repo mới).
+- [ ] `pnpm install --frozen-lockfile` + `pnpm -w prisma:generate` chạy OK.
+- [ ] `pnpm --filter api build` pass.
+- [ ] Docker image/artefact đã cập nhật và push thành công.
+- [ ] Env chứa `PORT=3006` + `CORS_ORIGINS` đúng origin.
+- [ ] Smoke test OPTIONS + POST pass.
+- [ ] Monitor & alert bật, có log structured.
+
+---
+
+> Mọi thay đổi liên quan CORS, Prisma hoặc pipeline build cần cập nhật lại runbook này để tránh drift cấu hình.
