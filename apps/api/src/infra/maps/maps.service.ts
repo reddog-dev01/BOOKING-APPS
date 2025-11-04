@@ -4,7 +4,7 @@ import { apiBase, getMapsKey, hasMapsKey } from './map.util';
 
 const enc = encodeURIComponent;
 
-interface DrivingDistanceResult {
+export interface DrivingDistanceResult {
   meters: number;
   km: number;
   provider: 'google' | 'osrm';
