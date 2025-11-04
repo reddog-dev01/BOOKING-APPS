@@ -14,7 +14,7 @@ Tài liệu này đóng vai trò runbook chuẩn cho đội DevOps/Backend khi b
 ## 1️⃣ Kiến trúc tổng quan
 
 - `apps/api` là service NestJS chạy trên Fastify; ORM dùng Prisma. Monorepo quản lý bằng pnpm.
-- Plugin CORS (`apps/api/src/plugins/cors.ts`) chuẩn hóa `Origin`, so sánh với allow-list localhost (http/https, host `localhost|127.0.0.1`, port 3000–3008) và các origin bổ sung từ `CORS_ORIGINS` (CSV). `origin()` **không ném lỗi** – chỉ trả `true/false` để Fastify preflight không trả `500`. `onRequest` chặn request thật và trả JSON `403 CORS_ORIGIN_BLOCKED` để log/alert rõ ràng. Nếu `CORS_ORIGINS=*` ➜ bật wildcard.
+- Plugin CORS (`apps/api/src/plugins/cors.ts`) chuẩn hóa `Origin`, so sánh với allow-list localhost (http, host `localhost|127.0.0.1`, port 3000–3008) và các origin bổ sung từ `CORS_ORIGINS` (CSV). `origin()` **không ném lỗi** – chỉ trả `true/false` để Fastify preflight không trả `500`. `onRequest` chặn request thật và trả JSON `403 CORS_ORIGIN_BLOCKED` để log/alert rõ ràng.
 - Origin hợp lệ được phản chiếu lại (giữ cookie/session); origin bị chặn tạo lỗi `CORS_ORIGIN_BLOCKED`, trả JSON `403` và log cảnh báo.
 - Prisma Client/engines phải được generate **trước** mọi lệnh `pnpm --filter api build|dev`. Thiếu client ➜ build/dev fail.
 
@@ -40,16 +40,9 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
   {
     "pnpm": {
       "overrides": {
-        "prisma": "6.18.0",
-        "@prisma/client": "6.18.0",
-        "@nestjs/testing": "^11.1.8",
-        "@nestjs/throttler": "^6.4.0"
+        "@nestjs/testing": "^11.0.0",
+        "@nestjs/throttler": "^6.0.0"
       },
-      "ignoredBuiltDependencies": [
-        "@nestjs/core",
-        "@scarf/scarf",
-        "unrs-resolver"
-      ],
       "onlyBuiltDependencies": [
         "@prisma/client",
         "@prisma/engines",
@@ -61,8 +54,8 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
   }
   ```
 
-  > Cấu hình này giúp mọi môi trường (dev/CI/Docker) tự bật postinstall cần thiết, ép version NestJS thống nhất và dập tắt cảnh báo build scripts không cần thiết.
-  > Ví dụ: pnpm sẽ không còn cảnh báo `Ignored build scripts` đối với `@scarf/scarf` hay `unrs-resolver`.
+  > Cấu hình này giúp mọi môi trường (dev/CI/Docker) tự bật postinstall cần thiết và luôn ép version NestJS đồng bộ 11.x/6.x.
+  > Từ nay không cần chạy `pnpm approve-builds` thủ công, miễn là các package cần build đã có trong `onlyBuiltDependencies`.
 
 - [ ] **Đồng bộ phụ thuộc Prisma**
 
@@ -279,7 +272,7 @@ Kỳ vọng tối thiểu:
 
 ## 7️⃣ Security checklist
 
-- [ ] CORS ở chế độ least-privilege; wildcard `*` chỉ bật khi đã đánh giá rủi ro.
+- [ ] CORS ở chế độ least-privilege; cập nhật `CORS_ORIGINS` đúng allow-list được duyệt.
 - [ ] Không commit secret; dùng Secret Manager/K8s Secret/Compose env file.
 - [ ] Bật HTTPS ở production (ingress/controller). Tham khảo [Fastify HTTPS](https://fastify.dev/docs/latest/Guides/HTTPS/) _(checked: 2025-11-03, Asia/Bangkok)_.
 - [ ] Prisma migration chỉ chạy có kiểm soát; tránh migration tự động ở runtime.
