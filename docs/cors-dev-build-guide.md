@@ -97,7 +97,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
 
   ```env
   NODE_ENV=production
-  PORT=8080
+  PORT=3006
   CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3008
   ```
 
@@ -136,7 +136,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
    FROM node:20-alpine AS runtime
    WORKDIR /app
    ENV NODE_ENV=production \
-       PORT=8080 \
+       PORT=3006 \
        PRISMA_SKIP_POSTINSTALL_GENERATE=1
 
    COPY --from=builder /app/node_modules ./node_modules
@@ -144,7 +144,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
    COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
    COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 
-   EXPOSE 8080
+   EXPOSE 3006
    CMD ["node", "apps/api/dist/main.js"]
    DOCKERFILE
    ```
@@ -167,12 +167,12 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
      - name: NODE_ENV
        value: production
      - name: PORT
-       value: "8080"
+       value: "3006"
      - name: CORS_ORIGINS
        value: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
 
    service:
-     port: 8080
+     port: 3006
 
    resources:
      requests:
@@ -204,10 +204,10 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
          dockerfile: apps/api/Dockerfile
        environment:
          NODE_ENV: production
-         PORT: "8080"
+         PORT: "3006"
          CORS_ORIGINS: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
        ports:
-         - "8080:8080"
+         - "3006:3006"
        restart: unless-stopped
    ```
 
@@ -227,7 +227,7 @@ pnpm -w prisma:generate
 pnpm --filter api build
 
 CORS_ORIGINS="http://localhost:3000,http://localhost:3001,http://localhost:3008" \
-PORT=8080 \
+PORT=3006 \
 NODE_ENV=production \
 pnpm --filter api start:prod
 ```
@@ -249,6 +249,39 @@ Kỳ vọng tối thiểu:
 - Header `Access-Control-Allow-Credentials: true`.
 
 > `/pricing/quote` chỉ hỗ trợ `POST`. Nếu gọi `GET`, Fastify trả `404 (Cannot GET /pricing/quote)` — không phải lỗi CORS.
+
+### 4.1 Smoke test quote API (POST JSON)
+
+Sau khi preflight pass, kiểm tra luôn payload thật để đảm bảo validation NestJS hoạt động và có dữ liệu giá trả về.
+
+```bash
+now=$(date -Iseconds)
+curl -i "http://127.0.0.1:3006/pricing/quote" \
+  -H "Origin: http://localhost:3008" \
+  -H "content-type: application/json" \
+  --data @- <<JSON
+{
+  "tripType": "AIRPORT",
+  "airportCode": "HAN",
+  "direction": "IN",
+  "vehicleTypeId": 1,
+  "startAt": "$now",
+  "roundTrip": false,
+  "withVat": true,
+  "vatPct": 10,
+  "fromText": "Noi Bai",
+  "toText": "Hoan Kiem",
+  "fromLat": 21.214,
+  "fromLng": 105.806,
+  "toLat": 21.033,
+  "toLng": 105.851
+}
+JSON
+```
+
+- Với `tripType=AIRPORT`, **bắt buộc** truyền `airportCode` và `direction` (`IN|OUT`). Thiếu ➜ server trả `400` với thông báo `direction must be one of the following values: IN, OUT`.
+- Nếu kiểm thử tuyến đường bộ (`tripType=ROAD`), bỏ các trường sân bay và thay bằng `routeCode` + trường cần thiết khác.
+- Đảm bảo response status `200` với JSON chứa giá (hoặc mã lỗi rõ ràng nếu engine chưa cấu hình giá). Nếu backend chưa có bảng giá ➜ response trả giá tạm thời.
 
 ---
 
