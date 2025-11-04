@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -24,18 +24,33 @@ export enum AirportDirectionDto {
   OUT = 'OUT',
 }
 
+// Normalize optional strings to strip blank payloads coming from clients.
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export class QuoteRequestDto {
   @IsEnum(TripTypeDto)
   tripType!: TripTypeDto;
 
+  @Transform(({ value }) => normalizeOptionalString(value))
   @ValidateIf((payload) => payload.tripType === TripTypeDto.ROAD)
   @IsString()
   routeCode?: string;
 
+  @Transform(({ value }) => normalizeOptionalString(value)?.toUpperCase())
   @ValidateIf((payload) => payload.tripType === TripTypeDto.AIRPORT)
   @IsString()
   airportCode?: string;
 
+  @Transform(({ value }) => normalizeOptionalString(value)?.toUpperCase())
   @ValidateIf((payload) => payload.tripType === TripTypeDto.AIRPORT)
   @IsEnum(AirportDirectionDto)
   direction?: AirportDirectionDto;
@@ -63,6 +78,7 @@ export class QuoteRequestDto {
   vatPct?: number;
 
   @IsOptional()
+  @Transform(({ value }) => normalizeOptionalString(value))
   @IsString()
   couponCode?: string;
 
@@ -73,10 +89,12 @@ export class QuoteRequestDto {
   stops?: string[];
 
   @IsOptional()
+  @Transform(({ value }) => normalizeOptionalString(value))
   @IsString()
   fromText?: string;
 
   @IsOptional()
+  @Transform(({ value }) => normalizeOptionalString(value))
   @IsString()
   toText?: string;
 

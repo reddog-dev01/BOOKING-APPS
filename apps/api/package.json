@@ -16,7 +16,9 @@
     "prebuild": "pnpm run prisma:generate",
     "prebuild:watch": "pnpm run prisma:generate",
     "prestart:watch": "pnpm run prisma:generate",
-    "db:seed": "pnpm exec prisma db seed --schema=packages/db/prisma/schema.prisma"
+    "db:seed": "pnpm exec prisma db seed --schema=packages/db/prisma/schema.prisma",
+    "test": "pnpm exec jest --config jest.config.ts",
+    "test:watch": "pnpm exec jest --config jest.config.ts --watch"
   },
   "dependencies": {
     "@fastify/compress": "^8.1.0",
