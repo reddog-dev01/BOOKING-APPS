@@ -61,8 +61,20 @@ export default fp(async (app) => {
     credentials: true,
     strictPreflight: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    // allow idempotency header so the booking POST can safely retry without CORS failures
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'idempotency-key'],
+    /**
+     * Browsers normalise Access-Control-Request-Headers to lowercase, so we explicitly
+     * whitelist both canonical and lowercase variants for required headers. This keeps
+     * strictPreflight enabled (for security) while still accepting the idempotency key
+     * that the booking UI attaches to POST /bookings requests.
+     */
+    allowedHeaders: [
+      'Content-Type',
+      'content-type',
+      'Authorization',
+      'authorization',
+      'Idempotency-Key',
+      'idempotency-key',
+    ],
     origin(origin, callback) {
       const ok = isAllowed(origin, allowList);
       callback(null, ok); // Do not throw, Fastify treats errors as 500s.
