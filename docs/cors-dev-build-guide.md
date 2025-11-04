@@ -14,7 +14,7 @@ Tài liệu này đóng vai trò runbook chuẩn cho đội DevOps/Backend khi b
 ## 1️⃣ Kiến trúc tổng quan
 
 - `apps/api` là service NestJS chạy trên Fastify; ORM dùng Prisma. Monorepo quản lý bằng pnpm.
-- Plugin CORS (`apps/api/src/plugins/cors.ts`) chuẩn hóa `Origin`, so sánh với allow-list localhost (http/https, host `localhost|127.0.0.1`, port 3000–3008) và các origin bổ sung từ `CORS_ORIGINS` (CSV). Nếu `CORS_ORIGINS=*` ➜ bật wildcard.
+- Plugin CORS (`apps/api/src/plugins/cors.ts`) chuẩn hóa `Origin`, so sánh với allow-list localhost (http, host `localhost|127.0.0.1`, port 3000–3008) và các origin bổ sung từ `CORS_ORIGINS` (CSV). `origin()` **không ném lỗi** – chỉ trả `true/false` để Fastify preflight không trả `500`. `onRequest` chặn request thật và trả JSON `403 CORS_ORIGIN_BLOCKED` để log/alert rõ ràng.
 - Origin hợp lệ được phản chiếu lại (giữ cookie/session); origin bị chặn tạo lỗi `CORS_ORIGIN_BLOCKED`, trả JSON `403` và log cảnh báo.
 - Prisma Client/engines phải được generate **trước** mọi lệnh `pnpm --filter api build|dev`. Thiếu client ➜ build/dev fail.
 
@@ -23,6 +23,39 @@ Tài liệu này đóng vai trò runbook chuẩn cho đội DevOps/Backend khi b
 ## 2️⃣ Chuẩn bị bắt buộc (mọi lộ trình)
 
 Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trước đó đã cài, cứ chạy lại các lệnh dưới để đồng bộ; pnpm sẽ bỏ qua phần đã có.
+
+- [ ] **Làm sạch cache & bật build scripts cho pnpm**
+
+  ```bash
+  find . -type d -name node_modules -prune -exec rm -rf {} +
+  export PNPM_ALLOW_SCRIPTS="@prisma/client @prisma/engines prisma sharp @tailwindcss/oxide"
+  pnpm install --frozen-lockfile
+  ```
+
+  > Nếu đã lỡ `pnpm approve-builds` mà không chọn gì, pnpm đánh dấu "ignored". Thiết lập biến môi trường trước `pnpm install` để Prisma/sharp build lại đầy đủ.
+
+- [ ] **Ghi nhớ cấu hình trong `package.json`**
+
+  ```json
+  {
+    "pnpm": {
+      "overrides": {
+        "@nestjs/testing": "^11.0.0",
+        "@nestjs/throttler": "^6.0.0"
+      },
+      "onlyBuiltDependencies": [
+        "@prisma/client",
+        "@prisma/engines",
+        "prisma",
+        "sharp",
+        "@tailwindcss/oxide"
+      ]
+    }
+  }
+  ```
+
+  > Cấu hình này giúp mọi môi trường (dev/CI/Docker) tự bật postinstall cần thiết và luôn ép version NestJS đồng bộ 11.x/6.x.
+  > Từ nay không cần chạy `pnpm approve-builds` thủ công, miễn là các package cần build đã có trong `onlyBuiltDependencies`.
 
 - [ ] **Đồng bộ phụ thuộc Prisma**
 
@@ -90,6 +123,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
    COPY packages/db/prisma packages/db/prisma
    COPY packages packages
 
+   ENV PNPM_ALLOW_SCRIPTS="@prisma/client @prisma/engines prisma sharp @tailwindcss/oxide"
    RUN pnpm install --frozen-lockfile
 
    # Generate Prisma Client tại stage có Internet
@@ -187,6 +221,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
 ### 3.3 Chạy trực tiếp bằng Node (dev/runner CI)
 
 ```bash
+export PNPM_ALLOW_SCRIPTS="@prisma/client @prisma/engines prisma sharp @tailwindcss/oxide"
 pnpm install --frozen-lockfile
 pnpm -w prisma:generate
 pnpm --filter api build
@@ -237,7 +272,7 @@ Kỳ vọng tối thiểu:
 
 ## 7️⃣ Security checklist
 
-- [ ] CORS ở chế độ least-privilege; wildcard `*` chỉ bật khi đã đánh giá rủi ro.
+- [ ] CORS ở chế độ least-privilege; cập nhật `CORS_ORIGINS` đúng allow-list được duyệt.
 - [ ] Không commit secret; dùng Secret Manager/K8s Secret/Compose env file.
 - [ ] Bật HTTPS ở production (ingress/controller). Tham khảo [Fastify HTTPS](https://fastify.dev/docs/latest/Guides/HTTPS/) _(checked: 2025-11-03, Asia/Bangkok)_.
 - [ ] Prisma migration chỉ chạy có kiểm soát; tránh migration tự động ở runtime.
@@ -258,6 +293,7 @@ Kỳ vọng tối thiểu:
 - `pnpm --filter api build` báo thiếu Prisma engine ➜ kiểm tra lại mục 2 (đã cài CLI + chạy generate chưa). Với runner không Internet, copy thư mục `.prisma` từ artefact build hoặc dùng mirror qua `PRISMA_ENGINES_MIRROR` (tham khảo [Prisma docs](https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/configuring-prisma-client-environment#using-a-custom-engine-binary), checked: 2025-11-03).
 - Khi tạo Dockerfile, **đừng** dán trực tiếp vào shell (tránh lỗi `FROM: command not found`). Dùng `cat <<'DOCKERFILE' > apps/api/Dockerfile` như hướng dẫn.
 - Nếu thấy cảnh báo peer dependency (`@nestjs/core` vs `@nestjs/throttler`), kiểm tra phiên bản thực tế; cảnh báo không chặn build nhưng cần ghi nhận khi nâng cấp NestJS.
+- Tuyệt đối không `throw` trong callback `origin` của `@fastify/cors`; trả `false` để preflight phản hồi `403` thay vì `500`.
 - Sau khi thay đổi `CORS_ORIGINS`, luôn redeploy service và chạy lại smoke test.
 
 ---
