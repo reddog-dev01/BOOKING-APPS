@@ -97,7 +97,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
 
   ```env
   NODE_ENV=production
-  PORT=8080
+  PORT=3006
   CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3008
   ```
 
@@ -136,7 +136,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
    FROM node:20-alpine AS runtime
    WORKDIR /app
    ENV NODE_ENV=production \
-       PORT=8080 \
+       PORT=3006 \
        PRISMA_SKIP_POSTINSTALL_GENERATE=1
 
    COPY --from=builder /app/node_modules ./node_modules
@@ -144,7 +144,7 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
    COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
    COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 
-   EXPOSE 8080
+   EXPOSE 3006
    CMD ["node", "apps/api/dist/main.js"]
    DOCKERFILE
    ```
@@ -167,12 +167,12 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
      - name: NODE_ENV
        value: production
      - name: PORT
-       value: "8080"
+       value: "3006"
      - name: CORS_ORIGINS
        value: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
 
    service:
-     port: 8080
+     port: 3006
 
    resources:
      requests:
@@ -204,10 +204,10 @@ Thực hiện ở thư mục gốc repo (`/workspace/BOOKING-APPS`). Nếu trư�
          dockerfile: apps/api/Dockerfile
        environment:
          NODE_ENV: production
-         PORT: "8080"
+         PORT: "3006"
          CORS_ORIGINS: "http://localhost:3000,http://localhost:3001,http://localhost:3008"
        ports:
-         - "8080:8080"
+         - "3006:3006"
        restart: unless-stopped
    ```
 
@@ -227,7 +227,7 @@ pnpm -w prisma:generate
 pnpm --filter api build
 
 CORS_ORIGINS="http://localhost:3000,http://localhost:3001,http://localhost:3008" \
-PORT=8080 \
+PORT=3006 \
 NODE_ENV=production \
 pnpm --filter api start:prod
 ```
