@@ -250,6 +250,39 @@ Kỳ vọng tối thiểu:
 
 > `/pricing/quote` chỉ hỗ trợ `POST`. Nếu gọi `GET`, Fastify trả `404 (Cannot GET /pricing/quote)` — không phải lỗi CORS.
 
+### 4.1 Smoke test quote API (POST JSON)
+
+Sau khi preflight pass, kiểm tra luôn payload thật để đảm bảo validation NestJS hoạt động và có dữ liệu giá trả về.
+
+```bash
+now=$(date -Iseconds)
+curl -i "http://127.0.0.1:3006/pricing/quote" \
+  -H "Origin: http://localhost:3008" \
+  -H "content-type: application/json" \
+  --data @- <<JSON
+{
+  "tripType": "AIRPORT",
+  "airportCode": "HAN",
+  "direction": "IN",
+  "vehicleTypeId": 1,
+  "startAt": "$now",
+  "roundTrip": false,
+  "withVat": true,
+  "vatPct": 10,
+  "fromText": "Noi Bai",
+  "toText": "Hoan Kiem",
+  "fromLat": 21.214,
+  "fromLng": 105.806,
+  "toLat": 21.033,
+  "toLng": 105.851
+}
+JSON
+```
+
+- Với `tripType=AIRPORT`, **bắt buộc** truyền `airportCode` và `direction` (`IN|OUT`). Thiếu ➜ server trả `400` với thông báo `direction must be one of the following values: IN, OUT`.
+- Nếu kiểm thử tuyến đường bộ (`tripType=ROAD`), bỏ các trường sân bay và thay bằng `routeCode` + trường cần thiết khác.
+- Đảm bảo response status `200` với JSON chứa giá (hoặc mã lỗi rõ ràng nếu engine chưa cấu hình giá). Nếu backend chưa có bảng giá ➜ response trả giá tạm thời.
+
 ---
 
 ## 5️⃣ Rollback plan
