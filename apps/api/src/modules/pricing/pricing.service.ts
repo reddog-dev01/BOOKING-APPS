@@ -27,7 +27,7 @@ interface QuoteRecord {
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
 
-type DistanceProvider = 'request' | 'route' | 'google' | 'osrm' | 'haversine' | 'unknown';
+type DistanceProvider = 'request' | 'route' | 'google' | 'osrm' | 'unknown';
 
 interface DistanceResolution {
   km: number;
@@ -273,37 +273,42 @@ export class PricingService {
     from: { lat: number; lng: number },
     to: { lat: number; lng: number },
   ): Promise<DistanceResolution> {
+    let lastError: unknown;
     try {
       const { km, provider } = await this.maps.directions(from, to);
       if (km > 0) {
-        return { km: Math.max(0, Math.round(km * 100) / 100), provider };
+        return { km: this.normalizeDistance(km), provider };
       }
-      this.logger.warn('Driving distance providers returned zero distance, using haversine fallback', {
+      this.logger.warn('Driving distance providers returned zero distance', {
         from,
         to,
       });
     } catch (error) {
-      // Fall back to haversine distance when Google Directions is unavailable or fails.
-      this.logger.warn('Falling back to haversine distance', {
+      lastError = error;
+      this.logger.error('Driving distance lookup failed', {
         error: error instanceof Error ? error.message : String(error),
         from,
         to,
       });
     }
-    return { km: this.haversine(from, to), provider: 'haversine' };
+
+    return this.throwError(
+      HttpStatus.BAD_GATEWAY,
+      'DRIVING_DISTANCE_UNAVAILABLE',
+      'Driving distance providers did not return a valid route',
+      {
+        from,
+        to,
+        ...(lastError instanceof Error ? { cause: lastError.message } : {}),
+      },
+    );
   }
 
-  private haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-    const toRad = (value: number) => (value * Math.PI) / 180;
-    const dLat = toRad(b.lat - a.lat);
-    const dLng = toRad(b.lng - a.lng);
-    const lat1 = toRad(a.lat);
-    const lat2 = toRad(b.lat);
-    const hav =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
-    const distance = 2 * 6371 * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
-    return Math.max(0, Math.round(distance * 100) / 100);
+  private normalizeDistance(distanceKm: number): number {
+    if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
+      return 0;
+    }
+    return Math.round(distanceKm * 100) / 100;
   }
 
   private getQuoteDelegate(): QuoteCreateDelegate {
