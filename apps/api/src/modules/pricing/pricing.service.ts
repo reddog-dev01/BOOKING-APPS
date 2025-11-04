@@ -35,6 +35,9 @@ const FALLBACK_DISTANCE_MULTIPLIER = Number.isFinite(parsedFallbackMultiplier) &
 
 type DistanceProvider = 'request' | 'route' | 'google' | 'osrm' | 'approximate' | 'unknown';
 
+type CoordinateInput = { lat: unknown; lng: unknown };
+type NormalizedPoint = { lat: number; lng: number };
+
 interface DistanceResolution {
   km: number;
   provider: DistanceProvider;
@@ -256,7 +259,7 @@ export class PricingService {
     dto: QuoteRequestDto,
     airport?: Airport | null,
   ): Promise<DistanceResolution> {
-    const points: Array<{ lat: number; lng: number }> = [];
+    const points: CoordinateInput[] = [];
     if (dto.fromLat != null && dto.fromLng != null) {
       points.push({ lat: dto.fromLat, lng: dto.fromLng });
     }
@@ -276,33 +279,35 @@ export class PricingService {
   }
 
   private async getDrivingDistance(
-    from: { lat: number; lng: number },
-    to: { lat: number; lng: number },
+    from: CoordinateInput,
+    to: CoordinateInput,
   ): Promise<DistanceResolution> {
+    const normalizedFrom = this.normalizePoint(from, 'from');
+    const normalizedTo = this.normalizePoint(to, 'to');
     let lastError: unknown;
     try {
-      const { km, provider } = await this.maps.directions(from, to);
+      const { km, provider } = await this.maps.directions(normalizedFrom, normalizedTo);
       if (km > 0) {
         return { km: this.normalizeDistance(km), provider };
       }
       this.logger.warn('Driving distance providers returned zero distance', {
-        from,
-        to,
+        from: normalizedFrom,
+        to: normalizedTo,
       });
     } catch (error) {
       lastError = error;
       this.logger.error('Driving distance lookup failed', {
         error: error instanceof Error ? error.message : String(error),
-        from,
-        to,
+        from: normalizedFrom,
+        to: normalizedTo,
       });
     }
 
-    const fallbackKm = this.getFallbackDistanceKm(from, to);
+    const fallbackKm = this.getFallbackDistanceKm(normalizedFrom, normalizedTo);
     if (fallbackKm > 0) {
       this.logger.warn('Falling back to great-circle distance estimate', {
-        from,
-        to,
+        from: normalizedFrom,
+        to: normalizedTo,
         fallbackKm,
         lastError: lastError instanceof Error ? lastError.message : lastError ?? null,
       });
@@ -314,8 +319,8 @@ export class PricingService {
       'DRIVING_DISTANCE_UNAVAILABLE',
       'Driving distance providers did not return a valid route',
       {
-        from,
-        to,
+        from: normalizedFrom,
+        to: normalizedTo,
         ...(lastError instanceof Error ? { cause: lastError.message } : {}),
       },
     );
@@ -328,10 +333,7 @@ export class PricingService {
     return Math.round(distanceKm * 100) / 100;
   }
 
-  private getFallbackDistanceKm(
-    from: { lat: number; lng: number },
-    to: { lat: number; lng: number },
-  ): number {
+  private getFallbackDistanceKm(from: NormalizedPoint, to: NormalizedPoint): number {
     // Haversine provides a resilient baseline when all routing APIs fail.
     const distanceKm = this.getGreatCircleDistanceKm(from, to);
     if (distanceKm <= 0) {
@@ -341,10 +343,7 @@ export class PricingService {
     return Number.isFinite(inflated) && inflated > 0 ? inflated : 0;
   }
 
-  private getGreatCircleDistanceKm(
-    from: { lat: number; lng: number },
-    to: { lat: number; lng: number },
-  ): number {
+  private getGreatCircleDistanceKm(from: NormalizedPoint, to: NormalizedPoint): number {
     // Standard haversine formula for earth distance, safe for short and long ranges alike.
     const toRad = (degrees: number) => (degrees * Math.PI) / 180;
     const dLat = toRad(to.lat - from.lat);
@@ -356,6 +355,35 @@ export class PricingService {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = EARTH_RADIUS_KM * c;
     return Number.isFinite(distance) && distance > 0 ? distance : 0;
+  }
+
+  private normalizePoint(point: CoordinateInput, label: string): NormalizedPoint {
+    const lat = this.toNumber(point.lat);
+    const lng = this.toNumber(point.lng);
+    if (lat == null || lng == null) {
+      this.logger.warn('Invalid coordinate provided for distance calculation', {
+        label,
+        point,
+      });
+      this.throwError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_COORDINATE',
+        `Invalid ${label} coordinate supplied`,
+        { label, point },
+      );
+    }
+    return { lat, lng };
+  }
+
+  private toNumber(value: unknown): number | null {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (value == null) {
+      return null;
+    }
+    const parsed = Number.parseFloat(String(value));
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private getQuoteDelegate(): QuoteCreateDelegate {

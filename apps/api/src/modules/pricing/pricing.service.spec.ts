@@ -57,4 +57,27 @@ describe('PricingService driving distance resolution', () => {
     expect(result.provider).toBe('approximate');
     expect(result.km).toBe(25.83);
   });
+
+  it('normalizes decimal-like coordinates before delegating to providers', async () => {
+    const decimalLike = (value: string) => ({
+      valueOf: () => value,
+      toString: () => value,
+    });
+    const maps = {
+      directions: jest.fn().mockRejectedValue(new Error('provider down')),
+    } satisfies Partial<GoogleMapsService>;
+
+    const service = createService(maps);
+    const from = { lat: decimalLike('21.0101303'), lng: decimalLike('105.8153282') };
+    const to = { lat: decimalLike('21.214184'), lng: decimalLike('105.802971') };
+
+    const result = await service['getDrivingDistance'](from, to);
+
+    expect(maps.directions).toHaveBeenCalledWith(
+      { lat: 21.0101303, lng: 105.8153282 },
+      { lat: 21.214184, lng: 105.802971 },
+    );
+    expect(result.provider).toBe('approximate');
+    expect(result.km).toBe(28.41);
+  });
 });
