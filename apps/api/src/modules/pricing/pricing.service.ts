@@ -27,6 +27,13 @@ interface QuoteRecord {
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
 
+type DistanceProvider = 'request' | 'route' | 'google' | 'osrm' | 'haversine' | 'unknown';
+
+interface DistanceResolution {
+  km: number;
+  provider: DistanceProvider;
+}
+
 type QuoteMeta = Prisma.JsonObject & {
   request: Record<string, unknown>;
   computed: Record<string, unknown>;
@@ -56,7 +63,7 @@ export class PricingService {
     const defaultVatPct = siteSetting?.defaultVatPct ?? 0;
 
     let basePrice = 0;
-    let distanceKm = 0;
+    let distance: DistanceResolution = { km: 0, provider: 'unknown' };
     let timeMinutes = 0;
     let routeId: string | undefined;
     let airport: Airport | null = null;
@@ -108,13 +115,13 @@ export class PricingService {
         basePrice += Math.round((basePrice * policy.roundTripPct) / 100);
       }
 
-      distanceKm = await this.resolveRoadDistance(dto, route.distanceKm ?? 0);
-      timeMinutes = this.estimateMinutes(distanceKm);
+      distance = await this.resolveRoadDistance(dto, route.distanceKm ?? 0);
+      timeMinutes = this.estimateMinutes(distance.km);
     } else {
       airport = await this.resolveAirport(dto.airportCode);
-      distanceKm = await this.resolveAirportDistance(dto, airport);
-      basePrice = Math.max(0, Math.round(distanceKm * vehicle.perKmVnd));
-      timeMinutes = this.estimateMinutes(distanceKm);
+      distance = await this.resolveAirportDistance(dto, airport);
+      basePrice = Math.max(0, Math.round(distance.km * vehicle.perKmVnd));
+      timeMinutes = this.estimateMinutes(distance.km);
     }
 
     const vatPct = dto.withVat ? dto.vatPct ?? defaultVatPct : 0;
@@ -146,7 +153,8 @@ export class PricingService {
       computed: {
         basePrice,
         vatPct,
-        distanceKm,
+        distanceKm: distance.km,
+        distanceProvider: distance.provider,
         timeMinutes,
         airportId: airport?.id ?? null,
         routeId: routeId ?? null,
@@ -162,7 +170,7 @@ export class PricingService {
         airportId: airport?.id ?? null,
         vehicleTypeId: dto.vehicleTypeId,
         basePriceVnd: basePrice,
-        distanceKm,
+        distanceKm: distance.km,
         timeMinutes,
         vatPct,
         vatAmountVnd: vatAmount,
@@ -188,21 +196,27 @@ export class PricingService {
     };
   }
 
-  private async resolveRoadDistance(dto: QuoteRequestDto, fallback: number): Promise<number> {
+  private async resolveRoadDistance(
+    dto: QuoteRequestDto,
+    fallback: number,
+  ): Promise<DistanceResolution> {
     if (dto.distanceKm && dto.distanceKm > 0) {
-      return dto.distanceKm;
+      return { km: dto.distanceKm, provider: 'request' };
     }
     if (fallback > 0) {
-      return fallback;
+      return { km: fallback, provider: 'route' };
     }
     return this.resolveDistanceFromCoordinates(dto);
   }
 
-  private async resolveAirportDistance(dto: QuoteRequestDto, airport: Airport): Promise<number> {
+  private async resolveAirportDistance(
+    dto: QuoteRequestDto,
+    airport: Airport,
+  ): Promise<DistanceResolution> {
     const distance = dto.distanceKm && dto.distanceKm > 0
-      ? dto.distanceKm
+      ? { km: dto.distanceKm, provider: 'request' as DistanceProvider }
       : await this.resolveDistanceFromCoordinates(dto, airport);
-    if (distance <= 0) {
+    if (distance.km <= 0) {
       this.throwError(
         HttpStatus.BAD_REQUEST,
         'INVALID_DISTANCE',
@@ -235,7 +249,7 @@ export class PricingService {
   private async resolveDistanceFromCoordinates(
     dto: QuoteRequestDto,
     airport?: Airport | null,
-  ): Promise<number> {
+  ): Promise<DistanceResolution> {
     const points: Array<{ lat: number; lng: number }> = [];
     if (dto.fromLat != null && dto.fromLng != null) {
       points.push({ lat: dto.fromLat, lng: dto.fromLng });
@@ -250,21 +264,21 @@ export class PricingService {
       return this.getDrivingDistance(points[0], { lat: airport.lat, lng: airport.lng });
     }
     if (airport) {
-      return 0;
+      return { km: 0, provider: 'unknown' };
     }
-    return 0;
+    return { km: 0, provider: 'unknown' };
   }
 
   private async getDrivingDistance(
     from: { lat: number; lng: number },
     to: { lat: number; lng: number },
-  ): Promise<number> {
+  ): Promise<DistanceResolution> {
     try {
-      const { km } = await this.maps.directions(from, to);
+      const { km, provider } = await this.maps.directions(from, to);
       if (km > 0) {
-        return Math.max(0, Math.round(km * 100) / 100);
+        return { km: Math.max(0, Math.round(km * 100) / 100), provider };
       }
-      this.logger.warn('Google Directions returned zero distance, using haversine fallback', {
+      this.logger.warn('Driving distance providers returned zero distance, using haversine fallback', {
         from,
         to,
       });
@@ -276,7 +290,7 @@ export class PricingService {
         to,
       });
     }
-    return this.haversine(from, to);
+    return { km: this.haversine(from, to), provider: 'haversine' };
   }
 
   private haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
