@@ -1,15 +1,11 @@
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 
 import { apiBase, getMapsKey, hasMapsKey } from './map.util';
+import { DrivingDistanceResult } from './types';
+
+export { DrivingDistanceResult } from './types';
 
 const enc = encodeURIComponent;
-
-export interface DrivingDistanceResult {
-  meters: number;
-  km: number;
-  provider: 'google' | 'osrm';
-  raw: unknown;
-}
 
 @Injectable()
 export class GoogleMapsService {

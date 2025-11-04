@@ -1,5 +1,6 @@
 import { Controller, Get, HttpCode, Query } from '@nestjs/common';
-import { GoogleMapsService, type DrivingDistanceResult } from '../../infra/maps/maps.service';
+import { GoogleMapsService } from '../../infra/maps/maps.service';
+import { DrivingDistanceResult } from '../../infra/maps/types';
 
 @Controller('maps')
 export class MapsController {
