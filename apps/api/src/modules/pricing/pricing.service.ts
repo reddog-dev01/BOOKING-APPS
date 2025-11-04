@@ -1,6 +1,7 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Airport, Prisma, TripType } from '@prisma/client';
 
+import { GoogleMapsService } from '../../infra/maps/maps.service';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { QuoteRequestDto, TripTypeDto } from './dto/quote-request.dto';
 import { QuoteResponseDto } from './dto/quote-response.dto';
@@ -33,7 +34,12 @@ type QuoteMeta = Prisma.JsonObject & {
 
 @Injectable()
 export class PricingService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PricingService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly maps: GoogleMapsService,
+  ) {}
 
   async createQuote(dto: QuoteRequestDto): Promise<QuoteResponseDto> {
     const now = new Date();
@@ -102,11 +108,11 @@ export class PricingService {
         basePrice += Math.round((basePrice * policy.roundTripPct) / 100);
       }
 
-      distanceKm = this.resolveRoadDistance(dto, route.distanceKm ?? 0);
+      distanceKm = await this.resolveRoadDistance(dto, route.distanceKm ?? 0);
       timeMinutes = this.estimateMinutes(distanceKm);
     } else {
       airport = await this.resolveAirport(dto.airportCode);
-      distanceKm = this.resolveAirportDistance(dto, airport);
+      distanceKm = await this.resolveAirportDistance(dto, airport);
       basePrice = Math.max(0, Math.round(distanceKm * vehicle.perKmVnd));
       timeMinutes = this.estimateMinutes(distanceKm);
     }
@@ -182,7 +188,7 @@ export class PricingService {
     };
   }
 
-  private resolveRoadDistance(dto: QuoteRequestDto, fallback: number): number {
+  private async resolveRoadDistance(dto: QuoteRequestDto, fallback: number): Promise<number> {
     if (dto.distanceKm && dto.distanceKm > 0) {
       return dto.distanceKm;
     }
@@ -192,10 +198,10 @@ export class PricingService {
     return this.resolveDistanceFromCoordinates(dto);
   }
 
-  private resolveAirportDistance(dto: QuoteRequestDto, airport: Airport): number {
+  private async resolveAirportDistance(dto: QuoteRequestDto, airport: Airport): Promise<number> {
     const distance = dto.distanceKm && dto.distanceKm > 0
       ? dto.distanceKm
-      : this.resolveDistanceFromCoordinates(dto, airport);
+      : await this.resolveDistanceFromCoordinates(dto, airport);
     if (distance <= 0) {
       this.throwError(
         HttpStatus.BAD_REQUEST,
@@ -226,10 +232,10 @@ export class PricingService {
     return airport;
   }
 
-  private resolveDistanceFromCoordinates(
+  private async resolveDistanceFromCoordinates(
     dto: QuoteRequestDto,
     airport?: Airport | null,
-  ): number {
+  ): Promise<number> {
     const points: Array<{ lat: number; lng: number }> = [];
     if (dto.fromLat != null && dto.fromLng != null) {
       points.push({ lat: dto.fromLat, lng: dto.fromLng });
@@ -238,15 +244,39 @@ export class PricingService {
       points.push({ lat: dto.toLat, lng: dto.toLng });
     }
     if (points.length === 2) {
-      return this.haversine(points[0], points[1]);
+      return this.getDrivingDistance(points[0], points[1]);
     }
     if (points.length === 1 && airport) {
-      return this.haversine(points[0], { lat: airport.lat, lng: airport.lng });
+      return this.getDrivingDistance(points[0], { lat: airport.lat, lng: airport.lng });
     }
     if (airport) {
       return 0;
     }
     return 0;
+  }
+
+  private async getDrivingDistance(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+  ): Promise<number> {
+    try {
+      const { km } = await this.maps.directions(from, to);
+      if (km > 0) {
+        return Math.max(0, Math.round(km * 100) / 100);
+      }
+      this.logger.warn('Google Directions returned zero distance, using haversine fallback', {
+        from,
+        to,
+      });
+    } catch (error) {
+      // Fall back to haversine distance when Google Directions is unavailable or fails.
+      this.logger.warn('Falling back to haversine distance', {
+        error: error instanceof Error ? error.message : String(error),
+        from,
+        to,
+      });
+    }
+    return this.haversine(from, to);
   }
 
   private haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
