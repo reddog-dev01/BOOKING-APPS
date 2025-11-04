@@ -6,10 +6,8 @@ settings:
   injectWorkspacePackages: true
 
 overrides:
-  prisma: 6.18.0
-  '@prisma/client': 6.18.0
-  '@nestjs/testing': ^11.1.8
-  '@nestjs/throttler': ^6.4.0
+  '@nestjs/testing': ^11.0.0
+  '@nestjs/throttler': ^6.0.0
 
 importers:
 
@@ -117,7 +115,7 @@ importers:
         specifier: ^11.2.1
         version: 11.2.1(@nestjs/common@11.1.8(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.8(@nestjs/common@11.1.8(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)
       '@nestjs/throttler':
-        specifier: ^6.4.0
+        specifier: ^6.0.0
         version: 6.4.0(@nestjs/common@11.1.8(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.8(@nestjs/common@11.1.8(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)
       '@prisma/client':
         specifier: 6.18.0
@@ -154,7 +152,7 @@ importers:
         specifier: ^10
         version: 10.2.3(chokidar@3.6.0)(typescript@5.9.3)
       '@nestjs/testing':
-        specifier: ^11.1.8
+        specifier: ^11.0.0
         version: 11.1.8(@nestjs/common@11.1.8(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.8(@nestjs/common@11.1.8(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
       '@types/node':
         specifier: ^20
@@ -1052,7 +1050,7 @@ packages:
     resolution: {integrity: sha512-jnL2I9gDnPnw4A+4h5SuNn8Gc+1mL1Z79U/3I9eE2gbxJG1oSA+62ByPW4xkeDgwE0fqMzzpAZ7IHxYnLZ4iQA==}
     engines: {node: '>=18.18'}
     peerDependencies:
-      prisma: 6.18.0
+      prisma: '*'
       typescript: '>=5.1.0'
     peerDependenciesMeta:
       prisma:
