@@ -1,9 +1,9 @@
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 
 import { apiBase, getMapsKey, hasMapsKey } from './map.util';
-import { DrivingDistanceResult } from './types';
+import type { DrivingDistanceResult } from './types';
 
-export { DrivingDistanceResult } from './types';
+export type { DrivingDistanceResult } from './types';
 
 const enc = encodeURIComponent;
 
