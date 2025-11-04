@@ -61,7 +61,8 @@ export default fp(async (app) => {
     credentials: true,
     strictPreflight: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    // allow idempotency header so the booking POST can safely retry without CORS failures
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'idempotency-key'],
     origin(origin, callback) {
       const ok = isAllowed(origin, allowList);
       callback(null, ok); // Do not throw, Fastify treats errors as 500s.
