@@ -28,7 +28,7 @@ describe('PricingService driving distance resolution', () => {
     expect(maps.directions).toHaveBeenCalledWith(sampleFrom, sampleTo);
   });
 
-  it('throws when providers return zero distance', async () => {
+  it('falls back to a great-circle estimate when providers return zero distance', async () => {
     const maps = {
       directions: jest.fn().mockResolvedValue({
         meters: 0,
@@ -39,28 +39,22 @@ describe('PricingService driving distance resolution', () => {
     } satisfies Partial<GoogleMapsService>;
 
     const service = createService(maps);
-    await expect(service['getDrivingDistance'](sampleFrom, sampleTo)).rejects.toMatchObject({
-      status: HttpStatus.BAD_GATEWAY,
-      response: expect.objectContaining({
-        error: 'DRIVING_DISTANCE_UNAVAILABLE',
-        details: expect.objectContaining({ from: sampleFrom, to: sampleTo }),
-      }),
-    });
+    const result = await service['getDrivingDistance'](sampleFrom, sampleTo);
+
+    expect(result.provider).toBe('approximate');
+    expect(result.km).toBe(25.83);
   });
 
-  it('propagates provider failures with the last error message', async () => {
+  it('falls back to a great-circle estimate when providers throw', async () => {
     const providerError = new Error('upstream timeout');
     const maps = {
       directions: jest.fn().mockRejectedValue(providerError),
     } satisfies Partial<GoogleMapsService>;
 
     const service = createService(maps);
-    await expect(service['getDrivingDistance'](sampleFrom, sampleTo)).rejects.toMatchObject({
-      status: HttpStatus.BAD_GATEWAY,
-      response: expect.objectContaining({
-        error: 'DRIVING_DISTANCE_UNAVAILABLE',
-        details: expect.objectContaining({ cause: providerError.message }),
-      }),
-    });
+    const result = await service['getDrivingDistance'](sampleFrom, sampleTo);
+
+    expect(result.provider).toBe('approximate');
+    expect(result.km).toBe(25.83);
   });
 });

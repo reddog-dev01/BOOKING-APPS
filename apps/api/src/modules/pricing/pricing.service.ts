@@ -26,8 +26,14 @@ interface QuoteRecord {
 
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 const KM_PER_HOUR_DEFAULT = 40;
+const EARTH_RADIUS_KM = 6371;
+// Allow ops to tune the approximation without code changes; default keeps error within ~25% of road distance.
+const parsedFallbackMultiplier = Number(process.env.PRICING_FALLBACK_DISTANCE_MULTIPLIER);
+const FALLBACK_DISTANCE_MULTIPLIER = Number.isFinite(parsedFallbackMultiplier) && parsedFallbackMultiplier >= 1
+  ? parsedFallbackMultiplier
+  : 1.25;
 
-type DistanceProvider = 'request' | 'route' | 'google' | 'osrm' | 'unknown';
+type DistanceProvider = 'request' | 'route' | 'google' | 'osrm' | 'approximate' | 'unknown';
 
 interface DistanceResolution {
   km: number;
@@ -292,6 +298,17 @@ export class PricingService {
       });
     }
 
+    const fallbackKm = this.getFallbackDistanceKm(from, to);
+    if (fallbackKm > 0) {
+      this.logger.warn('Falling back to great-circle distance estimate', {
+        from,
+        to,
+        fallbackKm,
+        lastError: lastError instanceof Error ? lastError.message : lastError ?? null,
+      });
+      return { km: this.normalizeDistance(fallbackKm), provider: 'approximate' };
+    }
+
     return this.throwError(
       HttpStatus.BAD_GATEWAY,
       'DRIVING_DISTANCE_UNAVAILABLE',
@@ -309,6 +326,36 @@ export class PricingService {
       return 0;
     }
     return Math.round(distanceKm * 100) / 100;
+  }
+
+  private getFallbackDistanceKm(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+  ): number {
+    // Haversine provides a resilient baseline when all routing APIs fail.
+    const distanceKm = this.getGreatCircleDistanceKm(from, to);
+    if (distanceKm <= 0) {
+      return 0;
+    }
+    const inflated = distanceKm * FALLBACK_DISTANCE_MULTIPLIER;
+    return Number.isFinite(inflated) && inflated > 0 ? inflated : 0;
+  }
+
+  private getGreatCircleDistanceKm(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+  ): number {
+    // Standard haversine formula for earth distance, safe for short and long ranges alike.
+    const toRad = (degrees: number) => (degrees * Math.PI) / 180;
+    const dLat = toRad(to.lat - from.lat);
+    const dLng = toRad(to.lng - from.lng);
+    const lat1 = toRad(from.lat);
+    const lat2 = toRad(to.lat);
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = EARTH_RADIUS_KM * c;
+    return Number.isFinite(distance) && distance > 0 ? distance : 0;
   }
 
   private getQuoteDelegate(): QuoteCreateDelegate {
