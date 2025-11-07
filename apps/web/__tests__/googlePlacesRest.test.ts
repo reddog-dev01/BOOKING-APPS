@@ -219,7 +219,7 @@ describe("googlePlacesRest circuit breaker", () => {
 describe("googlePlacesRest API key resolution", () => {
   it("allows IP-restricted production keys", async () => {
     jest.resetModules();
-    process.env.PLACES_API_KEY = "AIzaSyBwSgnM_plKYymCX6OeuwIbmkouCcXbOBQ";
+    process.env.PLACES_API_KEY = "AIzaSyTestServerKey0000000000000000000000";
 
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -243,5 +243,25 @@ describe("googlePlacesRest API key resolution", () => {
     resetPlacesCircuitBreakerForTests();
     delete process.env.PLACES_API_KEY;
     delete (global as { fetch?: unknown }).fetch;
+  });
+});
+
+describe("googlePlacesRest env parsing", () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+
+  it("supports export syntax when reading env files", async () => {
+    const module = await import("../lib/server/googlePlacesRest");
+    expect(
+      module.__testing_extractKeyFromEnvFile(`export   PLACES_API_KEY =  "abc123"`),
+    ).toBe("abc123");
+  });
+
+  it("strips inline comments for unquoted values", async () => {
+    const module = await import("../lib/server/googlePlacesRest");
+    expect(
+      module.__testing_extractKeyFromEnvFile(`PLACES_API_KEY=abc123 # comment here`),
+    ).toBe("abc123");
   });
 });
