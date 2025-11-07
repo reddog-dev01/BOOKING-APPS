@@ -1,238 +1,229 @@
-# Monorepo Nền tảng Đặt chỗ
+# Booking Platform Monorepo
 
-> Monorepo pnpm quản lý toàn bộ dịch vụ đặt chỗ (Next.js web + admin, NestJS API, Prisma). Tài liệu này tập trung vào việc đồng bộ Google Maps/Places API key và kiểm chứng rằng tính năng nhập địa chỉ đang gọi đúng endpoint Google.
+Monorepo pnpm vận hành toàn bộ sản phẩm đặt chỗ (Next.js web, NestJS API, Prisma/Postgres). Tài liệu này mô tả trọn vẹn quy trình onboarding: clone mã nguồn, khởi chạy hạ tầng cục bộ, tạo mới Google Cloud project cho Places API và đồng bộ cặp Google Maps key sạch vào mọi dịch vụ.
 
-## ⚡ Checklist Google Maps/Places sau khi xoay key
+---
 
-| Biến | Công dụng | File cần cập nhật |
-| --- | --- | --- |
-| `PLACES_API_KEY` | Key server dùng cho proxy REST `/api/places/*` và API NestJS | `apps/api/.env`, `apps/web/.env*`, `apps/admin/.env.local` |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Key browser dùng tải Maps JavaScript SDK & Autocomplete widget | `apps/web/.env.local*`, `apps/admin/.env.local*`, biến môi trường khi build web/admin |
-| `GOOGLE_MAPS_REFERER` | Origin dev hiện tại để build script gán đúng referrer | `apps/web/.env.local*` (script tự cập nhật theo port)
+## 1. Kiến trúc & thư mục
 
-> [!IMPORTANT]
-> Sau khi nhận cặp key mới, luôn đi hết checklist dưới đây **trước** khi bàn giao cho người khác để tránh lỗi 403/503.
+| Thư mục | Mô tả |
+| --- | --- |
+| `apps/web` | Frontend Next.js (Route Handlers + Server Actions) phục vụ khách đặt chỗ. |
+| `apps/api` | API NestJS (booking, pricing, routes) dùng Prisma để truy vấn Postgres. |
+| `apps/admin` | Bảng điều khiển quản trị Next.js. |
+| `packages/db` | Prisma schema, migration, seed idempotent. |
+| `packages/ui` | Thư viện UI chia sẻ giữa web & admin. |
+| `infra`, `scripts`, `docs` | Công cụ DevOps, terraform/thủ tục vận hành, runbook. |
 
-### 1. Kiểm tra file `.env` ở repo root
+**Stack:** TypeScript strict + ESM, pnpm workspace, ESLint + Prettier. Mọi thay đổi phải giữ nguyên convention DTO/service/module, backup DB trước khi tạo migration, và log JSON (pino).
 
-File [`./.env`](.env) được commit cùng repo để Docker Compose tự động nạp khi build/run.
-Sau khi clone/pull lại, đảm bảo file đang chứa đúng cặp key do DevOps bàn giao:
+---
+
+## 2. Yêu cầu hệ thống
+
+- Node.js 20 LTS
+- pnpm 8+
+- Docker & Docker Compose (Postgres, reverse proxy)
+- Quyền truy cập Google Cloud (Project Creator hoặc được ủy quyền tạo project con trong folder tổ chức)
+
+---
+
+## 3. Thiết lập monorepo lần đầu
 
 ```bash
-rg '^PLACES_API_KEY' .env
-rg '^NEXT_PUBLIC_GOOGLE_MAPS_API_KEY' .env
+# Clone
+ git clone <REPO_URL>
+ cd BOOKING-APPS
+
+# Cài đặt phụ thuộc
+ pnpm install
+
+# Khởi động hạ tầng mặc định (Postgres, Caddy)
+ docker compose up -d
 ```
 
-> [!TIP]
-> Hash nhanh để đối chiếu với thông tin DevOps gửi mà không lộ toàn bộ key:
->
-> ```bash
-> printf '%s' "$(rg --only-matching --replace '$2' '^(PLACES_API_KEY)=(.*)$' .env)" | sha256sum
-> printf '%s' "$(rg --only-matching --replace '$2' '^(NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)=(.*)$' .env)" | sha256sum
-> ```
-
-Nếu output rỗng hoặc sai, cập nhật lại từ nguồn chính và commit trước khi cho người khác pull code.
-
-> [!NOTE]
-> Để có hướng dẫn tuần tự xử lý lỗi `BILLING_DISABLED` hoặc 503 khi gọi `/api/places/autocomplete`, xem thêm runbook [`docs/places-troubleshooting-runbook.md`](./docs/places-troubleshooting-runbook.md).
-
-### 2. Đồng bộ mọi file `.env` khi DevOps xoay key mới
+### 3.1. Khởi tạo biến môi trường
 
 ```bash
-REPO_DIR=~/booking-app # sửa lại nếu bạn clone repo ở vị trí khác
-cd "$REPO_DIR"
+cp -n .env.example .env
+pnpm exec turbo run generate:env --filter=web --filter=api 2>/dev/null || true
+```
 
-# Nhập key mới vào shell (dùng giá trị DevOps vừa gửi)
-export PLACES_API_KEY="<PLACES_API_KEY_MOI>"
-export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="<NEXT_PUBLIC_GOOGLE_MAPS_API_KEY_MOI>"
+Sau khi có Google key (mục 5), cập nhật các file:
 
-# WEB_PORT = port Next.js dev thực tế (mặc định 3005, fallback 3000/3008)
+- `./.env`
+- `apps/api/.env`
+- `apps/web/.env.local`
+- `apps/admin/.env.local`
+
+---
+
+## 4. Tạo mới Google Cloud project `GGMAPS`
+
+> **Thông tin dự án đã cấp:** `Project name: GGMAPS`, `Project ID: ggmaps-476813`, `Project number: 886636766361`.
+
+1. Truy cập [Google Cloud Console](https://console.cloud.google.com/). Đăng nhập bằng tài khoản công ty.
+2. `IAM & Admin → Manage resources` → **Create Project**.
+   - **Project name:** `GGMAPS`
+   - **Project ID:** `ggmaps-476813` (đảm bảo khớp, nếu trùng hãy chọn biến thể gần nhất và cập nhật toàn repo).
+   - **Location:** folder/organization được phép tạo (ví dụ `Bookings`).
+3. Gắn billing: `Billing → Link a billing account → billingAccounts/01FD8D-35134C-2995E8`.
+4. Phân quyền tối thiểu:
+   - Cho nhóm DevOps: `Project → IAM → Grant Access` với `roles/serviceusage.apiKeysAdmin`, `roles/viewer`.
+   - Cho ứng dụng CI/CD (nếu cần): tạo service account với `roles/iam.serviceAccountTokenCreator`.
+5. Đặt ngân sách/quota: `Billing → Budgets & alerts` → tạo budget `<GGMAPS Places>` với threshold 80%/100%.
+
+### 4.1. Bật API cần dùng
+
+`APIs & Services → Library` và enable lần lượt:
+
+- **Maps JavaScript API**
+- **Places API (New)**
+- **Geocoding API** (bật để hỗ trợ reverse geocode)
+
+Kiểm tra lại trong tab **Enabled APIs & Services** để chắc chắn cả ba đều ở trạng thái `ENABLED`.
+
+### 4.2. Khoá project không dùng được key cũ
+
+Tại `APIs & Services → Credentials`:
+
+- Xoá mọi API key mặc định Google tạo ra khi sinh project mới.
+- Xác nhận không còn key nào xuất hiện trước khi tạo key sạch ở mục 5.
+
+---
+
+## 5. Sinh cặp Google Maps/Places API key sạch
+
+Tại `APIs & Services → Credentials`.
+
+### 5.1. Server key (`PLACES_API_KEY`)
+
+1. **Create Credentials → API key**.
+2. Đặt tên: `places-server-dev`.
+3. **Application restrictions:** chọn `IP addresses` → add IP outbound của môi trường dev/bastion.
+4. **API restrictions:** `Restrict key` → chọn `Places API (New)` và `Geocoding API`.
+5. Lưu lại giá trị, copy vào biến shell `PLACES_API_KEY`.
+
+### 5.2. Browser key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`)
+
+1. **Create Credentials → API key**.
+2. Đặt tên: `maps-browser-dev`.
+3. **Application restrictions:** `HTTP referrers` → thêm:
+   - `http://localhost:3005/*`
+   - `http://127.0.0.1:3005/*`
+   - fallback dev: `http://localhost:3000/*`, `http://localhost:3008/*` (và biến thể `127.0.0.1`).
+   - domain staging/production thực tế.
+4. **API restrictions:** `Maps JavaScript API`, `Places API (New)`.
+5. Lưu giá trị vào biến `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+
+### 5.3. Ghi nhận metadata key
+
+| Biến môi trường | Giá trị hiện tại |
+| --- | --- |
+| `PROJECT_ID` | `ggmaps-476813` |
+| `PLACES_KEY_NAME` | `places-server-dev` |
+| `MAPS_JS_KEY_NAME` | `maps-browser-dev` |
+| `PLACES_API_KEY` | `AIzaSyDyUEQLWkuU_r7UlaaXGrkwCvH1zqxbfJw` |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `AlzaSyDQW8cofv1VFEttUe43e_uBpSgyPULXxAY` |
+
+```bash
+export PROJECT_ID="ggmaps-476813"
+export PLACES_KEY_NAME="places-server-dev"
+export MAPS_JS_KEY_NAME="maps-browser-dev"
+export PLACES_API_KEY="AIzaSyDyUEQLWkuU_r7UlaaXGrkwCvH1zqxbfJw"
+export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="AlzaSyDQW8cofv1VFEttUe43e_uBpSgyPULXxAY"
+```
+
+Dùng `gcloud` để double-check restriction:
+
+```bash
+gcloud config set project "$PROJECT_ID"
+
+gcloud services api-keys describe "$PLACES_KEY_NAME" \
+  --format='get(restrictions.serverKeyRestrictions.allowedIps)'
+
+gcloud services api-keys describe "$MAPS_JS_KEY_NAME" \
+  --format='get(restrictions.browserKeyRestrictions.allowedReferrers)'
+```
+
+Đảm bảo danh sách không trống và chỉ chứa IP/referrer mong muốn.
+
+---
+
+## 6. Đồng bộ key vào repo
+
+Script `scripts/google-keys.mjs` (được wrap qua npm script) sẽ tự sao chép `.env.example` nếu thiếu và cập nhật đồng bộ cho tất cả dịch vụ.
+
+```bash
+cd /workspace/BOOKING-APPS
+
+# Export giá trị mới (nếu đã export ở bước 5.3 thì có thể bỏ qua)
+export PLACES_API_KEY="AIzaSyDyUEQLWkuU_r7UlaaXGrkwCvH1zqxbfJw"
+export NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="AlzaSyDQW8cofv1VFEttUe43e_uBpSgyPULXxAY"
+
+# Áp key vào toàn bộ .env
 WEB_PORT=3005 pnpm apply:google-keys
+
+# Kiểm tra lại giá trị
 pnpm check:google-keys
 
-# Tuỳ chọn: xoá biến shell sau khi đồng bộ để tránh rò rỉ history
+# Xoá biến shell để tránh lộ history
 unset PLACES_API_KEY NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 ```
 
-- `apply:google-keys` tự sao chép `.env.example` nếu thiếu, cập nhật tất cả `PLACES_API_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`/`GOOGLE_MAPS_REFERER` theo biến shell hiện tại (bao gồm cả file gốc `.env`).
-- `check:google-keys` đảm bảo không còn placeholder và mọi file `.env` đều mang cùng giá trị với biến shell. Nếu muốn ngăn việc dùng lại key cũ, export thêm `GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"` trước khi chạy.
+Các file được cập nhật: `./.env`, `apps/api/.env`, `apps/web/.env.local`, `apps/admin/.env.local`. Nếu có key cũ cần chặn, export thêm `GOOGLE_KEY_DENYLIST="<KEY_CU_SERVER>,<KEY_CU_BROWSER>"` trước khi chạy.
 
-Xác thực nhanh bằng grep (không in ra toàn bộ key):
+---
+
+## 7. Smoke test Google Places proxy
 
 ```bash
-rg -n "PLACES_API_KEY" apps/api/.env apps/web/.env.local apps/admin/.env.local 2>/dev/null
-rg -n "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" apps/web/.env.local apps/admin/.env.local 2>/dev/null
+pnpm --filter web dev
 ```
 
-### 3. Smoke test proxy Google Places
+Tab khác:
 
 ```bash
-pnpm --filter web dev &
-sleep 5
-WEB_PORT=3005 # thay bằng port dev đang log ra
+WEB_PORT=3005
 curl -i "http://localhost:${WEB_PORT}/api/places/autocomplete" \
   -H 'content-type: application/json' \
   -d '{"input":"ho chi"}'
 ```
 
-Kết quả mong đợi:
+- HTTP 200 + mảng `predictions` → thành công.
+- HTTP 503 (tiếng Việt) → thiếu/sai `PLACES_API_KEY` hoặc billing chưa bật.
+- HTTP 403 `BILLING_DISABLED` → quay lại bước billing hoặc chờ Google đồng bộ 5-10 phút.
 
-- HTTP 200 + JSON chứa `predictions` → OK.
-- HTTP 503 cùng thông điệp tiếng Việt → thiếu/sai `PLACES_API_KEY` hoặc billing chưa bật (proxy cache lỗi billing 10 phút).
-- HTTP 403 `BILLING_DISABLED` → bật billing rồi restart dev server sau vài phút.
+Frontend:
 
-### 4. Kiểm tra widget `AddressInput`
+1. Mở trang chứa component `apps/web/components/AddressInput.tsx`.
+2. Gõ "Ho Chi Minh City" → kiểm tra DevTools Network đảm bảo request `places:autocomplete` trả 200.
+3. Nếu lỗi `RefererNotAllowedMapError`, cập nhật lại danh sách referrer cho browser key.
 
-`AddressInput` (Next.js client component) nằm tại [`apps/web/components/AddressInput.tsx`](apps/web/components/AddressInput.tsx). Khi người dùng gõ, component:
+---
 
-1. Debounce input 250ms.
-2. Gọi nội bộ `/api/places/autocomplete` cùng `sessionToken` (tạo bằng `crypto.randomUUID`).
-3. Endpoint server (`apps/web/lib/server/googlePlacesRest.ts`) forward sang Google Places v1 với header `X-Goog-Api-Key: <PLACES_API_KEY>`.
+## 8. Xoay key định kỳ
 
-Để xác nhận UI đang dùng key đúng:
-
-1. Mở trang chứa `AddressInput`.
-2. Gõ một địa điểm ("Ho Chi Minh City").
-3. Mở DevTools → tab **Network** → filter `places`. Bạn sẽ thấy:
-   - `POST /api/places/autocomplete` trả 200.
-   - Request kế tiếp từ server tới `https://places.googleapis.com/v1/places:autocomplete` (xem server log nếu cần) dùng đúng key server.
-4. Chọn một gợi ý, component sẽ phát `onChange` với `formattedAddress` và toạ độ.
-5. Nếu không có gợi ý:
-   - Xem tab **Console**: thông báo tiếng Việt báo thiếu key/billing.
-   - Với lỗi `RefererNotAllowedMapError`, cập nhật restriction cho key browser (bước 1).
-
-### 5. Xác minh restriction trên Google Cloud
-
-Nếu có quyền Cloud Console, mô tả key theo tên do DevOps gửi (ví dụ `places-server-dev`, `maps-js-browser-dev`).
-
-```bash
-PROJECT_ID="inbound-object-476110-d5" # đổi lại nếu team cập nhật
-gcloud config set project "$PROJECT_ID"
-
-gcloud services api-keys describe "<TEN_KEY_SERVER>" \
-  --format='get(restrictions.serverKeyRestrictions.allowedIps)'
-
-gcloud services api-keys describe "<TEN_KEY_BROWSER>" \
-  --format='get(restrictions.browserKeyRestrictions.allowedReferrers)'
-```
-
-- IP outbound (Docker dev, bastion…) phải nằm trong `allowedIps`.
-- Origin dev phổ biến (`http://localhost:3005/*`, `http://127.0.0.1:3005/*`, fallback `3000`/`3008`, domain production) phải có trong `allowedReferrers`.
-
-### 6. (Tuỳ chọn) So sánh hash để chắc chắn container nhận đúng key
+1. Lặp lại mục 5 để sinh cặp key mới (không reuse key cũ).
+2. Chạy lại script đồng bộ (mục 6).
+3. Ghi chú hash phục vụ đối chiếu, gửi cho team:
 
 ```bash
 printf '%s' "$PLACES_API_KEY" | sha256sum
-docker compose exec web sh -lc 'printf "%s" "$PLACES_API_KEY"' | sha256sum
-docker compose exec web sh -lc 'printf "%s" "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"' | sha256sum
+printf '%s' "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" | sha256sum
 ```
 
-Hash giống nhau nghĩa là key trong container khớp với giá trị bạn vừa export mà không cần lộ chuỗi thật.
-
-## Kiến trúc Google Places trong repo
-
-- `apps/web/lib/server/googlePlacesRest.ts` tải `PLACES_API_KEY` từ biến môi trường hoặc các file `.env` (có cache, cảnh báo placeholder, circuit-breaker 10 phút cho lỗi billing) rồi forward request sang Google Places v1.
-- Backend Next.js route handlers gọi trực tiếp REST Places API (New) với `fetch`, đảm bảo tương thích với endpoints `v1/places:*`. Nếu cần client chính thức, ưu tiên `@googlemaps/places` thay vì `@googlemaps/google-maps-services-js`.
-- `apps/web/app/api/places/autocomplete/route.ts` & `.../details/route.ts` sử dụng helper trên.
-- `apps/web/components/AddressInput.tsx` gọi `/api/places/autocomplete` và render danh sách gợi ý.
-- `apps/api/src/infra/maps/map.util.ts` tái sử dụng key server cho nhu cầu NestJS khác.
-
-Nếu bất kỳ bước nào dùng key cũ, chạy lại `pnpm apply:google-keys` và `pnpm check:google-keys` sau khi export biến shell mới.
-
-## Tổng quan repository
-
-- `apps/api` – API NestJS xử lý giá, đặt chỗ, cấu hình phương tiện.
-- `apps/web` – Frontend Next.js cho khách hàng.
-- `apps/admin` – Bảng điều khiển quản trị.
-- `packages/db` – Schema Prisma + seed.
-- `packages/ui` – Component dùng chung.
-
-Tất cả sử dụng TypeScript strict + pnpm workspaces.
-
-### Cổng dịch vụ mặc định
-
-| Service | Host local | Cổng process/container | Ghi chú |
-| --- | --- | --- | --- |
-| Postgres (`db`) | `5432` | `5432` | Chỉ mở trong dev. |
-| API NestJS (`api`) | `3006` | `3006` | Next.js gọi qua `http://127.0.0.1:3006`. |
-| Next.js web (`web`) | `3005` | `3000` | Script dev fallback 3000/3008 nếu 3005 bận → nhớ cập nhật `GOOGLE_MAPS_REFERER`. |
-| Admin (`admin`) | `3007` | `3000` | Chỉ khi chạy `pnpm --filter admin dev`. |
-| Caddy proxy | `80`, `443` | `80`, `443` | Gom API/web để test HTTPS. |
-
-> [!TIP]
-> Khi Next.js dev tự động chuyển port, chạy lại `WEB_PORT=<port> pnpm apply:google-keys` để cập nhật `GOOGLE_MAPS_REFERER` và danh sách referrer trên Google Cloud.
-
-## Cài đặt phụ thuộc
+4. Restart dịch vụ đang chạy:
 
 ```bash
-pnpm install
+docker compose up -d --force-recreate api web
 ```
 
-`.npmrc` của workspace đã whitelist các postinstall cần thiết (Prisma, NestJS build, Sharp…), vì vậy `pnpm install` không cần cờ bổ sung. Từ commit này `pnpm --filter api dev`/`build` sẽ tự gọi `pnpm --filter api run prisma:generate` trước khi biên dịch; nếu gặp lỗi `PrismaClient` missing sau khi pull, chỉ cần chạy lại:
+---
 
-```bash
-pnpm --filter api run prisma:generate
-```
+## 9. Tài liệu tham khảo
 
-## Test frontend (Jest)
+- [docs/google-key-verification.md](docs/google-key-verification.md): checklist xác minh restriction và smoke test chi tiết.
+- [docs/places-troubleshooting-runbook.md](docs/places-troubleshooting-runbook.md): runbook khi API trả lỗi 4xx/5xx.
+- [docs/jest-troubleshooting-vi.md](docs/jest-troubleshooting-vi.md): fix unit test khi cập nhật key.
 
-Nếu `pnpm --filter web test -- googlePlacesRest` báo `jest: not found`, cài devDeps đầy đủ cho workspace web:
-
-```bash
-pnpm --filter web add -D jest ts-jest @types/jest jest-environment-jsdom @testing-library/react @testing-library/jest-dom
-pnpm --filter web add -D ts-node # chỉ khi Jest yêu cầu
-pnpm install
-```
-
-- `apps/web/jest.config.ts` đặt preset `ts-jest`, alias `@/`, nạp `jest.setup.ts` (đã có sẵn).
-- `apps/web/jest.setup.ts` nạp `@testing-library/jest-dom` và polyfill `TextEncoder/TextDecoder`.
-- Nếu gặp `TextEncoder is not defined`, mở rộng `jest.setup.ts` (repo đã xử lý sẵn).
-
-Tham khảo thêm tại [`docs/jest-troubleshooting-vi.md`](docs/jest-troubleshooting-vi.md).
-
-## Khởi động production-like bằng Docker
-
-1. **Chuẩn bị file môi trường**
-
-   ```bash
-   cp apps/api/.env.example apps/api/.env
-   cp apps/web/.env.example apps/web/.env
-   cp apps/web/.env.local.example apps/web/.env.local
-   cp apps/admin/.env.local.example apps/admin/.env.local
-   cp .env.example .env
-   ```
-
-   Các file mẫu đã chứa đúng cặp key được DevOps bàn giao. `pnpm apply:google-keys` sẽ giúp đồng bộ mọi file khi key đổi.
-
-2. **Build container**
-
-   ```bash
-   docker compose build api web
-   ```
-
-3. **Khởi động stack**
-
-   ```bash
-   docker compose up -d db api web
-   ```
-
-   API: `http://127.0.0.1:3006`, frontend: `http://127.0.0.1:3005`. Nếu cần HTTPS nội bộ:
-
-   ```bash
-   docker compose up -d caddy
-   ```
-
-   Caddy forward `/api/*` tới NestJS, còn lại tới Next.js.
-
-4. **Kiểm tra health**
-
-   ```bash
-   curl -i http://127.0.0.1:3006/healthz
-   curl -I http://127.0.0.1:3005
-   ```
-
-## Tài liệu liên quan
-
-- [`docs/google-key-verification.md`](docs/google-key-verification.md) – Checklist chi tiết xác minh key ở nhiều môi trường.
-- [`docs/jest-troubleshooting-vi.md`](docs/jest-troubleshooting-vi.md) – Ghi chú cấu hình Jest.
-- Prisma/DB, workflow CI/CD, guideline NestJS… sẽ được mô tả riêng trong thư mục `docs/` tương ứng.
