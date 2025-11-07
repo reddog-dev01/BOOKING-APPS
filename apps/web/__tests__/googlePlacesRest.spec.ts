@@ -10,12 +10,18 @@ describe("googlePlacesRest circuit breaker", () => {
     jest.useFakeTimers();
     advanceTo("2025-01-01T00:00:00.000Z");
     process.env.PLACES_API_KEY = "test-key";
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   });
 
   afterEach(() => {
     jest.useRealTimers();
     delete (global as { fetch?: unknown }).fetch;
     delete process.env.PLACES_API_KEY;
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   });
 
   const importModule = async () => {
@@ -31,8 +37,39 @@ describe("googlePlacesRest circuit breaker", () => {
     },
   });
 
+  it("falls back to alternate env keys when PLACES_API_KEY is absent", async () => {
+    delete process.env.PLACES_API_KEY;
+    process.env.GOOGLE_PLACES_API_KEY = "fallback-key";
+
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { fetchAutocomplete, resetPlacesCircuitBreakerForTests, resetPlacesKeyCacheForTests } =
+      await importModule();
+
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(createFetchResponse(200, { suggestions: [] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(fetchAutocomplete({ input: "Ho Chi Minh" })).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = (init as { headers?: Record<string, string> } | undefined)?.headers ?? {};
+    expect(headers).toMatchObject({ "X-Goog-Api-Key": "fallback-key" });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("\"msg\":\"places.fallback_env_used\""),
+    );
+
+    warnSpy.mockRestore();
+    resetPlacesKeyCacheForTests();
+    resetPlacesCircuitBreakerForTests();
+  });
+
   it("trips billing circuit and skips subsequent autocomplete fetches", async () => {
-    const { fetchAutocomplete, resetPlacesCircuitBreakerForTests } = await importModule();
+    const { fetchAutocomplete, resetPlacesCircuitBreakerForTests, resetPlacesKeyCacheForTests } =
+      await importModule();
 
     const fetchMock = jest
       .fn()
@@ -69,11 +106,16 @@ describe("googlePlacesRest circuit breaker", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     resetPlacesCircuitBreakerForTests();
+    resetPlacesKeyCacheForTests();
   });
 
   it("short-circuits place details when circuit is open", async () => {
-    const { fetchAutocomplete, fetchPlaceDetails, resetPlacesCircuitBreakerForTests } =
-      await importModule();
+    const {
+      fetchAutocomplete,
+      fetchPlaceDetails,
+      resetPlacesCircuitBreakerForTests,
+      resetPlacesKeyCacheForTests,
+    } = await importModule();
 
     const fetchMock = jest
       .fn()
@@ -99,6 +141,77 @@ describe("googlePlacesRest circuit breaker", () => {
     ).rejects.toMatchObject({ status: 503 });
     expect(fetchMock).not.toHaveBeenCalled();
 
+    resetPlacesCircuitBreakerForTests();
+    resetPlacesKeyCacheForTests();
+  });
+
+  it("loads the Places key from configured env files when process env vars are empty", async () => {
+    delete process.env.PLACES_API_KEY;
+
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const {
+      fetchAutocomplete,
+      resetPlacesCircuitBreakerForTests,
+      resetPlacesKeyCacheForTests,
+      setPlacesKeyFileResolverForTests,
+    } = await importModule();
+
+    setPlacesKeyFileResolverForTests(() => ({ key: "file-key", source: "apps/web/.env.local" }));
+
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(createFetchResponse(200, { suggestions: [] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(fetchAutocomplete({ input: "Da Nang" })).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = (init as { headers?: Record<string, string> } | undefined)?.headers ?? {};
+    expect(headers).toMatchObject({ "X-Goog-Api-Key": "file-key" });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("\"msg\":\"places.env_file_fallback\""),
+    );
+
+    warnSpy.mockRestore();
+    setPlacesKeyFileResolverForTests(null);
+    resetPlacesKeyCacheForTests();
+    resetPlacesCircuitBreakerForTests();
+  });
+
+  it("surfaces a MissingApiKeyError when env files and process vars do not contain a key", async () => {
+    delete process.env.PLACES_API_KEY;
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const {
+      fetchAutocomplete,
+      resetPlacesCircuitBreakerForTests,
+      resetPlacesKeyCacheForTests,
+      setPlacesKeyFileResolverForTests,
+      MissingApiKeyError,
+    } = await importModule();
+
+    setPlacesKeyFileResolverForTests(() => null);
+
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(fetchAutocomplete({ input: "Hue" })).rejects.toBeInstanceOf(MissingApiKeyError);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("\"msg\":\"places.env_file_fallback\""),
+    );
+
+    warnSpy.mockRestore();
+    setPlacesKeyFileResolverForTests(null);
+    resetPlacesKeyCacheForTests();
     resetPlacesCircuitBreakerForTests();
   });
 });
