@@ -1354,12 +1354,18 @@ export default function BookingForm() {
     try {
       setSubmitBooking(true);
 
+      if (!quote?.id) {
+        throw new Error(
+          "Không tìm thấy báo giá hợp lệ. Vui lòng kiểm tra lại thông tin và thử tính giá trước khi đặt.",
+        );
+      }
+
       const body: CreateBookingRequestDto = {
         ...lastDtoUsedForQuote,
         stops: stops.map((s) => s.text).filter(Boolean),
         customerName: payload.name.trim(),
-        phone: normalizePhone(payload.phone),
-        // quoteId: quote?.id, // nếu BE trả về id; nếu chưa có thì bỏ
+        customerPhone: normalizePhone(payload.phone),
+        quoteId: quote.id,
       };
 
       const idemKey = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
