@@ -1,24 +1,33 @@
 import { buildMessage, isUUID, ValidateBy, ValidationOptions } from 'class-validator';
 
-// Prisma emits cuid identifiers (c + 24 lowercase base36 chars); allow case-insensitive match in case upstream normalizes.
+// Prisma emits cuid identifiers (c + 24 lowercase base36 chars).
 const CUID_REGEX = /^c[a-z0-9]{24}$/;
 
-function isCuid(value: string): boolean {
-  return CUID_REGEX.test(value);
+export function normalizeQuoteIdentifier(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (isUUID(trimmed, '4')) {
+    // UUIDs are case-insensitive; normalize to lowercase for consistent storage/lookups.
+    return trimmed.toLowerCase();
+  }
+
+  const lowered = trimmed.toLowerCase();
+  if (CUID_REGEX.test(lowered)) {
+    return lowered;
+  }
+
+  return undefined;
 }
 
 function isUuidOrCuid(value: unknown): boolean {
-  if (typeof value !== 'string') {
-    return false;
-  }
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    return false;
-  }
-  if (isUUID(normalized, '4')) {
-    return true;
-  }
-  return isCuid(normalized.toLowerCase());
+  return typeof normalizeQuoteIdentifier(value) === 'string';
 }
 
 export function IsUuidOrCuid(validationOptions?: ValidationOptions) {

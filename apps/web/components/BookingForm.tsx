@@ -33,6 +33,7 @@ import type {
   CreateBookingRequestDto,
   DirectionDto,
 } from "../lib/types";
+import { normalizeQuoteId } from "../lib/normalizeQuoteId";
 
 import AddressInput, { type AddressValue } from "./AddressInput";
 import { AIRPORTS } from "../lib/airports";
@@ -1360,7 +1361,7 @@ export default function BookingForm() {
         );
       }
 
-      const normalizedQuoteId = quote.id.trim();
+      const normalizedQuoteId = normalizeQuoteId(quote.id);
       if (!normalizedQuoteId) {
         throw new Error(
           "Không tìm thấy mã báo giá hợp lệ. Vui lòng tính lại giá trước khi đặt chuyến.",

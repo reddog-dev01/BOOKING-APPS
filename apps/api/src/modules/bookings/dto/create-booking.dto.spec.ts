@@ -19,6 +19,7 @@ describe('CreateBookingDto', () => {
       quoteId: 'c1234567890abcdef1234567a',
     });
 
+    expect(dto.quoteId).toBe('c1234567890abcdef1234567a');
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
   });
@@ -29,6 +30,7 @@ describe('CreateBookingDto', () => {
       quoteId: ' C1234567890ABCDEF1234567A ',
     });
 
+    expect(dto.quoteId).toBe('c1234567890abcdef1234567a');
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
   });
@@ -39,6 +41,18 @@ describe('CreateBookingDto', () => {
       quoteId: '550e8400-e29b-41d4-a716-446655440000',
     });
 
+    expect(dto.quoteId).toBe('550e8400-e29b-41d4-a716-446655440000');
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('normalizes UUID casing and whitespace before validation', async () => {
+    const dto = plainToInstance(CreateBookingDto, {
+      ...basePayload,
+      quoteId: ' 550E8400-E29B-41D4-A716-446655440000 ',
+    });
+
+    expect(dto.quoteId).toBe('550e8400-e29b-41d4-a716-446655440000');
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
   });
