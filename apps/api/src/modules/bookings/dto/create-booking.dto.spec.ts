@@ -23,6 +23,16 @@ describe('CreateBookingDto', () => {
     expect(errors).toHaveLength(0);
   });
 
+  it('normalizes casing and whitespace for cuid identifiers', async () => {
+    const dto = plainToInstance(CreateBookingDto, {
+      ...basePayload,
+      quoteId: ' C1234567890ABCDEF1234567A ',
+    });
+
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
   it('accepts UUID v4 identifiers for quoteId', async () => {
     const dto = plainToInstance(CreateBookingDto, {
       ...basePayload,

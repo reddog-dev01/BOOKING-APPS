@@ -1360,12 +1360,19 @@ export default function BookingForm() {
         );
       }
 
+      const normalizedQuoteId = quote.id.trim();
+      if (!normalizedQuoteId) {
+        throw new Error(
+          "Không tìm thấy mã báo giá hợp lệ. Vui lòng tính lại giá trước khi đặt chuyến.",
+        );
+      }
+
       const body: CreateBookingRequestDto = {
         ...lastDtoUsedForQuote,
         stops: stops.map((s) => s.text).filter(Boolean),
         customerName: payload.name.trim(),
         customerPhone: normalizePhone(payload.phone),
-        quoteId: quote.id,
+        quoteId: normalizedQuoteId,
       };
 
       const idemKey = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
