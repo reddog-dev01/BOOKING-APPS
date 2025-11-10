@@ -9,6 +9,10 @@ import {
   RefreshCcw,
   Settings as SettingsIcon,
 } from "lucide-react";
+import {
+  OperationTask,
+  OperationsTaskboard,
+} from "../../components/dashboard/operations-taskboard";
 
 type SiteSetting = {
   vatOptions: number[];
@@ -362,6 +366,112 @@ export default function DashboardPage() {
     return { total, pending, confirmed, revenue, average };
   }, [bookings]);
 
+  const operationsTasks = useMemo<OperationTask[]>(() => {
+    const newest = bookings[0] ?? null;
+    return [
+      {
+        id: "intake",
+        summary: "Bước 1",
+        title: "Tiếp nhận & xác nhận yêu cầu",
+        body: (
+          <>
+            <p>
+              Gọi lại cho khách trong 5 phút để xác nhận lịch trình, giá dự kiến và phương thức thanh toán.
+            </p>
+            {newest ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Đơn mới nhất ({formatDateTime(newest.createdAt)})
+                </p>
+                <div className="mt-2 grid gap-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">Khách</span>
+                    <span>{newest.customerName ?? "--"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">Điện thoại</span>
+                    <span>{newest.phone ?? "--"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">Khởi hành</span>
+                    <span>{formatDateTime(newest.startAt)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">Tuyến</span>
+                    <span className="text-right">{newest.fromText} → {newest.toText}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">Giá tạm tính</span>
+                    <span>{formatCurrency(newest.totalVnd)}đ</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600">
+                Chưa có đơn nào được lọc. Hãy bấm "Làm mới" hoặc thay đổi bộ lọc bên trên.
+              </p>
+            )}
+            <ul className="list-disc space-y-1 pl-5 text-sm">
+              <li>Đảm bảo thông tin hành khách và hành trình trùng khớp với dữ liệu trên bảng.</li>
+              <li>Ghi chú lại yêu cầu đặc biệt (ghế trẻ em, hành lý, hóa đơn VAT...).</li>
+              <li>
+                Nếu khách yêu cầu điều chỉnh, cập nhật lại báo giá và gửi email xác nhận.
+              </li>
+            </ul>
+          </>
+        ),
+      },
+      {
+        id: "dispatch",
+        summary: "Bước 2",
+        title: "Điều phối tài xế & phương tiện",
+        body: (
+          <>
+            <p>
+              Lọc danh sách tài xế phù hợp theo loại xe và khu vực xuất phát, ưu tiên tài xế có đánh giá cao.
+            </p>
+            <ul className="list-decimal space-y-1 pl-5 text-sm">
+              <li>Kiểm tra tình trạng xe trên mục "Sản phẩm" trước khi phân công.</li>
+              <li>
+                Gửi thông tin chuyến đi qua ứng dụng điều hành hoặc Zalo nội bộ, yêu cầu tài xế xác nhận trong 10 phút.
+              </li>
+              <li>
+                Cập nhật trạng thái đơn sang <span className="font-semibold text-emerald-600">CONFIRMED</span> khi tài xế đã nhận chuyến.
+              </li>
+            </ul>
+            <p className="text-sm text-slate-600">
+              Hiện có {bookingMetrics.pending} đơn cần xác nhận và {bookingMetrics.confirmed} đơn đã khóa lịch.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: "monitor",
+        summary: "Bước 3",
+        title: "Giám sát hành trình & chốt doanh thu",
+        body: (
+          <>
+            <p>
+              Theo dõi chuyến đi theo thời gian thực, đảm bảo tài xế cập nhật trạng thái xuất phát, đón khách và hoàn thành.
+            </p>
+            <ul className="list-disc space-y-1 pl-5 text-sm">
+              <li>Ghi nhận chi phí phát sinh (cao tốc, cầu đường) để xuất hóa đơn chính xác.</li>
+              <li>
+                Sau khi hoàn thành, đối soát doanh thu: trung bình mỗi đơn hiện đạt {formatCurrency(bookingMetrics.average)}đ.
+              </li>
+              <li>
+                Sử dụng chức năng xuất Excel để gửi báo cáo cuối ngày cho kế toán.
+              </li>
+            </ul>
+            <p className="text-sm text-slate-600">
+              Báo cáo Excel sẽ bám bộ lọc hiện tại, phù hợp để tổng hợp nhanh các chuyến đã hoàn tất.
+            </p>
+          </>
+        ),
+      },
+    ];
+  }, [bookings, bookingMetrics]);
+
   const handleSettingsChange = (field: string, value: string | number) => {
     setSettingsForm((prev) => ({
       ...prev,
@@ -503,6 +613,16 @@ export default function DashboardPage() {
               {bookingsError}
             </div>
           )}
+
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Quy trình xử lý đơn chuẩn</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Chia nhỏ từng bước để đội điều hành làm việc thống nhất, có thể thu gọn/mở rộng từng tác vụ khi cần.
+              </p>
+            </div>
+            <OperationsTaskboard tasks={operationsTasks} />
+          </section>
 
           <section>
             <h2 className="text-lg font-semibold text-slate-900">Tổng quan nhanh</h2>
