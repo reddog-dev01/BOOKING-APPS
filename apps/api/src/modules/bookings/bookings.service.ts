@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { normalizeQuoteIdentifier } from '../../common/validation/is-uuid-or-cuid.decorator';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
 
@@ -29,17 +30,29 @@ export class BookingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateBookingDto): Promise<CreateBookingResponseDto> {
+    const normalizedQuoteId = normalizeQuoteIdentifier(dto.quoteId);
+    if (!normalizedQuoteId) {
+      this.throwError(
+        HttpStatus.BAD_REQUEST,
+        'QUOTE_ID_INVALID',
+        'quoteId must be a UUID v4 or Prisma CUID',
+        { quoteId: dto.quoteId },
+      );
+    }
+
+    dto.quoteId = normalizedQuoteId;
+
     const quoteDelegate = this.getQuoteDelegate();
-    const quote = await quoteDelegate.findUnique({ where: { id: dto.quoteId } });
+    const quote = await quoteDelegate.findUnique({ where: { id: normalizedQuoteId } });
     if (!quote) {
       this.throwError(HttpStatus.NOT_FOUND, 'QUOTE_NOT_FOUND', 'Quote not found', {
-        quoteId: dto.quoteId,
+        quoteId: normalizedQuoteId,
       });
     }
 
     if (quote.expiresAt.getTime() <= Date.now()) {
       this.throwError(HttpStatus.BAD_REQUEST, 'QUOTE_EXPIRED', 'Quote has expired', {
-        quoteId: dto.quoteId,
+        quoteId: normalizedQuoteId,
       });
     }
 
