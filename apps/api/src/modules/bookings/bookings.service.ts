@@ -6,7 +6,11 @@ import { normalizeQuoteIdentifier } from '../../common/validation/is-uuid-or-cui
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
 import { BookingListItemDto } from './dto/booking-list-item.dto';
-import { ExportBookingsQueryDto, ListBookingsQueryDto } from './dto/list-bookings.query.dto';
+import {
+  BaseListBookingsQueryDto,
+  ExportBookingsQueryDto,
+  ListBookingsQueryDto,
+} from './dto/list-bookings.query.dto';
 import { ListBookingsResponseDto } from './dto/list-bookings.res.dto';
 
 interface QuoteRecord {
@@ -206,7 +210,7 @@ export class BookingsService {
     };
   }
 
-  private buildWhere(query: ListBookingsQueryDto): Prisma.BookingWhereInput {
+  private buildWhere(query: BaseListBookingsQueryDto): Prisma.BookingWhereInput {
     const where: Prisma.BookingWhereInput = {};
 
     if (query.status) {

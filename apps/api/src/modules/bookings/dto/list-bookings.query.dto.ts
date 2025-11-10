@@ -2,14 +2,6 @@ import { BookingStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
-const parseLimit = (value: unknown, defaultValue: number, max: number): number => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return defaultValue;
-  }
-  return Math.min(Math.max(Math.trunc(numeric), 1), max);
-};
-
 const BOOKING_STATUS_VALUES: BookingStatus[] = [
   'PENDING',
   'CONFIRMED',
@@ -17,7 +9,15 @@ const BOOKING_STATUS_VALUES: BookingStatus[] = [
   'EXPIRED',
 ];
 
-export class ListBookingsQueryDto {
+const toBoundedLimit = (value: unknown, fallback: number, max: number): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.trunc(numeric), 1), max);
+};
+
+export class BaseListBookingsQueryDto {
   @IsOptional()
   @IsString()
   @IsIn(BOOKING_STATUS_VALUES)
@@ -40,20 +40,22 @@ export class ListBookingsQueryDto {
   @IsString()
   @MaxLength(191)
   cursor?: string;
+}
 
+export class ListBookingsQueryDto extends BaseListBookingsQueryDto {
   @IsOptional()
-  @Transform(({ value }) => parseLimit(value, 50, 200))
+  @Transform(({ value }) => toBoundedLimit(value, 50, 200))
   @IsInt()
   @Min(1)
   @Max(200)
   limit?: number;
 }
 
-export class ExportBookingsQueryDto extends ListBookingsQueryDto {
+export class ExportBookingsQueryDto extends BaseListBookingsQueryDto {
   @IsOptional()
-  @Transform(({ value }) => parseLimit(value, 500, 1000))
+  @Transform(({ value }) => toBoundedLimit(value, 500, 1000))
   @IsInt()
   @Min(1)
   @Max(1000)
-  override limit?: number;
+  limit?: number;
 }
