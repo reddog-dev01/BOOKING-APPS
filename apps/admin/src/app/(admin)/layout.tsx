@@ -34,6 +34,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         ),
       }))}
       appName="FleetOps Control"
+      topbarTitle="Điều hành đặt xe"
+      topbarSubtitle="Giám sát đơn, đội xe và trải nghiệm khách hàng theo thời gian thực."
     >
       {children}
     </AdminShell>

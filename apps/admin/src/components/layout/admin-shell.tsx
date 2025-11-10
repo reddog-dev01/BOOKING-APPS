@@ -9,10 +9,18 @@ interface AdminShellProps {
   links: SidebarLink[];
   children: React.ReactNode;
   appName?: string;
+  topbarTitle?: string;
+  topbarSubtitle?: string;
 }
 
 // Client wrapper toggles sidebar visibility while keeping layout declarative
-export function AdminShell({ links, children, appName }: AdminShellProps) {
+export function AdminShell({
+  links,
+  children,
+  appName,
+  topbarTitle = "Bảng điều hành",
+  topbarSubtitle = "Quản lý toàn bộ chuyến đi và đội xe.",
+}: AdminShellProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -33,7 +41,7 @@ export function AdminShell({ links, children, appName }: AdminShellProps) {
         </svg>
       </button>
       <div className="flex flex-1 flex-col">
-        <Topbar title="Bảng điều hành" subtitle="Quản lý toàn bộ chuyến đi và đội xe." />
+        <Topbar title={topbarTitle} subtitle={topbarSubtitle} />
         <main className="flex-1 bg-background px-6 pb-12 pt-6">
           {children}
         </main>
