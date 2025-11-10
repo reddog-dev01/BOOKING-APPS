@@ -1026,7 +1026,7 @@ function ConfirmPriceModal({
         >
           <div
             className={`${
-              isSuccess ? "bg-emerald-600" : "bg-brand"
+              isSuccess ? "bg-brand-dark" : "bg-brand"
             } text-white px-4 py-3 flex items-center gap-2 relative`}
           >
             {isSuccess ? (
@@ -1052,18 +1052,18 @@ function ConfirmPriceModal({
           <div className="space-y-3 p-4">
             {isSuccess ? (
               <>
-                <p className="text-center text-[15px] text-emerald-700">
+                <p className="text-center text-[15px] text-brand-dark">
                   Chúng tôi đã tiếp nhận yêu cầu đặt chuyến. Đội điều hành sẽ liên hệ để xác nhận và điều phối tài xế.
                 </p>
                 {successSummary && (
-                  <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                  <div className="space-y-3 rounded-xl border border-brand/30 bg-brand/10 p-4 text-sm text-brand-dark">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">Mã chuyến</span>
                       <span className="font-semibold tracking-wide">{successSummary.bookingId}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="font-medium">Trạng thái</span>
-                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                      <span className="inline-flex items-center gap-2 rounded-full border border-brand/40 bg-brand/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-brand-dark">
                         {STATUS_LABEL[successSummary.status]}
                       </span>
                     </div>
@@ -1168,7 +1168,7 @@ function ConfirmPriceModal({
               <button
                 type="button"
                 onMouseDown={attemptClose}
-                className={`px-4 py-2 ${RADIUS} bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700`}
+                className={`px-4 py-2 ${RADIUS} bg-brand text-white shadow-sm transition hover:bg-brand-dark`}
               >
                 Đóng
               </button>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Car,
+  CheckCircle2,
   ClipboardList,
   FileDown,
   LayoutDashboard,
@@ -72,7 +73,7 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
 
 const STATUS_BADGE_CLASS: Record<BookingStatus, string> = {
   PENDING: "bg-amber-100 text-amber-800",
-  CONFIRMED: "bg-emerald-100 text-emerald-800",
+  CONFIRMED: "border border-brand/30 bg-brand/10 text-brand-dark",
   CANCELED: "bg-rose-100 text-rose-800",
   EXPIRED: "bg-slate-200 text-slate-700",
 };
@@ -472,6 +473,8 @@ export default function DashboardPage() {
     ];
   }, [bookings, bookingMetrics]);
 
+  const latestBooking = useMemo(() => bookings[0] ?? null, [bookings]);
+
   const handleSettingsChange = (field: string, value: string | number) => {
     setSettingsForm((prev) => ({
       ...prev,
@@ -599,7 +602,7 @@ export default function DashboardPage() {
         </header>
         <main className="space-y-8 px-4 py-6 lg:px-8">
           {statusMessage && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 shadow-sm">
+            <div className="rounded-lg border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand-dark shadow-sm">
               {statusMessage}
             </div>
           )}
@@ -612,6 +615,64 @@ export default function DashboardPage() {
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
               {bookingsError}
             </div>
+          )}
+
+          {latestBooking && (
+            <section className="rounded-2xl border border-brand/30 bg-brand/5 p-6 text-brand-dark shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-brand/20 p-2 text-brand-dark">
+                    <CheckCircle2 className="h-6 w-6" aria-hidden />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide text-brand-dark/80">
+                      Bạn đã đặt chuyến thành công
+                    </p>
+                    <h2 className="mt-1 text-2xl font-semibold">
+                      Mã chuyến {latestBooking.id}
+                    </h2>
+                    <p className="mt-1 text-sm text-brand-dark/70">
+                      Đội điều hành sẽ liên hệ với khách để xác nhận và điều phối tài xế.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-3 text-sm sm:grid-cols-2 md:text-right">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Trạng thái</p>
+                    <span
+                      className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                        STATUS_BADGE_CLASS[latestBooking.status]
+                      }`}
+                    >
+                      {STATUS_LABEL[latestBooking.status]}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Tổng tiền</p>
+                    <p className="text-lg font-semibold">{formatCurrency(latestBooking.totalVnd)}đ</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Tuyến</p>
+                    <p className="font-medium">{latestBooking.fromText}</p>
+                    <p className="text-sm text-brand-dark/70">→ {latestBooking.toText}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Khởi hành</p>
+                    <p className="font-medium">{formatDateTime(latestBooking.startAt)}</p>
+                  </div>
+                </div>
+              </div>
+              <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Khách hàng</dt>
+                  <dd className="font-medium text-brand-dark">{latestBooking.customerName ?? "Ẩn danh"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Điện thoại</dt>
+                  <dd className="font-medium text-brand-dark">{latestBooking.phone ?? "--"}</dd>
+                </div>
+              </dl>
+            </section>
           )}
 
           <section className="space-y-4">
@@ -639,7 +700,7 @@ export default function DashboardPage() {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Đã xác nhận</p>
-                <p className="mt-2 text-2xl font-semibold text-emerald-600">{bookingMetrics.confirmed}</p>
+                <p className="mt-2 text-2xl font-semibold text-brand-dark">{bookingMetrics.confirmed}</p>
                 <p className="text-xs text-slate-500">Sẵn sàng điều xe</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
