@@ -1,10 +1,13 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BookingStatus, Prisma, TripType } from '@prisma/client';
 
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { normalizeQuoteIdentifier } from '../../common/validation/is-uuid-or-cuid.decorator';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingResponseDto } from './dto/create-booking.res.dto';
+import { BookingListItemDto } from './dto/booking-list-item.dto';
+import { ExportBookingsQueryDto, ListBookingsQueryDto } from './dto/list-bookings.query.dto';
+import { ListBookingsResponseDto } from './dto/list-bookings.res.dto';
 
 interface QuoteRecord {
   id: string;
@@ -24,6 +27,10 @@ interface QuoteRecord {
 interface QuoteDelegateLike {
   findUnique(args: { where: { id: string } }): Promise<QuoteRecord | null>;
 }
+
+type BookingWithVehicle = Prisma.BookingGetPayload<{
+  include: { VehicleType: { select: { name: true } } };
+}>;
 
 @Injectable()
 export class BookingsService {
@@ -141,6 +148,238 @@ export class BookingsService {
       bookingId: booking.id,
       status: 'PENDING',
     };
+  }
+
+  async list(query: ListBookingsQueryDto): Promise<ListBookingsResponseDto> {
+    const limit = query.limit ?? 50;
+    const where = this.buildWhere(query);
+
+    const bookings = await this.prisma.booking.findMany({
+      where,
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      take: limit + 1,
+      ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
+      include: {
+        VehicleType: {
+          select: { name: true },
+        },
+      },
+    });
+
+    const hasMore = bookings.length > limit;
+    const pageItems = hasMore ? bookings.slice(0, limit) : bookings;
+
+    return {
+      items: pageItems.map((booking) => this.toListItem(booking)),
+      hasMore,
+      nextCursor: hasMore ? pageItems[pageItems.length - 1].id : undefined,
+    };
+  }
+
+  async export(query: ExportBookingsQueryDto): Promise<{ filename: string; buffer: Buffer }> {
+    const limit = query.limit ?? 500;
+    const where = this.buildWhere(query);
+
+    const bookings = await this.prisma.booking.findMany({
+      where,
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      take: limit,
+      include: {
+        VehicleType: {
+          select: { name: true },
+        },
+      },
+    });
+
+    const xml = this.buildExcelXml(bookings);
+    const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
+    const filename = `bookings-${timestamp}.xls`;
+    return {
+      filename,
+      buffer: Buffer.from(xml, 'utf8'),
+    };
+  }
+
+  private buildWhere(query: ListBookingsQueryDto): Prisma.BookingWhereInput {
+    const where: Prisma.BookingWhereInput = {};
+
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    if (query.startDateFrom || query.startDateTo) {
+      const range: Prisma.DateTimeFilter = {};
+      if (query.startDateFrom) {
+        const start = new Date(query.startDateFrom);
+        if (!Number.isNaN(start.getTime())) {
+          if (query.startDateFrom.length === 10) {
+            start.setUTCHours(0, 0, 0, 0);
+          }
+          range.gte = start;
+        }
+      }
+      if (query.startDateTo) {
+        const end = new Date(query.startDateTo);
+        if (!Number.isNaN(end.getTime())) {
+          if (query.startDateTo.length === 10) {
+            end.setUTCHours(23, 59, 59, 999);
+          }
+          range.lte = end;
+        }
+      }
+      if (Object.keys(range).length > 0) {
+        where.startAt = range;
+      }
+    }
+
+    const search = query.search?.trim();
+    if (search) {
+      const phoneCandidate = search.replace(/[\s-]/g, '');
+      const or: Prisma.BookingWhereInput[] = [
+        { customerName: { contains: search, mode: 'insensitive' } },
+        { fromText: { contains: search, mode: 'insensitive' } },
+        { toText: { contains: search, mode: 'insensitive' } },
+        { id: search },
+        { quoteId: search },
+      ];
+      if (phoneCandidate.length > 0) {
+        or.push({ phone: { contains: phoneCandidate, mode: 'insensitive' } });
+      }
+      where.OR = or;
+    }
+
+    return where;
+  }
+
+  private toListItem(record: BookingWithVehicle): BookingListItemDto {
+    return {
+      id: record.id,
+      quoteId: record.quoteId ?? null,
+      customerName: record.customerName ?? null,
+      phone: record.phone ?? null,
+      totalVnd: record.totalVnd,
+      createdAt: record.createdAt.toISOString(),
+      startAt: record.startAt.toISOString(),
+      status: record.status,
+      tripType: record.tripType,
+      vehicleTypeName: record.VehicleType?.name ?? null,
+      fromText: record.fromText,
+      toText: record.toText,
+    };
+  }
+
+  private buildExcelXml(records: BookingWithVehicle[]): string {
+    const headerTitles = [
+      'STT',
+      'Mã booking',
+      'Thời gian đặt',
+      'Thời gian khởi hành',
+      'Khách hàng',
+      'Số điện thoại',
+      'Tuyến',
+      'Loại chuyến',
+      'Loại xe',
+      'Trạng thái',
+      'Tổng tiền (VND)',
+      'Mã báo giá',
+    ];
+
+    const headerRow = `<Row>${headerTitles
+      .map((title) => this.buildCell(title, 'String', 'sHeader'))
+      .join('')}</Row>`;
+
+    const dataRows = records
+      .map((record, index) => {
+        const route = `${record.fromText} → ${record.toText}`;
+        return (
+          '<Row>' +
+          [
+            this.buildCell(index + 1, 'Number'),
+            this.buildCell(record.id),
+            this.buildCell(record.createdAt.toISOString(), 'DateTime'),
+            this.buildCell(record.startAt.toISOString(), 'DateTime'),
+            this.buildCell(record.customerName ?? ''),
+            this.buildCell(record.phone ?? ''),
+            this.buildCell(route),
+            this.buildCell(this.describeTripType(record.tripType)),
+            this.buildCell(record.VehicleType?.name ?? ''),
+            this.buildCell(this.describeStatus(record.status)),
+            this.buildCell(record.totalVnd, 'Number', 'sCurrency'),
+            this.buildCell(record.quoteId ?? ''),
+          ].join('') +
+          '</Row>'
+        );
+      })
+      .join('');
+
+    return [
+      '<?xml version="1.0"?>',
+      '<?mso-application progid="Excel.Sheet"?>',
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">',
+      '<Styles>',
+      '<Style ss:ID="sHeader"><Font ss:Bold="1"/><Interior ss:Color="#E2E8F0" ss:Pattern="Solid"/></Style>',
+      '<Style ss:ID="sCurrency"><NumberFormat ss:Format="#,##0"/></Style>',
+      '</Styles>',
+      '<Worksheet ss:Name="Bookings">',
+      '<Table>',
+      headerRow,
+      dataRows,
+      '</Table>',
+      '</Worksheet>',
+      '</Workbook>',
+    ].join('');
+  }
+
+  private buildCell(
+    value: string | number,
+    type: 'String' | 'Number' | 'DateTime' = 'String',
+    styleId?: string,
+  ): string {
+    const style = styleId ? ` ss:StyleID="${styleId}"` : '';
+    const data =
+      type === 'String' ? this.escapeXml(String(value)) : String(value);
+    return `<Cell${style}><Data ss:Type="${type}">${data}</Data></Cell>`;
+  }
+
+  private describeTripType(tripType: TripType): string {
+    switch (tripType) {
+      case 'AIRPORT':
+        return 'Sân bay';
+      case 'ROAD':
+        return 'Đường dài';
+      default:
+        return tripType;
+    }
+  }
+
+  private describeStatus(status: BookingStatus): string {
+    switch (status) {
+      case 'CONFIRMED':
+        return 'Đã xác nhận';
+      case 'CANCELED':
+        return 'Đã hủy';
+      case 'EXPIRED':
+        return 'Hết hạn';
+      default:
+        return 'Đang xử lý';
+    }
+  }
+
+  private escapeXml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+      .replace(/\r\n?/g, '\n')
+      .replace(/\n/g, '&#10;');
   }
 
   private asString(value: unknown): string | undefined {

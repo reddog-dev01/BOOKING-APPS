@@ -66,8 +66,8 @@ export type CreateBookingRequestDto = QuoteRequestDto & {
 };
 
 export type CreateBookingResponse = {
-  id: string;
-  status: "confirmed" | "pending" | "failed";
+  bookingId: string;
+  status: "PENDING" | "CONFIRMED";
 };
 
 export type UiBookingState = {
