@@ -5,13 +5,14 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
 
+import { IsUuidOrCuid } from '../../../common/validation/is-uuid-or-cuid.decorator';
+
 export class CreateBookingDto {
-  @IsUUID('4')
+  @IsUuidOrCuid({ message: 'quoteId must be a UUID v4 or Prisma CUID' })
   quoteId!: string;
 
   @IsString()
