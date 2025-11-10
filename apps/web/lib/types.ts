@@ -1,7 +1,7 @@
 /* ====== FE <-> API DTOs ====== */
 
 export type TripTypeDto = "AIRPORT" | "ROAD";
-export type DirectionDto = "to_airport" | "from_airport";
+export type DirectionDto = "IN" | "OUT";
 
 export type UiTripType = "airport" | "road";
 
@@ -18,7 +18,7 @@ export type QuoteRequestDto = {
   // Route + airport meta
   routeCode?: string;
   airportCode?: string; // ví dụ "HAN"
-  direction?: DirectionDto; // "to_airport" | "from_airport"
+  direction?: DirectionDto; // "IN" | "OUT"
 
   // text + toạ độ (ưu tiên toạ độ để tính km driving)
   fromText?: string;

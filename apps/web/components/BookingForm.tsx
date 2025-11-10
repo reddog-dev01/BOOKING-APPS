@@ -1320,7 +1320,8 @@ export default function BookingForm() {
     };
     if (tripType === "airport") {
       dto.airportCode = "HAN";
-      dto.direction = (airportSide === "to" ? "to_airport" : "from_airport") as DirectionDto;
+      // API expects airport direction enums as IN (to airport) / OUT (from airport)
+      dto.direction = (airportSide === "to" ? "IN" : "OUT") as DirectionDto;
     }
     if (roundTrip) dto.waitHours = parseHoursLoose(waitHours || "0") ?? 0;
 
