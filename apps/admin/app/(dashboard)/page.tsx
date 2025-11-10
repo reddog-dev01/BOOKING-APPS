@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Car,
   CheckCircle2,
@@ -10,6 +10,8 @@ import {
   RefreshCcw,
   Settings as SettingsIcon,
 } from "lucide-react";
+
+import { AdminShell, type AdminNavItem } from "../../components/layout/admin-shell";
 import {
   OperationTask,
   OperationsTaskboard,
@@ -78,11 +80,11 @@ const STATUS_BADGE_CLASS: Record<BookingStatus, string> = {
   EXPIRED: "bg-slate-200 text-slate-700",
 };
 
-const NAV_ITEMS = [
-  { label: "Dashboard", icon: LayoutDashboard },
-  { label: "Đơn đặt chuyến", icon: ClipboardList },
-  { label: "Sản phẩm", icon: Car },
-  { label: "Cấu hình", icon: SettingsIcon },
+const NAVIGATION_ITEMS: AdminNavItem[] = [
+  { id: "overview", label: "Dashboard", icon: LayoutDashboard },
+  { id: "bookings", label: "Đơn đặt chuyến", icon: ClipboardList },
+  { id: "fleet", label: "Đội xe", icon: Car },
+  { id: "settings", label: "Cấu hình", icon: SettingsIcon },
 ];
 
 const API_BASE_URL =
@@ -118,8 +120,8 @@ function parseVatOptions(input: string): number[] {
         .map((item) => item.trim())
         .filter(Boolean)
         .map((item) => Number.parseInt(item, 10))
-        .filter((value) => Number.isFinite(value) && value >= 0)
-    )
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ),
   ).sort((a, b) => a - b);
 }
 
@@ -152,7 +154,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // ignore JSON parse error, use raw text
     }
-    if (!message || message.trim().startsWith('<')) {
+    if (!message || message.trim().startsWith("<")) {
       message = `Request failed with status ${res.status}`;
     }
     throw new Error(message);
@@ -191,7 +193,7 @@ export default function DashboardPage() {
 
   const vatOptions = useMemo(
     () => parseVatOptions(settingsForm.vatOptionsInput),
-    [settingsForm.vatOptionsInput]
+    [settingsForm.vatOptionsInput],
   );
 
   useEffect(() => {
@@ -229,7 +231,7 @@ export default function DashboardPage() {
               isActive: vehicle.isActive,
             };
             return acc;
-          }, {} as Record<number, { perKmVnd: number; isActive: boolean }>)
+          }, {} as Record<number, { perKmVnd: number; isActive: boolean }>),
         );
       } catch (err) {
         console.error(err);
@@ -415,9 +417,7 @@ export default function DashboardPage() {
             <ul className="list-disc space-y-1 pl-5 text-sm">
               <li>Đảm bảo thông tin hành khách và hành trình trùng khớp với dữ liệu trên bảng.</li>
               <li>Ghi chú lại yêu cầu đặc biệt (ghế trẻ em, hành lý, hóa đơn VAT...).</li>
-              <li>
-                Nếu khách yêu cầu điều chỉnh, cập nhật lại báo giá và gửi email xác nhận.
-              </li>
+              <li>Nếu khách yêu cầu điều chỉnh, cập nhật lại báo giá và gửi email xác nhận.</li>
             </ul>
           </>
         ),
@@ -432,7 +432,7 @@ export default function DashboardPage() {
               Lọc danh sách tài xế phù hợp theo loại xe và khu vực xuất phát, ưu tiên tài xế có đánh giá cao.
             </p>
             <ul className="list-decimal space-y-1 pl-5 text-sm">
-              <li>Kiểm tra tình trạng xe trên mục "Sản phẩm" trước khi phân công.</li>
+              <li>Kiểm tra tình trạng xe trên mục "Đội xe" trước khi phân công.</li>
               <li>
                 Gửi thông tin chuyến đi qua ứng dụng điều hành hoặc Zalo nội bộ, yêu cầu tài xế xác nhận trong 10 phút.
               </li>
@@ -460,9 +460,7 @@ export default function DashboardPage() {
               <li>
                 Sau khi hoàn thành, đối soát doanh thu: trung bình mỗi đơn hiện đạt {formatCurrency(bookingMetrics.average)}đ.
               </li>
-              <li>
-                Sử dụng chức năng xuất Excel để gửi báo cáo cuối ngày cho kế toán.
-              </li>
+              <li>Sử dụng chức năng xuất Excel để gửi báo cáo cuối ngày cho kế toán.</li>
             </ul>
             <p className="text-sm text-slate-600">
               Báo cáo Excel sẽ bám bộ lọc hiện tại, phù hợp để tổng hợp nhanh các chuyến đã hoàn tất.
@@ -519,567 +517,549 @@ export default function DashboardPage() {
   const handleVehicleDraftChange = (
     id: number,
     field: "perKmVnd" | "isActive",
-    value: number | boolean
+    value: number | boolean,
   ) => {
     setVehicleDrafts((prev) => ({
       ...prev,
       [id]: {
-        ...prev[id],
-        [field]: value,
+        perKmVnd: field === "perKmVnd" ? Number(value) : prev[id]?.perKmVnd ?? 0,
+        isActive: field === "isActive" ? Boolean(value) : prev[id]?.isActive ?? true,
       },
     }));
   };
 
   const handleSaveVehicle = async (vehicle: VehicleType) => {
     const draft = vehicleDrafts[vehicle.id];
-    if (!draft) return;
-    const payload = {
-      perKmVnd: draft.perKmVnd,
-      isActive: draft.isActive,
-    };
-
+    if (!draft) {
+      return;
+    }
     setSavingVehicleId(vehicle.id);
     setStatusMessage(null);
     setErrorMessage(null);
 
     try {
-      const updated = await requestJson<VehicleType>(`/vehicles/${vehicle.id}`, {
+      const payload = {
+        perKmVnd: draft.perKmVnd,
+        isActive: draft.isActive,
+      };
+
+      await requestJson<VehicleType>(`/vehicles/${vehicle.id}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
+
       setVehicles((prev) =>
-        prev.map((item) => (item.id === vehicle.id ? { ...item, ...updated } : item))
+        prev.map((item) => (item.id === vehicle.id ? { ...item, ...payload } : item)),
       );
-      setStatusMessage(`Đã cập nhật giá cho ${vehicle.name}`);
+      setStatusMessage(`Đã lưu cấu hình cho ${vehicle.name}`);
     } catch (err) {
       console.error(err);
-      setErrorMessage(
-        err instanceof Error ? err.message : "Không thể cập nhật giá cho loại xe"
-      );
+      setErrorMessage(err instanceof Error ? err.message : "Không thể lưu cấu hình xe");
     } finally {
       setSavingVehicleId(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-50">
-      <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950 lg:flex">
-        <div className="px-6 py-6 text-xl font-semibold tracking-[0.3em] text-slate-100">subcom</div>
-        <nav className="flex-1 space-y-1 px-4">
-          {NAV_ITEMS.map(({ label, icon: Icon }, index) => (
-            <button
-              key={label}
-              type="button"
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                index === 0
-                  ? "bg-slate-800 text-white shadow-inner"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              <span className="truncate">{label}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="border-t border-slate-800 px-4 py-6 text-xs text-slate-500">
-          &copy; {new Date().getFullYear()} Booking Platform
-        </div>
-      </aside>
-      <div className="flex-1 bg-slate-50 text-slate-900">
-        <header className="border-b border-slate-200 bg-white px-6 py-4 shadow-sm">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Booking Platform</p>
-              <h1 className="text-3xl font-semibold text-slate-900">Bảng điều khiển vận hành</h1>
-              <p className="text-sm text-slate-500">
-                Theo dõi đơn đặt chuyến mới nhất và quản lý cấu hình giá xe trong cùng một bảng điều khiển.
-              </p>
-            </div>
-            <div className="text-xs text-slate-500">
-              API base: <span className="font-mono">{API_BASE_URL}</span>
-            </div>
-          </div>
+    <AdminShell
+      title="Bảng điều hành"
+      description="Quản lý đơn đặt chuyến, đội xe và cấu hình giá."
+      navItems={NAVIGATION_ITEMS}
+    >
+      <section id="overview" className="space-y-6">
+        <header className="space-y-1">
+          <h2 className="text-xl font-semibold text-slate-900">Tổng quan vận hành</h2>
+          <p className="text-sm text-slate-500">
+            Nắm trạng thái đơn mới nhất, quy trình xử lý và các chỉ số chính của đội vận hành.
+          </p>
         </header>
-        <main className="space-y-8 px-4 py-6 lg:px-8">
-          {statusMessage && (
-            <div className="rounded-lg border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand-dark shadow-sm">
-              {statusMessage}
-            </div>
-          )}
-          {errorMessage && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
-              {errorMessage}
-            </div>
-          )}
-          {bookingsError && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
-              {bookingsError}
-            </div>
-          )}
 
-          {latestBooking && (
-            <section className="rounded-2xl border border-brand/30 bg-brand/5 p-6 text-brand-dark shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-brand/20 p-2 text-brand-dark">
-                    <CheckCircle2 className="h-6 w-6" aria-hidden />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-wide text-brand-dark/80">
-                      Bạn đã đặt chuyến thành công
-                    </p>
-                    <h2 className="mt-1 text-2xl font-semibold">
-                      Mã chuyến {latestBooking.id}
-                    </h2>
-                    <p className="mt-1 text-sm text-brand-dark/70">
-                      Đội điều hành sẽ liên hệ với khách để xác nhận và điều phối tài xế.
-                    </p>
-                  </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="rounded-2xl border border-brand/20 bg-brand/5 p-6 text-brand-dark shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark/80">
+                  Bạn đã đặt chuyến thành công
+                </p>
+                <h3 className="mt-2 text-2xl font-semibold text-brand-dark">{latestBooking ? latestBooking.customerName ?? "--" : "Chưa có đơn"}</h3>
+              </div>
+              <CheckCircle2 className="h-8 w-8 text-brand-dark" aria-hidden />
+            </div>
+            {latestBooking ? (
+              <dl className="mt-6 grid gap-3 text-sm text-brand-dark/90 sm:grid-cols-2">
+                <div>
+                  <dt className="font-semibold uppercase tracking-wide text-xs text-brand-dark/70">Mã đơn</dt>
+                  <dd className="mt-1 break-all text-base font-medium">{latestBooking.id}</dd>
                 </div>
-                <div className="grid gap-3 text-sm sm:grid-cols-2 md:text-right">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Trạng thái</p>
-                    <span
-                      className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                        STATUS_BADGE_CLASS[latestBooking.status]
-                      }`}
-                    >
+                <div>
+                  <dt className="font-semibold uppercase tracking-wide text-xs text-brand-dark/70">Trạng thái</dt>
+                  <dd className="mt-1">
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[latestBooking.status]}`}>
                       {STATUS_LABEL[latestBooking.status]}
                     </span>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Tổng tiền</p>
-                    <p className="text-lg font-semibold">{formatCurrency(latestBooking.totalVnd)}đ</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Tuyến</p>
-                    <p className="font-medium">{latestBooking.fromText}</p>
-                    <p className="text-sm text-brand-dark/70">→ {latestBooking.toText}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Khởi hành</p>
-                    <p className="font-medium">{formatDateTime(latestBooking.startAt)}</p>
-                  </div>
-                </div>
-              </div>
-              <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Khách hàng</dt>
-                  <dd className="font-medium text-brand-dark">{latestBooking.customerName ?? "Ẩn danh"}</dd>
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium uppercase tracking-wide text-brand-dark/60">Điện thoại</dt>
-                  <dd className="font-medium text-brand-dark">{latestBooking.phone ?? "--"}</dd>
+                  <dt className="font-semibold uppercase tracking-wide text-xs text-brand-dark/70">Khởi hành</dt>
+                  <dd className="mt-1 text-base font-medium">{formatDateTime(latestBooking.startAt)}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold uppercase tracking-wide text-xs text-brand-dark/70">Giá tạm tính</dt>
+                  <dd className="mt-1 text-base font-medium">{formatCurrency(latestBooking.totalVnd)}đ</dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold uppercase tracking-wide text-xs text-brand-dark/70">Lộ trình</dt>
+                  <dd className="mt-1 text-base font-medium">
+                    {latestBooking.fromText} → {latestBooking.toText}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold uppercase tracking-wide text-xs text-brand-dark/70">Liên hệ</dt>
+                  <dd className="mt-1 text-base font-medium">
+                    {latestBooking.customerName ?? "Ẩn danh"} • {latestBooking.phone ?? "--"}
+                  </dd>
                 </div>
               </dl>
-            </section>
-          )}
-
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Quy trình xử lý đơn chuẩn</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Chia nhỏ từng bước để đội điều hành làm việc thống nhất, có thể thu gọn/mở rộng từng tác vụ khi cần.
+            ) : (
+              <p className="mt-6 text-sm text-brand-dark/80">
+                Hiện chưa có chuyến nào được hiển thị. Sử dụng bộ lọc ở mục "Đơn đặt chuyến" để tải dữ liệu mới nhất.
               </p>
-            </div>
-            <OperationsTaskboard tasks={operationsTasks} />
-          </section>
+            )}
+          </div>
 
-          <section>
-            <h2 className="text-lg font-semibold text-slate-900">Tổng quan nhanh</h2>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Đơn hiển thị</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{bookingMetrics.total}</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-base font-semibold text-slate-900">Chỉ số nhanh</h3>
+            <dl className="mt-4 grid gap-4 text-sm text-slate-600">
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Đơn hiển thị</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">{bookingMetrics.total}</dd>
                 <p className="text-xs text-slate-500">Theo bộ lọc hiện tại</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Đang xử lý</p>
-                <p className="mt-2 text-2xl font-semibold text-amber-600">{bookingMetrics.pending}</p>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Đang xử lý</dt>
+                <dd className="mt-1 text-2xl font-semibold text-amber-600">{bookingMetrics.pending}</dd>
                 <p className="text-xs text-slate-500">Chưa được điều hành xác nhận</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Đã xác nhận</p>
-                <p className="mt-2 text-2xl font-semibold text-brand-dark">{bookingMetrics.confirmed}</p>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Đã xác nhận</dt>
+                <dd className="mt-1 text-2xl font-semibold text-brand-dark">{bookingMetrics.confirmed}</dd>
                 <p className="text-xs text-slate-500">Sẵn sàng điều xe</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Doanh thu hiển thị</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatCurrency(bookingMetrics.revenue)}đ</p>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Doanh thu hiển thị</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">{formatCurrency(bookingMetrics.revenue)}đ</dd>
                 <p className="text-xs text-slate-500">
                   {bookingMetrics.average > 0
                     ? `Trung bình ${formatCurrency(bookingMetrics.average)}đ/đơn`
                     : "Chưa có dữ liệu để tính trung bình"}
                 </p>
               </div>
-            </div>
-          </section>
+            </dl>
+          </div>
+        </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-col gap-2 border-b border-slate-200 px-6 py-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900">Đơn đặt chuyến gần nhất</h2>
-                <p className="text-sm text-slate-500">
-                  Danh sách tối đa 20 đơn theo bộ lọc. Dữ liệu mới nhất giúp đội vận hành theo sát từng yêu cầu.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleRefreshBookings}
-                  disabled={bookingsLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <RefreshCcw className={`h-4 w-4 ${bookingsLoading ? "animate-spin" : ""}`} />
-                  <span>Làm mới</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadExcel}
-                  disabled={exportingExcel || bookingsLoading}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                >
-                  <FileDown className="h-4 w-4" />
-                  <span>{exportingExcel ? "Đang xuất..." : "Xuất Excel"}</span>
-                </button>
-              </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">Quy trình vận hành</h3>
+              <p className="text-sm text-slate-500">Mở từng bước để theo dõi checklist triển khai.</p>
             </div>
+          </div>
+          <div className="mt-4">
+            <OperationsTaskboard tasks={operationsTasks} />
+          </div>
+        </div>
+      </section>
 
-            <div className="border-b border-slate-200 px-6 py-4">
-              <form onSubmit={handleFilterSubmit} className="grid gap-3 md:grid-cols-5">
-                <div className="md:col-span-2">
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Tìm kiếm</label>
-                  <input
-                    value={searchInput}
-                    onChange={(event) => setSearchInput(event.target.value)}
-                    placeholder="Tên khách, số điện thoại hoặc mã báo giá"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Trạng thái</label>
-                  <select
-                    value={statusFilter}
-                    onChange={(event) => setStatusFilter(event.target.value as "ALL" | BookingStatus)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                  >
-                    <option value="ALL">Tất cả</option>
-                    <option value="PENDING">Đang xử lý</option>
-                    <option value="CONFIRMED">Đã xác nhận</option>
-                    <option value="CANCELED">Đã hủy</option>
-                    <option value="EXPIRED">Hết hạn</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Từ ngày</label>
-                  <input
-                    type="date"
-                    value={dateFromInput}
-                    onChange={(event) => setDateFromInput(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Đến ngày</label>
-                  <input
-                    type="date"
-                    value={dateToInput}
-                    onChange={(event) => setDateToInput(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                  />
-                </div>
-                <div className="md:col-span-5 flex items-center gap-2">
-                  <button
-                    type="submit"
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  >
-                    Áp dụng
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetFilters}
-                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-100"
-                  >
-                    Xóa lọc
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <tr>
-                    <th className="px-6 py-3 text-left">Thời gian đặt</th>
-                    <th className="px-6 py-3 text-left">Khách hàng</th>
-                    <th className="px-6 py-3 text-left">Loại chuyến</th>
-                    <th className="px-6 py-3 text-left">Lộ trình</th>
-                    <th className="px-6 py-3 text-left">Khởi hành</th>
-                    <th className="px-6 py-3 text-left">Trạng thái</th>
-                    <th className="px-6 py-3 text-right">Tổng tiền</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {bookingsLoading && bookings.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
-                        Đang tải danh sách chuyến...
-                      </td>
-                    </tr>
-                  ) : bookings.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
-                        Chưa có đơn đặt chuyến nào khớp bộ lọc.
-                      </td>
-                    </tr>
-                  ) : (
-                    bookings.map((booking) => (
-                      <tr key={booking.id} className="align-middle">
-                        <td className="px-6 py-3 text-slate-600">{formatDateTime(booking.createdAt)}</td>
-                        <td className="px-6 py-3">
-                          <div className="flex flex-col">
-                            <span className="font-medium text-slate-900">{booking.customerName ?? "Ẩn danh"}</span>
-                            <span className="text-xs text-slate-500">{booking.phone ?? "--"}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-3 text-slate-600">
-                          <div className="flex flex-col">
-                            <span className="font-medium text-slate-900">{TRIP_TYPE_LABEL[booking.tripType]}</span>
-                            <span className="text-xs text-slate-500">{booking.vehicleTypeName ?? "--"}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-3 text-slate-600">
-                          <div className="flex flex-col">
-                            <span>{booking.fromText}</span>
-                            <span className="text-xs text-slate-500">→ {booking.toText}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-3 text-slate-600">{formatDateTime(booking.startAt)}</td>
-                        <td className="px-6 py-3">
-                          <span
-                            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[booking.status]}`}
-                          >
-                            {STATUS_LABEL[booking.status]}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3 text-right font-semibold text-slate-900">
-                          {formatCurrency(booking.totalVnd)}đ
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4 text-sm text-slate-500">
-              <span>Đang hiển thị {bookings.length} đơn.</span>
-              {bookingsHasMore && (
-                <button
-                  type="button"
-                  onClick={handleLoadMoreBookings}
-                  disabled={bookingsLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Tải thêm
-                </button>
-              )}
-            </div>
-          </section>
-
-          <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
-            <form
-              onSubmit={handleSubmitSettings}
-              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+      <section id="bookings" className="space-y-6">
+        <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Đơn đặt chuyến</h2>
+            <p className="text-sm text-slate-500">
+              Theo dõi tối đa 20 đơn theo bộ lọc. Dùng Excel để gửi báo cáo cho kế toán.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshBookings}
+              disabled={bookingsLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <h2 className="text-xl font-semibold text-slate-900">Thuế & thời gian chờ</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Điều chỉnh danh sách VAT, VAT mặc định và chi phí giờ chờ cho chuyến hai chiều.
-              </p>
+              <RefreshCcw className={`h-4 w-4 ${bookingsLoading ? "animate-spin" : ""}`} />
+              <span>Làm mới</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadExcel}
+              disabled={exportingExcel || bookingsLoading}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              <FileDown className="h-4 w-4" />
+              <span>{exportingExcel ? "Đang xuất..." : "Xuất Excel"}</span>
+            </button>
+          </div>
+        </header>
 
-              <div className="mt-6 flex flex-col gap-5">
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Mức VAT cho phép (nhập số, cách nhau bởi dấu phẩy)
-                  </span>
-                  <input
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                    value={settingsForm.vatOptionsInput}
-                    onChange={(event) => handleSettingsChange("vatOptionsInput", event.target.value)}
-                    placeholder="0,8,10"
-                    disabled={savingSettings || loading}
-                    autoComplete="off"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-slate-700">VAT mặc định</span>
-                  <select
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                    value={settingsForm.defaultVatPct}
-                    onChange={(event) => handleSettingsChange("defaultVatPct", Number(event.target.value))}
-                    disabled={savingSettings || vatOptions.length === 0 || loading}
-                  >
-                    {vatOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}%
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-slate-700">Giá giờ chờ (VND/giờ)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1000}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                    value={settingsForm.waitRatePerHour}
-                    onChange={(event) => handleSettingsChange("waitRatePerHour", Number(event.target.value))}
-                    disabled={savingSettings || loading}
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Thời gian chờ mặc định cho chuyến hai chiều (phút)
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={5}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                    value={settingsForm.roundTripWaitMinutes}
-                    onChange={(event) => handleSettingsChange("roundTripWaitMinutes", Number(event.target.value))}
-                    disabled={savingSettings || loading}
-                  />
-                </label>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <form onSubmit={handleFilterSubmit} className="grid gap-3 md:grid-cols-5">
+              <div className="md:col-span-2">
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Tìm kiếm</label>
+                <input
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Tên khách, số điện thoại hoặc mã báo giá"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                />
               </div>
-
-              <div className="mt-6 flex items-center justify-end gap-3">
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Trạng thái</label>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as "ALL" | BookingStatus)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                >
+                  <option value="ALL">Tất cả</option>
+                  <option value="PENDING">Đang xử lý</option>
+                  <option value="CONFIRMED">Đã xác nhận</option>
+                  <option value="CANCELED">Đã hủy</option>
+                  <option value="EXPIRED">Hết hạn</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Từ ngày</label>
+                <input
+                  type="date"
+                  value={dateFromInput}
+                  onChange={(event) => setDateFromInput(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Đến ngày</label>
+                <input
+                  type="date"
+                  value={dateToInput}
+                  onChange={(event) => setDateToInput(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                />
+              </div>
+              <div className="md:col-span-5 flex items-center gap-2">
                 <button
                   type="submit"
-                  disabled={savingSettings || loading}
-                  className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
-                  {savingSettings ? "Đang lưu..." : "Lưu cấu hình"}
+                  Áp dụng
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-100"
+                >
+                  Xóa lọc
                 </button>
               </div>
             </form>
+          </div>
 
-            <aside className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-slate-900">Hướng dẫn triển khai</h2>
-              <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600">
-                <li>
-                  Đảm bảo chạy lệnh <code className="rounded bg-slate-100 px-1 py-0.5">pnpm prisma:migrate:deploy</code> và
-                  <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">pnpm db:seed</code> trước khi khởi chạy API production.
-                </li>
-                <li>
-                  Thiết lập biến môi trường <code className="rounded bg-slate-100 px-1 py-0.5">DATABASE_URL</code> cho PostgreSQL và
-                  <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">PLACES_API_KEY</code> để bật gợi ý địa điểm.
-                </li>
-                <li>
-                  Booking form sẽ gửi dữ liệu toạ độ (lat/lng) dựa trên lựa chọn địa điểm. Khoảng cách được tính bằng Haversine trong API.
-                </li>
-                <li>
-                  Nếu chọn chuyến hai chiều, API sẽ áp dụng thời gian chờ mặc định và giá theo cấu hình ở đây.
-                </li>
-              </ul>
-            </aside>
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-2 md:flex-row md:items-baseline md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900">Giá theo loại xe</h2>
-                <p className="text-sm text-slate-500">
-                  Cập nhật giá/km và trạng thái hoạt động cho từng loại xe. Giá sẽ được dùng khi tính phí quãng đường.
-                </p>
-              </div>
-              {settings && (
-                <p className="text-xs text-slate-500">
-                  VAT mặc định hiện tại: <strong>{settings.defaultVatPct}%</strong> • Giờ chờ: {formatCurrency(settings.waitRatePerHour)}đ/h
-                </p>
-              )}
+          {bookingsError ? (
+            <div className="border-b border-slate-200 bg-rose-50 px-6 py-3 text-sm text-rose-600" role="alert">
+              {bookingsError}
             </div>
+          ) : null}
 
-            <div className="mt-6 overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-100 text-left text-xs font-medium uppercase tracking-wide text-slate-600">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-6 py-3 text-left">Thời gian đặt</th>
+                  <th className="px-6 py-3 text-left">Khách hàng</th>
+                  <th className="px-6 py-3 text-left">Loại chuyến</th>
+                  <th className="px-6 py-3 text-left">Lộ trình</th>
+                  <th className="px-6 py-3 text-left">Khởi hành</th>
+                  <th className="px-6 py-3 text-left">Trạng thái</th>
+                  <th className="px-6 py-3 text-right">Tổng tiền</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {bookingsLoading && bookings.length === 0 ? (
                   <tr>
-                    <th className="px-4 py-3">Loại xe</th>
-                    <th className="px-4 py-3">Sức chứa</th>
-                    <th className="px-4 py-3">Cốp</th>
-                    <th className="px-4 py-3">Giá / km (VND)</th>
-                    <th className="px-4 py-3">Kích hoạt</th>
-                    <th className="px-4 py-3 text-right">Hành động</th>
+                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
+                      Đang tải danh sách chuyến...
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {vehicles.map((vehicle) => {
-                    const draft = vehicleDrafts[vehicle.id] ?? {
-                      perKmVnd: vehicle.perKmVnd,
-                      isActive: vehicle.isActive,
-                    };
-                    const isDirty =
-                      draft.perKmVnd !== vehicle.perKmVnd || draft.isActive !== vehicle.isActive;
-                    return (
-                      <tr key={vehicle.id} className="align-middle">
-                        <td className="px-4 py-3 font-medium text-slate-900">{vehicle.name}</td>
-                        <td className="px-4 py-3 text-slate-600">{vehicle.capacity} khách</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {vehicle.trunkSize ? TRUNK_SIZE_LABEL[vehicle.trunkSize] ?? vehicle.trunkSize : "--"}
-                        </td>
-                        <td className="px-4 py-3">
+                ) : bookings.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
+                      Chưa có đơn đặt chuyến nào khớp bộ lọc.
+                    </td>
+                  </tr>
+                ) : (
+                  bookings.map((booking) => (
+                    <tr key={booking.id} className="align-middle">
+                      <td className="px-6 py-3 text-slate-600">{formatDateTime(booking.createdAt)}</td>
+                      <td className="px-6 py-3">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-slate-900">{booking.customerName ?? "Ẩn danh"}</span>
+                          <span className="text-xs text-slate-500">{booking.phone ?? "--"}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-3 text-slate-600">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-slate-900">{TRIP_TYPE_LABEL[booking.tripType]}</span>
+                          <span className="text-xs text-slate-500">{booking.vehicleTypeName ?? "--"}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-3 text-slate-600">
+                        <div className="flex flex-col">
+                          <span>{booking.fromText}</span>
+                          <span className="text-xs text-slate-500">→ {booking.toText}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-3 text-slate-600">{formatDateTime(booking.startAt)}</td>
+                      <td className="px-6 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[booking.status]}`}
+                        >
+                          {STATUS_LABEL[booking.status]}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 text-right font-semibold text-slate-900">
+                        {formatCurrency(booking.totalVnd)}đ
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4 text-sm text-slate-500">
+            <span>Đang hiển thị {bookings.length} đơn.</span>
+            {bookingsHasMore && (
+              <button
+                type="button"
+                onClick={handleLoadMoreBookings}
+                disabled={bookingsLoading}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Tải thêm
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section id="fleet" className="space-y-6">
+        <header className="space-y-1">
+          <h2 className="text-xl font-semibold text-slate-900">Đội xe & giá cước</h2>
+          <p className="text-sm text-slate-500">
+            Cập nhật giá/km và trạng thái hoạt động cho từng loại xe. Giá sẽ được dùng khi tính phí quãng đường.
+          </p>
+        </header>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          {settings ? (
+            <p className="text-xs text-slate-500">
+              VAT mặc định: <strong>{settings.defaultVatPct}%</strong> • Giờ chờ hai chiều: {formatCurrency(settings.waitRatePerHour)}đ/h
+            </p>
+          ) : null}
+
+          <div className="mt-6 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-100 text-left text-xs font-medium uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-4 py-3">Loại xe</th>
+                  <th className="px-4 py-3">Sức chứa</th>
+                  <th className="px-4 py-3">Cốp</th>
+                  <th className="px-4 py-3">Giá / km (VND)</th>
+                  <th className="px-4 py-3">Kích hoạt</th>
+                  <th className="px-4 py-3 text-right">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {vehicles.map((vehicle) => {
+                  const draft = vehicleDrafts[vehicle.id] ?? {
+                    perKmVnd: vehicle.perKmVnd,
+                    isActive: vehicle.isActive,
+                  };
+                  const isDirty =
+                    draft.perKmVnd !== vehicle.perKmVnd || draft.isActive !== vehicle.isActive;
+                  return (
+                    <tr key={vehicle.id} className="align-middle">
+                      <td className="px-4 py-3 font-medium text-slate-900">{vehicle.name}</td>
+                      <td className="px-4 py-3 text-slate-600">{vehicle.capacity} khách</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {vehicle.trunkSize ? TRUNK_SIZE_LABEL[vehicle.trunkSize] ?? vehicle.trunkSize : "--"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          min={0}
+                          step={500}
+                          className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                          value={draft.perKmVnd}
+                          onChange={(event) =>
+                            handleVehicleDraftChange(vehicle.id, "perKmVnd", Number(event.target.value))
+                          }
+                          disabled={savingVehicleId === vehicle.id || loading}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <label className="flex items-center gap-2 text-sm text-slate-600">
                           <input
-                            type="number"
-                            min={0}
-                            step={500}
-                            className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
-                            value={draft.perKmVnd}
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                            checked={draft.isActive}
                             onChange={(event) =>
-                              handleVehicleDraftChange(vehicle.id, "perKmVnd", Number(event.target.value))
+                              handleVehicleDraftChange(vehicle.id, "isActive", event.target.checked)
                             }
                             disabled={savingVehicleId === vehicle.id || loading}
                           />
-                        </td>
-                        <td className="px-4 py-3">
-                          <label className="flex items-center gap-2 text-sm text-slate-600">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
-                              checked={draft.isActive}
-                              onChange={(event) =>
-                                handleVehicleDraftChange(vehicle.id, "isActive", event.target.checked)
-                              }
-                              disabled={savingVehicleId === vehicle.id || loading}
-                            />
-                            Hoạt động
-                          </label>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleSaveVehicle(vehicle)}
-                            disabled={!isDirty || savingVehicleId === vehicle.id || loading || draft.perKmVnd <= 0}
-                            className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium uppercase tracking-wide text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                          >
-                            {savingVehicleId === vehicle.id ? "Đang lưu..." : "Lưu"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {loading && (
-                <p className="px-4 py-3 text-sm text-slate-500">Đang tải dữ liệu xe...</p>
-              )}
-            </div>
-          </section>
-        </main>
-      </div>
-    </div>
-  );
+                          Hoạt động
+                        </label>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveVehicle(vehicle)}
+                          disabled={!isDirty || savingVehicleId === vehicle.id || loading || draft.perKmVnd <= 0}
+                          className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium uppercase tracking-wide text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        >
+                          {savingVehicleId === vehicle.id ? "Đang lưu..." : "Lưu"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {loading && (
+              <p className="px-4 py-3 text-sm text-slate-500">Đang tải dữ liệu xe...</p>
+            )}
+          </div>
+        </div>
+      </section>
 
+      <section id="settings" className="space-y-6">
+        <header className="space-y-1">
+          <h2 className="text-xl font-semibold text-slate-900">Cấu hình hệ thống</h2>
+          <p className="text-sm text-slate-500">Điều chỉnh VAT, thời gian chờ và ghi chú triển khai.</p>
+        </header>
+
+        {statusMessage ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">
+            {statusMessage}
+          </div>
+        ) : null}
+        {errorMessage ? (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600" role="alert">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
+          <form onSubmit={handleSubmitSettings} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900">Thuế & thời gian chờ</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Cập nhật các thông số được áp dụng cho tính giá và báo giá hai chiều.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-5">
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Mức VAT cho phép (nhập số, cách nhau bởi dấu phẩy)
+                </span>
+                <input
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                  value={settingsForm.vatOptionsInput}
+                  onChange={(event) => handleSettingsChange("vatOptionsInput", event.target.value)}
+                  placeholder="0,8,10"
+                  disabled={savingSettings || loading}
+                  autoComplete="off"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium text-slate-700">VAT mặc định</span>
+                <select
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                  value={settingsForm.defaultVatPct}
+                  onChange={(event) => handleSettingsChange("defaultVatPct", Number(event.target.value))}
+                  disabled={savingSettings || loading || vatOptions.length === 0}
+                >
+                  {vatOptions.map((value) => (
+                    <option key={value} value={value}>
+                      {value}%
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium text-slate-700">Giá giờ chờ (VND)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={5000}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                  value={settingsForm.waitRatePerHour}
+                  onChange={(event) => handleSettingsChange("waitRatePerHour", Number(event.target.value))}
+                  disabled={savingSettings || loading}
+                />
+              </label>
+
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium text-slate-700">Thời gian chờ khứ hồi mặc định (phút)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={5}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none"
+                  value={settingsForm.roundTripWaitMinutes}
+                  onChange={(event) => handleSettingsChange("roundTripWaitMinutes", Number(event.target.value))}
+                  disabled={savingSettings || loading}
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={savingSettings || loading}
+                className="inline-flex items-center justify-center rounded-lg bg-brand-dark px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {savingSettings ? "Đang lưu..." : "Lưu cấu hình"}
+              </button>
+              {settings ? (
+                <p className="text-xs text-slate-500">
+                  VAT hiện tại: {settings.vatOptions.join(", ")} • Chờ: {settings.roundTripWaitMinutes} phút
+                </p>
+              ) : null}
+            </div>
+          </form>
+
+          <aside className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900">Ghi chú triển khai</h3>
+            <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600">
+              <li>
+                Đảm bảo chạy <code className="rounded bg-slate-100 px-1 py-0.5">pnpm prisma:migrate:deploy</code> và
+                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">pnpm db:seed</code> trước khi khởi chạy API production.
+              </li>
+              <li>
+                Thiết lập biến môi trường <code className="rounded bg-slate-100 px-1 py-0.5">DATABASE_URL</code> và
+                <code className="ml-1 rounded bg-slate-100 px-1 py-0.5">PLACES_API_KEY</code> để bật gợi ý địa điểm.
+              </li>
+              <li>
+                Booking form sẽ gửi dữ liệu toạ độ (lat/lng) dựa trên lựa chọn địa điểm. Khoảng cách được tính bằng Haversine trong API.
+              </li>
+              <li>
+                Nếu chọn chuyến hai chiều, API sẽ áp dụng thời gian chờ mặc định và giá theo cấu hình ở đây.
+              </li>
+            </ul>
+          </aside>
+        </div>
+      </section>
+    </AdminShell>
+  );
 }
