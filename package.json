@@ -5,7 +5,7 @@
     "build": "pnpm -r build",
     "db:reset": "prisma migrate reset --force --schema=packages/db/prisma/schema.prisma && prisma db seed --schema=packages/db/prisma/schema.prisma",
     "db:seed": "prisma db seed --schema=packages/db/prisma/schema.prisma",
-    "dev": "concurrently -k -n admin,web,api -c magenta,green,cyan \"pnpm --filter admin dev\" \"pnpm --filter web dev\" \"pnpm --filter api dev\"",
+    "dev": "node ./scripts/dev.mjs",
     "lint": "pnpm -r lint",
     "prisma:format": "prisma format --schema=packages/db/prisma/schema.prisma",
     "prisma:generate": "prisma generate --schema=packages/db/prisma/schema.prisma",

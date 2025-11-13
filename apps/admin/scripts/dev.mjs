@@ -115,11 +115,39 @@ const isPortAvailable = async (port) => {
   return true;
 };
 
-const findAvailablePort = async (startingPort) => {
+const RESERVED_PORT_ENV_KEYS = ['WEB_DEV_PORT', 'WEB_PORT', 'API_DEV_PORT', 'API_PORT'];
+const RESERVED_PORT_DEFAULTS = [3005, 3006];
+
+const collectReservedPorts = () => {
+  const reserved = new Set(RESERVED_PORT_DEFAULTS);
+
+  for (const key of RESERVED_PORT_ENV_KEYS) {
+    const value = process.env[key];
+    if (!value?.trim()) {
+      continue;
+    }
+
+    reserved.add(parsePortValue(value.trim(), `environment variable ${key}`));
+  }
+
+  return reserved;
+};
+
+const findAvailablePort = async (startingPort, excludedPorts = new Set()) => {
   let candidate = startingPort;
   const maxAttempts = 20;
 
   for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
+    if (candidate < 1 || candidate > 65535) {
+      console.error(
+        `Unable to find a free port: candidate ${candidate} is outside the valid TCP port range.`,
+      );
+      process.exit(1);
+    }
+    if (excludedPorts.has(candidate)) {
+      candidate += 1;
+      continue;
+    }
     // eslint-disable-next-line no-await-in-loop
     if (await isPortAvailable(candidate)) {
       return candidate;
@@ -133,10 +161,10 @@ const findAvailablePort = async (startingPort) => {
   process.exit(1);
 };
 
-const spawnDevServer = (port, origin) => {
+const spawnDevServer = (port, origin, preferredPort = DEFAULT_PORT) => {
   if (origin === 'auto-detected') {
     console.log(
-      `Selected port ${port} for the admin dev server (original preference: ${DEFAULT_PORT}).`,
+      `Selected port ${port} for the admin dev server (original preference: ${preferredPort}).`,
     );
   } else {
     console.log(`Using port ${port} from ${origin}.`);
@@ -176,20 +204,24 @@ const run = async () => {
 
   const envPort = getEnvPort();
   if (envPort) {
-    if (!(await isPortAvailable(envPort))) {
-      console.error(
-        `Port ${envPort} specified via environment variable is already in use. Please choose a different port.`,
-      );
-      process.exit(1);
+    if (await isPortAvailable(envPort)) {
+      spawnDevServer(envPort, 'environment variable');
+      return;
     }
 
-    spawnDevServer(envPort, 'environment variable');
+    console.warn(
+      `Port ${envPort} specified via environment variable is already in use. Falling back to an auto-detected port.`,
+    );
+
+    const fallbackStart = envPort >= 65535 ? 1 : envPort + 1;
+    const fallbackPort = await findAvailablePort(fallbackStart, collectReservedPorts());
+    spawnDevServer(fallbackPort, 'auto-detected', envPort);
     return;
   }
 
   const initialPort = Number.isInteger(DEFAULT_PORT) ? DEFAULT_PORT : 3007;
-  const availablePort = await findAvailablePort(initialPort);
-  spawnDevServer(availablePort, 'auto-detected');
+  const availablePort = await findAvailablePort(initialPort, collectReservedPorts());
+  spawnDevServer(availablePort, 'auto-detected', initialPort);
 };
 
 run().catch((error) => {
