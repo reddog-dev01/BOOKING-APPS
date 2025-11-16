@@ -1,17 +1,22 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
 
+import {
+  IsUuidOrCuid,
+  normalizeQuoteIdentifier,
+} from '../../../common/validation/is-uuid-or-cuid.decorator';
+
 export class CreateBookingDto {
-  @IsUUID('4')
+  @Transform(({ value }) => normalizeQuoteIdentifier(value) ?? value)
+  @IsUuidOrCuid({ message: 'quoteId must be a UUID v4 or Prisma CUID' })
   quoteId!: string;
 
   @IsString()

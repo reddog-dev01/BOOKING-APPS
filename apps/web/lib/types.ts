@@ -60,13 +60,14 @@ export type QuoteResponse = {
 export type CreateBookingRequestDto = QuoteRequestDto & {
   stops?: string[]; // danh sách điểm dừng
   customerName: string;
-  phone: string; // đã chuẩn hoá 0xxxxxxxx
-  quoteId?: string; // nếu muốn liên kết quote
+  customerPhone: string; // đã chuẩn hoá 0xxxxxxxx
+  customerNote?: string;
+  quoteId: string; // liên kết bắt buộc với quote hợp lệ
 };
 
 export type CreateBookingResponse = {
-  id: string;
-  status: "confirmed" | "pending" | "failed";
+  bookingId: string;
+  status: "PENDING" | "CONFIRMED";
 };
 
 export type UiBookingState = {

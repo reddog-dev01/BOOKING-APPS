@@ -21,6 +21,7 @@ import {
   Route,
   CalendarClock,
   Info,
+  CheckCircle2,
   X,
 } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -33,6 +34,7 @@ import type {
   CreateBookingRequestDto,
   DirectionDto,
 } from "../lib/types";
+import { normalizeQuoteId } from "../lib/normalizeQuoteId";
 
 import AddressInput, { type AddressValue } from "./AddressInput";
 import { AIRPORTS } from "../lib/airports";
@@ -91,6 +93,21 @@ const VEHICLES: Vehicle[] = [
   { id: 6, name: "29 chỗ", img: "/vehicles/29seats.png", alt: "Xe 29 chỗ" },
   { id: 7, name: "45 chỗ", img: "/vehicles/45seats.png", alt: "Xe 45 chỗ" },
 ];
+
+type BookingSuccessSummary = {
+  bookingId: string;
+  status: "PENDING" | "CONFIRMED";
+  totalVnd: number;
+  route: string;
+  timeLabel: string;
+  customerName: string;
+  customerPhone: string;
+};
+
+const STATUS_LABEL: Record<BookingSuccessSummary["status"], string> = {
+  PENDING: "Đang xử lý",
+  CONFIRMED: "Đã xác nhận",
+};
 
 /* ================= UI tokens ================= */
 const RING = "focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand-dark";
@@ -870,6 +887,7 @@ function OneFieldDateTime({
 /* ================= ConfirmPriceModal (Backdrop/X/Esc CLOSE ngay + Focus Trap) ================= */
 function ConfirmPriceModal({
   open,
+  mode,
   onClose,
   onConfirm,
   price,
@@ -878,8 +896,11 @@ function ConfirmPriceModal({
   defaultPhone = "",
   defaultName = "",
   submitting = false,
+  notice = null,
+  bookingResult = null,
 }: {
   open: boolean;
+  mode: "confirm" | "success";
   onClose: () => void;
   onConfirm: (payload: { phone: string; name: string }) => void;
   price: number;
@@ -888,17 +909,18 @@ function ConfirmPriceModal({
   defaultPhone?: string;
   defaultName?: string;
   submitting?: boolean;
+  notice?: { type: "error" | "warning"; message: string } | null;
+  bookingResult?: BookingSuccessSummary | null;
 }) {
   const phoneRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const focusablesRef = useRef<HTMLElement[]>([]);
 
-  // KHÔNG reset state khi đóng để giữ dữ liệu đã gõ
   const [phone, setPhone] = useState(defaultPhone);
   const [name, setName] = useState(defaultName);
   const [touched, setTouched] = useState(false);
+  const isSuccess = mode === "success";
 
-  // cờ đang đóng modal để chặn onBlur bật touched
   const closingRef = useRef(false);
 
   const attemptClose = useCallback(() => {
@@ -910,16 +932,22 @@ function ConfirmPriceModal({
   }, [onClose]);
 
   useEffect(() => {
+    if (open && mode === "confirm") {
+      setPhone(defaultPhone);
+      setName(defaultName);
+      setTouched(false);
+    }
+  }, [open, mode, defaultPhone, defaultName]);
+
+  useEffect(() => {
     if (!open) return;
 
-    // Lấy focusable elements cho trap
     focusablesRef.current = Array.from(
       modalRef.current?.querySelectorAll<HTMLElement>(
         'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'
-      ) ?? []
+      ) ?? [],
     );
 
-    // Keydown handler: Esc để đóng, Tab để trap
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         attemptClose();
@@ -933,161 +961,245 @@ function ConfirmPriceModal({
           items[items.length - 1].focus();
           e.preventDefault();
         }
-      } else {
-        if (i === items.length - 1) {
-          items[0].focus();
-          e.preventDefault();
-        }
+      } else if (i === items.length - 1) {
+        items[0].focus();
+        e.preventDefault();
       }
     };
 
     document.addEventListener("keydown", onKeyDown);
 
-    // Focus SĐT khi mở
-    const t = setTimeout(() => phoneRef.current?.focus({ preventScroll: true }), 50);
+    const focusTimer = setTimeout(() => {
+      if (!isSuccess) {
+        phoneRef.current?.focus({ preventScroll: true });
+      }
+    }, 50);
 
-    // Outside click (capture)
-    const onDocPointerDown = (e: PointerEvent) => {
-      const t = e.target as Node | null;
-      if (!t) return;
-      if (modalRef.current && !modalRef.current.contains(t)) {
+    const onDocPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (modalRef.current && !modalRef.current.contains(target)) {
         attemptClose();
       }
     };
     document.addEventListener("pointerdown", onDocPointerDown, true);
 
-    // Khóa scroll nền
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
-      clearTimeout(t);
+      clearTimeout(focusTimer);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onDocPointerDown, true);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, attemptClose]);
+  }, [open, attemptClose, isSuccess]);
 
   if (!open) return null;
 
-  const p = normalizePhone(phone || "");
-  const phoneValid = /^0\d{9,10}$/.test(p);
+  const phoneNormalized = normalizePhone(phone || "");
+  const phoneValid = /^0\d{9,10}$/.test(phoneNormalized);
   const nameValid = (name || "").trim().length > 1;
-  const canSubmit = phoneValid && nameValid && !submitting;
+  const canSubmit = !isSuccess && phoneValid && nameValid && !submitting;
+
+  const noticeTone =
+    notice?.type === "error"
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : "border-amber-200 bg-amber-50 text-amber-700";
+
+  const successSummary = bookingResult ?? null;
 
   return (
     <Portal>
-      {/* overlay: click là đóng ngay */}
       <div className="fixed inset-0 z-[10000] bg-black/40" onMouseDown={attemptClose} aria-hidden />
 
-      {/* modal layer */}
-      <div role="dialog" aria-modal="true" aria-labelledby="modalTitle" className="fixed inset-0 z-[10001] grid place-items-center p-4">
-        {/* container modal */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalTitle"
+        className="fixed inset-0 z-[10001] grid place-items-center p-4"
+      >
         <div
           ref={modalRef}
-          className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
-          onMouseDown={(e) => e.stopPropagation()}
+          className="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+          onMouseDown={(event) => event.stopPropagation()}
         >
-          {/* header */}
-          <div className="bg-brand text-white px-4 py-3 flex items-center gap-2 relative">
-            <Info className="h-5 w-5 shrink-0" aria-hidden />
-            <h3 id="modalTitle" className="font-semibold tracking-wide">XÁC NHẬN THÔNG TIN</h3>
+          <div
+            className={`${
+              isSuccess ? "bg-brand-dark" : "bg-brand"
+            } text-white px-4 py-3 flex items-center gap-2 relative`}
+          >
+            {isSuccess ? (
+              <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden />
+            ) : (
+              <Info className="h-5 w-5 shrink-0" aria-hidden />
+            )}
+            <h3 id="modalTitle" className="font-semibold tracking-wide uppercase">
+              {isSuccess ? "BẠN ĐÃ ĐẶT CHUYẾN THÀNH CÔNG" : "XÁC NHẬN THÔNG TIN"}
+            </h3>
 
-            {/* nút X đóng ngay bằng onMouseDown (tránh blur) */}
             <button
               type="button"
               aria-label="Đóng"
               onMouseDown={attemptClose}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50"
               title="Đóng"
             >
               <X className="h-5 w-5" aria-hidden />
             </button>
           </div>
 
-          {/* body */}
-          <div className="p-4 space-y-3">
-            <p className="text-center text-[15px] text-gray-700">
-              Giá cước tạm tính, chưa bao gồm phí cầu đường phát sinh.
-            </p>
-
-            <div className="text-center">
-              <div className="text-4xl font-extrabold text-orange-500 leading-tight">
-                {fmtMoney(price)}
-              </div>
-            </div>
-
-            <div className="text-sm text-gray-600 border-t pt-3">
-              <div><b>Tuyến:</b> {route}</div>
-              <div><b>Thời gian:</b> {timeLabel}</div>
-              <div className="mt-1">Vui lòng đặt xe sớm để đảm bảo giá này.</div>
-            </div>
-
-            {/* form */}
-            <div className="space-y-2 pt-1">
-              <label className="block">
-                <span className="text-sm text-gray-700">Điện thoại</span>
-                <input
-                  ref={phoneRef}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  onBlur={() => { if (!closingRef.current) setTouched(true); }}
-                  inputMode="tel"
-                  placeholder="Ví dụ: 09xxxxxxxx"
-                  className={`mt-1 w-full ${RADIUS} border bg-white shadow-sm px-3 py-2 ${RING} ${
-                    touched && !phoneValid ? "border-rose-400" : "border-gray-300"
-                  }`}
-                  aria-invalid={touched && !phoneValid}
-                />
-                {touched && !phoneValid && (
-                  <span className="text-[12px] text-rose-600" role="alert" aria-live="polite">SĐT không hợp lệ.</span>
+          <div className="space-y-3 p-4">
+            {isSuccess ? (
+              <>
+                <p className="text-center text-[15px] text-brand-dark">
+                  Chúng tôi đã tiếp nhận yêu cầu đặt chuyến. Đội điều hành sẽ liên hệ để xác nhận và điều phối tài xế.
+                </p>
+                {successSummary && (
+                  <div className="space-y-3 rounded-xl border border-brand/30 bg-brand/10 p-4 text-sm text-brand-dark">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Mã chuyến</span>
+                      <span className="font-semibold tracking-wide">{successSummary.bookingId}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Trạng thái</span>
+                      <span className="inline-flex items-center gap-2 rounded-full border border-brand/40 bg-brand/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-brand-dark">
+                        {STATUS_LABEL[successSummary.status]}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Tổng tiền</span>
+                      <span className="font-semibold">{fmtMoney(successSummary.totalVnd)}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div>
+                        <span className="font-medium">Tuyến:</span> {successSummary.route}
+                      </div>
+                      <div>
+                        <span className="font-medium">Thời gian:</span> {successSummary.timeLabel}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div>
+                        <span className="font-medium">Khách hàng:</span> {successSummary.customerName}
+                      </div>
+                      <div>
+                        <span className="font-medium">Điện thoại:</span> {successSummary.customerPhone}
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </label>
+              </>
+            ) : (
+              <>
+                <p className="text-center text-[15px] text-gray-700">
+                  Giá cước tạm tính, chưa bao gồm phí cầu đường phát sinh.
+                </p>
 
-              <label className="block">
-                <span className="text-sm text-gray-700">Họ và tên</span>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onBlur={() => { if (!closingRef.current) setTouched(true); }}
-                  placeholder="Nhập họ tên"
-                  className={`mt-1 w-full ${RADIUS} border bg-white shadow-sm px-3 py-2 ${RING} ${
-                    touched && !nameValid ? "border-rose-400" : "border-gray-300"
-                  }`}
-                  aria-invalid={touched && !nameValid}
-                />
-                {touched && !nameValid && (
-                  <span className="text-[12px] text-rose-600" role="alert" aria-live="polite">Vui lòng nhập họ tên.</span>
+                <div className="text-center">
+                  <div className="text-4xl font-extrabold text-orange-500 leading-tight">{fmtMoney(price)}</div>
+                </div>
+
+                <div className="border-t pt-3 text-sm text-gray-600">
+                  <div>
+                    <b>Tuyến:</b> {route}
+                  </div>
+                  <div>
+                    <b>Thời gian:</b> {timeLabel}
+                  </div>
+                  <div className="mt-1">Vui lòng đặt xe sớm để đảm bảo giá này.</div>
+                </div>
+
+                {notice && (
+                  <div className={`rounded-lg border px-3 py-2 text-sm ${noticeTone}`}>{notice.message}</div>
                 )}
-              </label>
-            </div>
+
+                <div className="space-y-2 pt-1">
+                  <label className="block">
+                    <span className="text-sm text-gray-700">Điện thoại</span>
+                    <input
+                      ref={phoneRef}
+                      value={phone}
+                      onChange={(event) => setPhone(event.target.value)}
+                      onBlur={() => {
+                        if (!closingRef.current) setTouched(true);
+                      }}
+                      inputMode="tel"
+                      placeholder="Ví dụ: 09xxxxxxxx"
+                      className={`mt-1 w-full ${RADIUS} border bg-white px-3 py-2 ${RING} ${
+                        touched && !phoneValid ? "border-rose-400" : "border-gray-300"
+                      }`}
+                      aria-invalid={touched && !phoneValid}
+                    />
+                    {touched && !phoneValid && (
+                      <span className="text-[12px] text-rose-600" role="alert" aria-live="polite">
+                        SĐT không hợp lệ.
+                      </span>
+                    )}
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm text-gray-700">Họ và tên</span>
+                    <input
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      onBlur={() => {
+                        if (!closingRef.current) setTouched(true);
+                      }}
+                      placeholder="Nhập họ tên"
+                      className={`mt-1 w-full ${RADIUS} border bg-white px-3 py-2 ${RING} ${
+                        touched && !nameValid ? "border-rose-400" : "border-gray-300"
+                      }`}
+                      aria-invalid={touched && !nameValid}
+                    />
+                    {touched && !nameValid && (
+                      <span className="text-[12px] text-rose-600" role="alert" aria-live="polite">
+                        Vui lòng nhập họ tên.
+                      </span>
+                    )}
+                  </label>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* footer */}
-          <div className="px-4 pb-4 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onMouseDown={attemptClose}
-              className={`px-4 py-2 ${RADIUS} border border-gray-300 bg-gray-100 hover:bg-gray-200 text-gray-800`}
-            >
-              Hủy
-            </button>
-            <button
-              type="button"
-              onClick={() => onConfirm({ phone, name })}
-              disabled={!canSubmit}
-              className={`px-4 py-2 ${RADIUS} text-white font-semibold shadow-sm ${
-                canSubmit ? "bg-brand hover:bg-brand-dark" : "bg-gray-300 cursor-not-allowed"
-              }`}
-            >
-              {submitting ? "Đang gửi..." : "XÁC NHẬN ĐẶT CHUYẾN"}
-            </button>
+          <div className="flex items-center justify-end gap-2 px-4 pb-4">
+            {isSuccess ? (
+              <button
+                type="button"
+                onMouseDown={attemptClose}
+                className={`px-4 py-2 ${RADIUS} bg-brand text-white shadow-sm transition hover:bg-brand-dark`}
+              >
+                Đóng
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onMouseDown={attemptClose}
+                  className={`px-4 py-2 ${RADIUS} border border-gray-300 bg-gray-100 text-gray-800 transition hover:bg-gray-200`}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onConfirm({ phone, name })}
+                  disabled={!canSubmit}
+                  className={`px-4 py-2 ${RADIUS} text-white font-semibold shadow-sm transition ${
+                    canSubmit ? "bg-brand hover:bg-brand-dark" : "bg-gray-300 cursor-not-allowed"
+                  }`}
+                >
+                  {submitting ? "Đang gửi..." : "XÁC NHẬN ĐẶT CHUYẾN"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
     </Portal>
   );
 }
+
 
 /* ================= Main Form ================= */
 export default function BookingForm() {
@@ -1124,6 +1236,15 @@ export default function BookingForm() {
   // Quote snapshot (ưu tiên giá từ server)
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [lastDtoUsedForQuote, setLastDtoUsedForQuote] = useState<QuoteRequestDto | null>(null);
+  const [modalMode, setModalMode] = useState<'confirm' | 'success'>('confirm');
+  const [bookingResult, setBookingResult] = useState<BookingSuccessSummary | null>(null);
+  const [bookingNotice, setBookingNotice] = useState<
+    { type: 'error' | 'warning'; message: string }
+  | null>(null);
+  const [recentContact, setRecentContact] = useState<{ name: string; phone: string }>({
+    name: '',
+    phone: '',
+  });
 
   // Refs
   const stopRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -1336,13 +1457,21 @@ export default function BookingForm() {
       });
       setQuote(q);
       setLastDtoUsedForQuote(dto);
+      setModalMode("confirm");
+      setBookingResult(null);
+      setBookingNotice(null);
       setShowConfirm(true);
     } catch (e: any) {
       // Fallback: vẫn mở modal với giá FE để không chặn đặt xe
       setQuote(null);
       setLastDtoUsedForQuote(dto);
+      setModalMode("confirm");
+      setBookingResult(null);
+      setBookingNotice({
+        type: "warning",
+        message: `Không tính được giá từ server, dùng giá tạm: ${e?.message || e}`,
+      });
       setShowConfirm(true);
-      alert(`Không tính được giá từ server, dùng giá tạm: ${e?.message || e}`);
     } finally {
       setQuoting(false);
     }
@@ -1353,28 +1482,63 @@ export default function BookingForm() {
     if (!lastDtoUsedForQuote) return;
     try {
       setSubmitBooking(true);
+      setBookingResult(null);
+      setBookingNotice((prev) => (prev?.type === "warning" ? prev : null));
+
+      if (!quote?.id) {
+        throw new Error(
+          "Không tìm thấy báo giá hợp lệ. Vui lòng kiểm tra lại thông tin và thử tính giá trước khi đặt.",
+        );
+      }
+
+      const normalizedQuoteId = normalizeQuoteId(quote.id);
+      if (!normalizedQuoteId) {
+        throw new Error(
+          "Không tìm thấy mã báo giá hợp lệ. Vui lòng tính lại giá trước khi đặt chuyến.",
+        );
+      }
 
       const body: CreateBookingRequestDto = {
         ...lastDtoUsedForQuote,
         stops: stops.map((s) => s.text).filter(Boolean),
         customerName: payload.name.trim(),
-        phone: normalizePhone(payload.phone),
-        // quoteId: quote?.id, // nếu BE trả về id; nếu chưa có thì bỏ
+        customerPhone: normalizePhone(payload.phone),
+        quoteId: normalizedQuoteId,
       };
 
       const idemKey = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-      await createBooking(body, {
+      const response = await createBooking(body, {
         headers: { "Idempotency-Key": idemKey },
         timeoutMs: 12_000,
       });
 
-      setShowConfirm(false);
-      alert("Đặt chuyến thành công! Cảm ơn bạn.");
+      const totalPrice = quote?.total ?? quote?.totalVnd ?? priceTotalFallback;
+      setRecentContact({ name: body.customerName, phone: body.customerPhone });
+      setBookingResult({
+        bookingId: response.bookingId,
+        status: response.status,
+        totalVnd: totalPrice,
+        route: routeStr,
+        timeLabel: prettyTime(startAt),
+        customerName: body.customerName,
+        customerPhone: body.customerPhone,
+      });
+      setBookingNotice(null);
+      setModalMode("success");
     } catch (e: any) {
-      alert(`Đặt chuyến thất bại: ${e?.message || e}`);
+      const message = e instanceof Error ? e.message : `${e}`;
+      setBookingNotice({ type: "error", message: `Đặt chuyến thất bại: ${message}` });
+      setModalMode("confirm");
     } finally {
       setSubmitBooking(false);
     }
+  };
+
+  const handleCloseModal = () => {
+    setShowConfirm(false);
+    setModalMode("confirm");
+    setBookingResult(null);
+    setBookingNotice(null);
   };
 
   return (
@@ -1672,12 +1836,17 @@ export default function BookingForm() {
       {/* Modal xác nhận giá */}
       <ConfirmPriceModal
         open={showConfirm}
-        onClose={() => setShowConfirm(false)}
+        mode={modalMode}
+        onClose={handleCloseModal}
         onConfirm={handleConfirm}
         submitting={submitBooking || quoting}
         price={quote?.total ?? quote?.totalVnd ?? priceTotalFallback}
         route={routeStr}
         timeLabel={prettyTime(startAt)}
+        defaultName={recentContact.name}
+        defaultPhone={recentContact.phone}
+        notice={bookingNotice}
+        bookingResult={bookingResult}
       />
     </div>
   );

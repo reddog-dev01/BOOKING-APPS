@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+  --background: 246 246 248;
+  --foreground: 17 24 39;
+  --card: 255 255 255;
+  --card-foreground: 17 24 39;
+  --muted: 229 231 235;
+  --muted-foreground: 107 114 128;
+  --accent: 59 130 246;
+  --accent-foreground: 255 255 255;
+  --border: 226 232 240;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 15 23 42;
+  --foreground: 226 232 240;
+  --card: 30 41 59;
+  --card-foreground: 226 232 240;
+  --muted: 51 65 85;
+  --muted-foreground: 148 163 184;
+  --accent: 96 165 250;
+  --accent-foreground: 15 23 42;
+  --border: 51 65 85;
+}
+
+body {
+  @apply min-h-screen bg-[rgb(var(--background))] text-[rgb(var(--foreground))] antialiased;
+}
+
+.bg-background {
+  background-color: rgb(var(--background));
+}
+
+.text-foreground {
+  color: rgb(var(--foreground));
+}
+
+.bg-card {
+  background-color: rgb(var(--card));
+}
+
+.text-card-foreground {
+  color: rgb(var(--card-foreground));
+}
+
+.bg-muted {
+  background-color: rgb(var(--muted));
+}
+
+.text-muted-foreground {
+  color: rgb(var(--muted-foreground));
+}
+
+.bg-accent {
+  background-color: rgb(var(--accent));
+}
+
+.text-accent-foreground {
+  color: rgb(var(--accent-foreground));
+}
+
+.border-border {
+  border-color: rgb(var(--border));
+}
