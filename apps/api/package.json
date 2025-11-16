@@ -1,0 +1,40 @@
+{
+  "name": "api",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:prod": "NODE_ENV=production node dist/main.js",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema=packages/db/prisma/schema.prisma",
+    "db:seed": "prisma db seed --schema=packages/db/prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@fastify/compress": "^8.1.0",
+    "@fastify/cors": "^11.1.0",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "@nestjs/common": "^11.1.7",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.7",
+    "@nestjs/platform-fastify": "^11.1.7",
+    "@nestjs/swagger": "^11.2.1",
+    "@nestjs/throttler": "^5",
+    "@prisma/client": "6.18.0",
+    "prisma": "6.18.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "fastify": "^5.6.1",
+    "pino": "^9",
+    "pino-pretty": "^11",
+    "reflect-metadata": "^0.2.2",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10",
+    "@nestjs/schematics": "^10",
+    "@nestjs/testing": "^10",
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

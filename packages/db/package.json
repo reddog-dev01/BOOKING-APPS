@@ -1,0 +1,13 @@
+{
+  "name": "@booking/db",
+  "private": true,
+  "version": "1.0.0",
+  "main": "src/client.ts",
+  "types": "src/client.ts",
+  "peerDependencies": {
+    "@prisma/client": "6.18.0"
+  },
+  "devDependencies": {
+    "prisma": "6.18.0"
+  }
+}
