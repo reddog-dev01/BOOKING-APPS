@@ -1,0 +1,253 @@
+// ---------------------------- Prisma Setup ----------------------------
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------- Enums ----------------------------
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELED
+  EXPIRED
+}
+
+enum TripType {
+  AIRPORT
+  ROAD
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+  OPERATOR
+}
+
+enum TrunkSize {
+  SMALL
+  LARGE
+}
+
+// ---------------------------- Models ----------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      Role     @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+model VehicleType {
+  id        Int        @id @default(autoincrement())
+  name      String
+  capacity  Int
+  img       String?
+  alt       String?
+  trunkSize TrunkSize?
+  isActive  Boolean    @default(true)
+  perKmVnd  Int        @default(7000) // Giá/km, admin chỉnh được
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+
+  PricePolicies PricePolicy[]
+  Bookings      Booking[]
+  Quotes        Quote[]
+}
+
+model Route {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  tripType   TripType
+  fromLabel  String
+  toLabel    String
+  distanceKm Int?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // 1-n
+  PricePolicies PricePolicy[]
+  Bookings      Booking[]
+  Quotes        Quote[]
+
+  @@index([tripType, isActive])
+}
+
+model PricePolicy {
+  id String @id @default(cuid())
+
+  // FKs (type phải khớp PK bảng đích)
+  routeId       String
+  vehicleTypeId Int
+
+  basePriceVnd  Int
+  roundTripPct  Int
+  nightPct      Int
+  vatPctDefault Int
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  Route       Route       @relation(fields: [routeId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  VehicleType VehicleType @relation(fields: [vehicleTypeId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+
+  @@unique([routeId, vehicleTypeId, effectiveFrom])
+  @@index([routeId, vehicleTypeId, effectiveFrom, effectiveTo])
+}
+
+model Coupon {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  percent   Int
+  isActive  Boolean   @default(true)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  Booking   Booking[]
+
+  @@index([isActive, expiresAt])
+}
+
+model Airport {
+  id        String   @id @default(cuid())
+  code      String   @unique // "HAN", "HPH", ...
+  name      String
+  address   String
+  lat       Float
+  lng       Float
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Bookings Booking[]
+  Quotes   Quote[]
+
+  @@index([isActive])
+}
+
+model Quote {
+  id            String   @id @default(cuid())
+  tripType      TripType
+  routeId       String?
+  airportId     String?
+  vehicleTypeId Int
+  basePriceVnd  Int
+  distanceKm    Float    @default(0)
+  timeMinutes   Int      @default(0)
+  vatPct        Int      @default(0)
+  vatAmountVnd  Int      @default(0)
+  totalVnd      Int      @default(0)
+  currency      String   @default("VND")
+  expiresAt     DateTime
+  meta          Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  VehicleType VehicleType @relation(fields: [vehicleTypeId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  Route       Route?      @relation(fields: [routeId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  Airport     Airport?    @relation(fields: [airportId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  Bookings    Booking[]
+
+  @@index([vehicleTypeId])
+  @@index([expiresAt])
+  @@index([routeId])
+  @@index([airportId])
+}
+
+model Booking {
+  id       String   @id @default(cuid())
+  tripType TripType
+
+  // ROAD (tuyến cố định) — để nullable cho phép AIRPORT không cần route
+  routeId String?
+  Route   Route?  @relation(fields: [routeId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+
+  // Vehicle
+  vehicleTypeId Int
+  VehicleType   VehicleType @relation(fields: [vehicleTypeId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+
+  // AIRPORT
+  airportId String?
+  Airport   Airport? @relation(fields: [airportId], references: [id])
+
+  // Hướng chuyến (AIRPORT): "to_airport" | "from_airport"
+  direction String?
+
+  // Hình thức
+  isRoundTrip Boolean  @default(false)
+  startAt     DateTime
+  pax         Int?
+
+  // Input địa điểm (geo + hiển thị)
+  fromText  String
+  toText    String
+  fromLat   Float?
+  fromLng   Float?
+  toLat     Float?
+  toLng     Float?
+  stopsJson Json?
+
+  // Snapshot định giá (để audit và tính VAT đúng rule)
+  distanceKm       Float @default(0)
+  priceDistanceVnd Int   @default(0) // chỉ phần tính theo km
+  waitMinutes      Int   @default(0) // khi round-trip
+  priceWaitingVnd  Int   @default(0) // tiền giờ đợi
+
+  // Thuế & tổng
+  vatPct      Int // 0|8|10 (áp CHỈ trên priceDistanceVnd)
+  couponCode  String?
+  subtotalVnd Int     @default(0)
+  discountVnd Int     @default(0)
+  vatVnd      Int     @default(0)
+  totalVnd    Int     @default(0)
+
+  customerName String?
+  phone        String?
+  customerNote String?
+
+  quoteId String?
+  Quote   Quote?   @relation(fields: [quoteId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+
+  status    BookingStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  coupon Coupon? @relation(fields: [couponCode], references: [code])
+
+  @@index([status, startAt])
+  @@index([routeId, vehicleTypeId])
+  @@index([airportId])
+  @@index([quoteId])
+}
+
+model SiteSetting {
+  id                   Int      @id @default(1)
+  vatOptions           Json // ví dụ: [0,8,10]
+  defaultVatPct        Int      @default(10)
+  waitRatePerHour      Int      @default(30000) // VND/giờ đợi
+  roundTripWaitMinutes Int      @default(90) // thời gian chờ mặc định (phút) cho chuyến hai chiều
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Banner {
+  id        String   @id @default(cuid())
+  src       String
+  alt       String?
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([src, sortOrder])
+  @@index([isActive, sortOrder])
+}
