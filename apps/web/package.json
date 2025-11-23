@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "node ./scripts/dev.mjs",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start -p 3005",
     "lint": "eslint . --ext .ts,.tsx || true"
   },
   "keywords": [],
@@ -17,7 +17,8 @@
     "lucide-react": "^0.544.0",
     "next": "14.2.12",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "swr": "^2.3.6"
   },
   "devDependencies": {
     "@tailwindcss/aspect-ratio": "^0.4.2",
