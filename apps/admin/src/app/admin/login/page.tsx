@@ -38,7 +38,9 @@ async function authenticate(formData: FormData) {
   }
 
   // Issue a short-lived, path-scoped, HttpOnly session flag for admin routes only.
-  cookies().set(AUTH_COOKIE, "true", {
+  const cookieStore = await cookies();
+
+  cookieStore.set(AUTH_COOKIE, "true", {
     httpOnly: true,
     sameSite: "lax",
     secure: true,
