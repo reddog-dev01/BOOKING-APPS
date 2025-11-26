@@ -10,7 +10,7 @@ type SearchParams = {
   redirectTo?: string;
 };
 
-// Server action: validates credentials, sets an HttpOnly cookie, and redirects to the dashboard.
+// Server action: validates credentials against env secrets, issues a scoped session cookie, then redirects.
 async function authenticate(formData: FormData) {
   "use server";
 
@@ -35,12 +35,12 @@ async function authenticate(formData: FormData) {
     redirect(`/admin/login?error=invalid&redirectTo=${encodeURIComponent(redirectTo)}`);
   }
 
-  const cookieStore = await cookies();
+  const cookieStore = await cookies(); // Await dynamic cookies API per Next.js 15+
 
   cookieStore.set(AUTH_COOKIE, "true", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production", // Avoid dev-only HTTPS requirement
     path: "/admin",
     maxAge: EIGHT_HOURS_IN_SECONDS,
   });
@@ -69,6 +69,8 @@ export default async function LoginPage({
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -left-32 top-10 h-72 w-72 rounded-full bg-accent/10 blur-3xl" />
         <div className="absolute bottom-6 right-0 h-80 w-80 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="absolute inset-x-12 top-24 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        <div className="absolute inset-x-12 bottom-24 h-px bg-gradient-to-r from-transparent via-accent/20 to-transparent" />
       </div>
 
       <div className="relative z-10 grid w-full max-w-5xl gap-8 md:grid-cols-[1.2fr,1fr]">
@@ -86,22 +88,22 @@ export default async function LoginPage({
             </div>
           </div>
 
-          <div className="mt-8 space-y-4 text-sm text-slate-200/90">
-            <div className="flex items-start gap-3">
+          <div className="mt-8 space-y-5 text-sm text-slate-200/90">
+            <div className="flex items-start gap-3 rounded-2xl border border-white/5 bg-white/5 px-4 py-3 shadow-inner shadow-black/20">
               <div className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-400" aria-hidden />
               <div>
                 <p className="font-medium">Giám sát đơn & đội xe</p>
                 <p className="text-xs text-slate-300/80">Theo dõi trạng thái đơn, vị trí tài xế và nhu cầu theo thời gian thực.</p>
               </div>
             </div>
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-3 rounded-2xl border border-white/5 bg-white/5 px-4 py-3 shadow-inner shadow-black/20">
               <div className="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400" aria-hidden />
               <div>
                 <p className="font-medium">Cảnh báo SLA & sự cố</p>
                 <p className="text-xs text-slate-300/80">Nhận cảnh báo chậm trễ, tắc đường và xử lý ưu tiên ngay.</p>
               </div>
             </div>
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-3 rounded-2xl border border-white/5 bg-white/5 px-4 py-3 shadow-inner shadow-black/20">
               <div className="mt-1 h-2.5 w-2.5 rounded-full bg-amber-400" aria-hidden />
               <div>
                 <p className="font-medium">Quyền truy cập phân cấp</p>
@@ -125,7 +127,7 @@ export default async function LoginPage({
                 Bảng điều hành FleetOps
               </div>
               <div className="flex items-start justify-between gap-4">
-                <div>
+                <div className="space-y-1">
                   <h2 className="text-2xl font-semibold text-slate-50">Đăng nhập điều hành</h2>
                   <p className="text-sm text-slate-400">Chỉ dành cho tài khoản nội bộ được ủy quyền.</p>
                 </div>
@@ -145,7 +147,7 @@ export default async function LoginPage({
               </div>
             ) : null}
 
-            <form action={authenticate} method="post" className="space-y-4">
+            <form action={authenticate} className="space-y-4">
               <input type="hidden" name="redirectTo" value={redirectTo} />
 
               <div className="space-y-1.5">
