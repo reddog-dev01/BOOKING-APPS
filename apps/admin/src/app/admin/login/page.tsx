@@ -26,13 +26,14 @@ async function authenticate(formData: FormData) {
   redirect(redirectTo);
 }
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: { error?: string; redirectTo?: string };
+  searchParams?: Promise<{ error?: string; redirectTo?: string }>;
 }) {
-  const showError = searchParams?.error === "missing";
-  const redirectTo = searchParams?.redirectTo || "/admin";
+  const resolvedSearchParams = await searchParams;
+  const showError = resolvedSearchParams?.error === "missing";
+  const redirectTo = resolvedSearchParams?.redirectTo || "/admin";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/50 px-4 py-12">
