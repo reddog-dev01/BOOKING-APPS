@@ -40,11 +40,9 @@ export function AdminShell({
           <line x1="3" x2="21" y1="18" y2="18" />
         </svg>
       </button>
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col lg:ml-64">
         <Topbar title={topbarTitle} subtitle={topbarSubtitle} />
-        <main className="flex-1 bg-background px-6 pb-12 pt-6">
-          {children}
-        </main>
+        <main className="flex-1 bg-background px-6 pb-12 pt-6 lg:pl-2">{children}</main>
       </div>
     </div>
   );
