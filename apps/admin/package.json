@@ -2,28 +2,33 @@
   "name": "admin",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.17.1",
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "build": "next build",
     "start": "next start -p 3007",
-    "lint": "eslint"
+    "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
-    "next": "14.2.10",
+    "lucide-react": "^0.544.0",
+    "next": "14.2.12",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "swr": "^2.3.6"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.0.0", 
     "@eslint/eslintrc": "^3.2.0",
-    "@types/node": "^20.16.10",
-    "@types/react": "^18.3.8",
-    "@types/react-dom": "^18.3.1",
-    "autoprefixer": "^10.4.20",
-    "eslint": "^9.15.0",
-    "eslint-config-next": "14.2.10",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.14",
-    "typescript": "^5.6.3"
+    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/node": "^24.6.1",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.36.0",
+    "eslint-config-next": "^15.5.4",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.3"
   }
 }

@@ -14,27 +14,32 @@ interface StatCardProps {
 }
 
 const trendColor: Record<TrendVariant, string> = {
-  positive: "text-emerald-600 dark:text-emerald-400",
-  negative: "text-rose-600 dark:text-rose-400",
+  positive: "text-emerald-600",
+  negative: "text-rose-600",
   neutral: "text-muted-foreground",
 };
 
-// Generic stat card for KPI display across the dashboard
+// KPI tile with subtle hover and trend coloring
 export function StatCard({ title, value, trend, icon, action }: StatCardProps) {
   return (
-    <article className="flex flex-col justify-between gap-4 rounded-2xl border border-border bg-card p-6 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col">
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="mt-2 text-3xl font-semibold text-foreground">{value}</p>
-        </div>
-        {icon ? <div className="text-accent-foreground">{icon}</div> : null}
+    <article className="group relative overflow-hidden rounded-2xl border border-border bg-card/90 p-5 shadow-soft transition hover:-translate-y-0.5 hover:border-accent/50">
+      <div className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100">
+        <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-accent/10 blur-2xl" />
       </div>
-      <div className="flex items-center justify-between text-sm">
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
+          <p className="text-2xl font-semibold text-foreground">{value}</p>
+        </div>
+        {icon && (
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-muted/80 text-accent">
+            {icon}
+          </div>
+        )}
+      </div>
+      <div className="relative mt-4 flex items-center justify-between text-xs">
         {trend ? (
-          <span className={`font-medium ${trendColor[trend.variant ?? "neutral"]}`}>
-            {trend.label}
-          </span>
+          <span className={`font-medium ${trendColor[trend.variant ?? "neutral"]}`}>{trend.label}</span>
         ) : (
           <span className="text-muted-foreground">&nbsp;</span>
         )}
