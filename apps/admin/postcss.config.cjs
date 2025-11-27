@@ -1,4 +1,4 @@
-// PostCSS config for admin forcing local Tailwind CSS v3.4.17 and autoprefixer 10.4.21 copies.
+// PostCSS configuration pinned to Tailwind CSS v3 for the admin workspace
 module.exports = {
   plugins: {
     tailwindcss: {},
