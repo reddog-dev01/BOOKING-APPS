@@ -69,6 +69,16 @@ export function Topbar({ title, subtitle, onMenuToggle }: TopbarProps) {
               <span className="block text-[11px] text-muted-foreground">Operations</span>
             </div>
           </div>
+
+          <form action="/admin/logout" method="POST">
+            <button
+              type="submit"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm transition hover:bg-rose-50 hover:text-rose-600"
+            >
+              <span className="h-2 w-2 rounded-full bg-rose-500" aria-hidden />
+              Đăng xuất
+            </button>
+          </form>
         </div>
       </div>
     </header>
