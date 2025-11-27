@@ -49,14 +49,15 @@ function getErrorMessage(error?: string) {
   return null;
 }
 
-export default async function LoginPage({
+export const dynamic = "force-dynamic";
+
+export default function LoginPage({
   searchParams,
 }: {
-  searchParams?: Promise<SearchParams>;
+  searchParams?: SearchParams;
 }) {
-  const resolvedSearchParams = await searchParams;
-  const redirectTo = resolvedSearchParams?.redirectTo || "/admin";
-  const errorMessage = getErrorMessage(resolvedSearchParams?.error);
+  const redirectTo = searchParams?.redirectTo || "/admin";
+  const errorMessage = getErrorMessage(searchParams?.error);
   const currentYear = new Date().getFullYear();
 
   return (
