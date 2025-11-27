@@ -10,7 +10,7 @@ type SearchParams = {
   redirectTo?: string;
 };
 
-// Server action: validate credentials from env and issue session cookie scoped to /admin
+// Server action: validate env credentials and issue an HttpOnly cookie scoped to /admin
 async function authenticate(formData: FormData) {
   "use server";
 
@@ -29,12 +29,13 @@ async function authenticate(formData: FormData) {
     redirect(`/admin/login?error=invalid&redirectTo=${encodeURIComponent(redirectTo)}`);
   }
 
+  // Await cookies() per Next 15 API to set the scoped session flag
   const cookieStore = await cookies();
 
   cookieStore.set(AUTH_COOKIE, "true", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production", // keep dev-friendly cookie for localhost
+    secure: process.env.NODE_ENV === "production", // allow localhost during development
     path: "/admin",
     maxAge: EIGHT_HOURS_IN_SECONDS,
   });
@@ -59,21 +60,23 @@ export default async function LoginPage({
   const currentYear = new Date().getFullYear();
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100 px-4 py-12 text-foreground">
+    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-white via-slate-50 to-blue-50 px-4 py-12 text-foreground">
+      {/* Decorative glows to match brand tint without harming readability */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-24 top-10 h-64 w-64 rounded-full bg-sky-200/40 blur-3xl" />
-        <div className="absolute right-0 top-40 h-72 w-72 rounded-full bg-blue-200/40 blur-3xl" />
+        <div className="absolute -left-20 top-10 h-64 w-64 rounded-full bg-sky-200/50 blur-3xl" />
+        <div className="absolute right-[-60px] bottom-10 h-72 w-72 rounded-full bg-blue-200/40 blur-3xl" />
       </div>
 
-      <div className="relative z-10 grid w-full max-w-5xl gap-8 rounded-[28px] border border-slate-200/70 bg-white/90 p-6 shadow-2xl shadow-slate-200/80 backdrop-blur md:grid-cols-[1.1fr,0.9fr] md:p-10">
-        <div className="flex flex-col justify-between space-y-6">
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full bg-sky-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
-              Bảng điều hành FleetOps
+      <div className="relative z-10 grid w-full max-w-5xl gap-8 rounded-[26px] border border-slate-200/70 bg-white/90 p-6 shadow-2xl shadow-slate-200/80 backdrop-blur md:grid-cols-[1.1fr,0.9fr] md:p-10">
+        {/* Left column: brand narrative */}
+        <div className="flex flex-col justify-between space-y-8">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+              FleetOps Admin
             </div>
             <h1 className="text-3xl font-semibold leading-tight text-slate-900">BẢNG ĐIỀU HÀNH FLEETOPS</h1>
-            <p className="text-sm text-slate-600">
-              Chỉ sử dụng tài khoản do FleetOps cấp. Mọi hoạt động đăng nhập sẽ được ghi log và giám sát phục vụ an toàn vận hành.
+            <p className="text-sm leading-relaxed text-slate-600">
+              Chỉ sử dụng tài khoản do FleetOps cấp. Mọi hoạt động đăng nhập sẽ được ghi log và giám sát để đảm bảo an toàn vận hành.
             </p>
           </div>
 
@@ -86,12 +89,12 @@ export default async function LoginPage({
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-inner">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">SLA xử lý đơn</p>
               <p className="mt-2 text-xl font-semibold text-slate-900">&lt; 45 giây</p>
-              <p className="mt-1 text-[11px] text-slate-500">Thời gian phản hồi trung bình theo tuần.</p>
+              <p className="mt-1 text-[11px] text-slate-500">Phản hồi trung bình từ lúc khách tạo chuyến.</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-inner">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Giám sát an toàn</p>
               <p className="mt-2 text-xl font-semibold text-slate-900">24/7</p>
-              <p className="mt-1 text-[11px] text-slate-500">Phiên đăng nhập được log & cảnh báo.</p>
+              <p className="mt-1 text-[11px] text-slate-500">Phiên đăng nhập đều được log & cảnh báo.</p>
             </div>
           </div>
 
@@ -100,13 +103,17 @@ export default async function LoginPage({
           </p>
         </div>
 
+        {/* Right column: login card */}
         <div className="relative">
-          <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-sky-100 blur-2xl" />
-          <div className="relative rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-7">
-            <div className="flex items-center justify-between">
+          <div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-blue-100 blur-2xl" />
+          <div className="pointer-events-none absolute -left-6 bottom-0 h-24 w-24 rounded-full bg-cyan-100 blur-2xl" />
+
+          <div className="relative rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-xl shadow-slate-200 sm:p-7">
+            <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Đăng nhập điều hành</p>
-                <h2 className="text-xl font-semibold text-slate-900">FleetOps Admin</h2>
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">FleetOps Admin</h2>
+                <p className="text-xs text-slate-500">Chỉ dành cho tài khoản nội bộ được ủy quyền.</p>
               </div>
               <Link
                 href="/"
@@ -141,7 +148,7 @@ export default async function LoginPage({
                   autoComplete="username"
                   required
                   placeholder="dispatch@fleetops.vn"
-                  className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
@@ -150,7 +157,7 @@ export default async function LoginPage({
                   <label htmlFor="password" className="block text-sm font-medium text-slate-800">
                     Mật khẩu
                   </label>
-                  <Link href="mailto:it@fleetops.vn" className="text-xs font-medium text-sky-600 hover:text-sky-500">
+                  <Link href="mailto:it@fleetops.vn" className="text-xs font-medium text-blue-600 hover:text-blue-500">
                     Liên hệ IT nếu quên mật khẩu
                   </Link>
                 </div>
@@ -161,7 +168,7 @@ export default async function LoginPage({
                   autoComplete="current-password"
                   required
                   placeholder="••••••••"
-                  className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
@@ -171,7 +178,7 @@ export default async function LoginPage({
                     id="remember"
                     name="remember"
                     type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
                   />
                   <span className="select-none">Giữ phiên đăng nhập 8 giờ</span>
                 </label>
@@ -185,7 +192,7 @@ export default async function LoginPage({
 
               <button
                 type="submit"
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
               >
                 Đăng nhập
                 <svg
@@ -206,7 +213,7 @@ export default async function LoginPage({
 
             <div className="mt-6 flex items-center justify-between text-[11px] text-slate-500">
               <span>© {currentYear} FleetOps</span>
-              <Link href="/admin" className="font-medium text-sky-600 hover:text-sky-500">
+              <Link href="/admin" className="font-medium text-blue-600 hover:text-blue-500">
                 Vào dashboard (nếu đã đăng nhập)
               </Link>
             </div>
