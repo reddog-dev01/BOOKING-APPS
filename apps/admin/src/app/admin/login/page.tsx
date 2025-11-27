@@ -182,12 +182,13 @@ export default async function LoginPage({
                   />
                   <span className="select-none">Giữ phiên đăng nhập 8 giờ</span>
                 </label>
-                <button
-                  type="button"
-                  className="text-[11px] font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                <Link
+                  href="mailto:it@fleetops.vn?subject=Yeu%20cau%20dat%20lai%20mat%20khau%20admin"
+                  className="text-[11px] font-medium text-blue-600 underline-offset-2 hover:text-blue-500"
+                  prefetch={false}
                 >
                   Quên mật khẩu?
-                </button>
+                </Link>
               </div>
 
               <button

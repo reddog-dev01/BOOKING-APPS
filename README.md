@@ -56,6 +56,18 @@ Sau khi có Google key (mục 5), cập nhật các file:
 - `apps/web/.env.local`
 - `apps/admin/.env.local`
 
+### 3.2. Tài khoản đăng nhập admin
+
+- Sinh file env mẫu cho dashboard quản trị và cập nhật thông tin đăng nhập nội bộ:
+
+  ```bash
+  cp -n apps/admin/.env.local.example apps/admin/.env.local
+  # Thay đổi ADMIN_EMAIL/ADMIN_PASSWORD cho từng môi trường, không prefix NEXT_PUBLIC
+  ```
+
+- Với bản dựng Docker/Vercel, khai báo cặp `ADMIN_EMAIL` + `ADMIN_PASSWORD` trong biến môi trường runtime để server action đăng nhập hợp lệ.
+- Quên mật khẩu: IT cần xác minh danh tính qua kênh nội bộ (email công ty/Slack + xác nhận từ quản lý), tạo mật khẩu mới 16 ký tự ngẫu nhiên, cập nhật `ADMIN_PASSWORD` trong secret manager (hoặc `.env`/biến runtime) và **khởi động lại** dịch vụ admin. Ghi lại thời gian, người yêu cầu, và người thực hiện vào sổ log bảo mật.
+
 ---
 
 ## 4. Tạo mới Google Cloud project `GGMAPS`
