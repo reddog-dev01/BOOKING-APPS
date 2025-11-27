@@ -3,13 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.17.1",
-  "pnpm": {
-    "overrides": {
-      "react": "18.3.1",
-      "react-dom": "18.3.1",
-      "tailwindcss": "3.4.17"
-    }
-  },
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "build": "next build",
@@ -35,7 +28,7 @@
     "eslint": "^9.36.0",
     "eslint-config-next": "^15.5.4",
     "postcss": "^8.5.6",
-    "tailwindcss": "3.4.17",
+    "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3"
   }
 }
