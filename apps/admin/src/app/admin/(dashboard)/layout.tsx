@@ -1,41 +1,21 @@
 import type { ReactNode } from "react";
+import { CarFront, FileText, LayoutDashboard, Settings } from "lucide-react";
 import { AdminShell } from "@/components/layout/admin-shell";
 
 const NAV_ITEMS = [
-  { href: "/admin", label: "Dashboard" },
-  { href: "/admin/bookings", label: "Bookings" },
-  { href: "/admin/fleet", label: "Fleet" },
-  { href: "/admin/settings", label: "Settings" },
+  { href: "/admin", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
+  { href: "/admin/bookings", label: "Bookings", icon: <FileText className="h-4 w-4" /> },
+  { href: "/admin/fleet", label: "Fleet", icon: <CarFront className="h-4 w-4" /> },
+  { href: "/admin/settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <AdminShell
-      links={NAV_ITEMS.map((item) => ({
-        ...item,
-        icon: (
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            <path d="M21 15V6" />
-            <path d="M18 9h3" />
-            <path d="M10 6v12" />
-            <path d="M7 9h3" />
-            <path d="M3 12v6" />
-            <path d="M0 15h6" />
-          </svg>
-        ),
-      }))}
+      links={NAV_ITEMS}
       appName="FleetOps Control"
       topbarTitle="Điều hành đặt xe"
-      topbarSubtitle="Giám sát đơn, đội xe và trải nghiệm khách hàng theo thời gian thực."
+      topbarSubtitle="Giám sát đơn, đội xe và chất lượng dịch vụ theo thời gian thực."
     >
       {children}
     </AdminShell>

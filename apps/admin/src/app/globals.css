@@ -2,68 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens aligned with web brand palette */
 :root {
-  color-scheme: light dark;
-  --background: 246 246 248;
-  --foreground: 17 24 39;
-  --card: 255 255 255;
-  --card-foreground: 17 24 39;
-  --muted: 229 231 235;
-  --muted-foreground: 107 114 128;
-  --accent: 59 130 246;
+  color-scheme: light;
+  --background: 248 250 252; /* slate-50 */
+  --foreground: 15 23 42; /* slate-900 */
+  --card: 255 255 255; /* white */
+  --card-foreground: 15 23 42;
+  --muted: 241 245 249; /* slate-100 */
+  --muted-foreground: 100 116 139; /* slate-500 */
+  --accent: 96 165 250; /* sky-500 */
   --accent-foreground: 255 255 255;
-  --border: 226 232 240;
+  --border: 226 232 240; /* slate-200 */
 }
 
 .dark {
   color-scheme: dark;
-  --background: 15 23 42;
-  --foreground: 226 232 240;
-  --card: 30 41 59;
-  --card-foreground: 226 232 240;
-  --muted: 51 65 85;
-  --muted-foreground: 148 163 184;
-  --accent: 96 165 250;
-  --accent-foreground: 15 23 42;
-  --border: 51 65 85;
+  --background: 15 23 42; /* slate-900 */
+  --foreground: 241 245 249; /* slate-200 */
+  --card: 17 24 39; /* slate-800 */
+  --card-foreground: 241 245 249;
+  --muted: 30 41 59; /* slate-700 */
+  --muted-foreground: 148 163 184; /* slate-400 */
+  --accent: 14 165 233; /* sky-500 darker */
+  --accent-foreground: 15 23 42; /* slate-900 */
+  --border: 51 65 85; /* slate-600 */
 }
 
 body {
   @apply min-h-screen bg-[rgb(var(--background))] text-[rgb(var(--foreground))] antialiased;
 }
 
-.bg-background {
-  background-color: rgb(var(--background));
-}
+/* Utility fallbacks when Tailwind classes are not composed */
+.bg-background { background-color: rgb(var(--background)); }
+.text-foreground { color: rgb(var(--foreground)); }
+.bg-card { background-color: rgb(var(--card)); }
+.text-card-foreground { color: rgb(var(--card-foreground)); }
+.bg-muted { background-color: rgb(var(--muted)); }
+.text-muted-foreground { color: rgb(var(--muted-foreground)); }
+.bg-accent { background-color: rgb(var(--accent)); }
+.text-accent-foreground { color: rgb(var(--accent-foreground)); }
+.border-border { border-color: rgb(var(--border)); }
 
-.text-foreground {
-  color: rgb(var(--foreground));
-}
-
-.bg-card {
-  background-color: rgb(var(--card));
-}
-
-.text-card-foreground {
-  color: rgb(var(--card-foreground));
-}
-
-.bg-muted {
-  background-color: rgb(var(--muted));
-}
-
-.text-muted-foreground {
-  color: rgb(var(--muted-foreground));
-}
-
-.bg-accent {
-  background-color: rgb(var(--accent));
-}
-
-.text-accent-foreground {
-  color: rgb(var(--accent-foreground));
-}
-
-.border-border {
-  border-color: rgb(var(--border));
-}
+/* Softer scrollbars for data-dense admin tables */
+* { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.7) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { border-radius: 9999px; background: rgba(148, 163, 184, 0.65); }
