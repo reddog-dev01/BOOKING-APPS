@@ -172,7 +172,7 @@ const spawnDevServer = (port, origin, preferredPort = DEFAULT_PORT) => {
 
   const child = spawn(
     nextBin,
-    ['dev', '--turbopack', '--port', String(port), ...forwardedArgs],
+    ['dev', '--port', String(port), ...forwardedArgs],
     {
       stdio: 'inherit',
       env: { ...process.env, PORT: String(port) },
