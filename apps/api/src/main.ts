@@ -3,13 +3,13 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import compress from '@fastify/compress';
-import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import type { FastifyInstance } from 'fastify';
 
 import { AppModule } from './app.module';
 import { PrismaService } from './infra/prisma/prisma.service';
 import { RateLimitMiddleware } from './common/rate-limit/rate-limit.middleware';
+import corsPlugin from './plugins/cors';
 
 function parseCsv(input: string | undefined, fallback: string[]): string[] {
   if (!input) {
@@ -57,30 +57,9 @@ async function bootstrap() {
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
+  const fastify = app.getHttpAdapter().getInstance() as FastifyInstance; // Reuse Fastify logger for infra-level events.
 
-  const defaultOrigins = [
-    `http://localhost:${port}`,
-    `http://127.0.0.1:${port}`,
-    'http://localhost:3005',
-    'http://127.0.0.1:3005',
-    'http://localhost:3007',
-    'http://127.0.0.1:3007',
-  ];
-
-  const allowedOrigins = new Set(
-    parseCsv(process.env.CORS_ORIGINS, defaultOrigins),
-  );
-
-  await app.register(cors, {
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error('Not allowed by CORS'), false);
-    },
-    credentials: true,
-  });
+  await app.register(corsPlugin);
 
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(compress);
@@ -95,7 +74,6 @@ async function bootstrap() {
     allowList: new Set(parseCsv(process.env.RL_ALLOWLIST, [])),
   });
 
-  const fastify = app.getHttpAdapter().getInstance() as FastifyInstance;
   fastify.addHook('onRequest', async (request, reply) => {
     const result = rateLimiter.consume(request);
     if (!result.allowed) {
